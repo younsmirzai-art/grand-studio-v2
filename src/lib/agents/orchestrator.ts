@@ -2,7 +2,9 @@ import { createServerClient } from "@/lib/supabase/server";
 import { callAgent } from "./runner";
 import { getAgent, TEAM } from "./identity";
 import { buildConsultationPrompt } from "./prompts";
-import type { ChatMessage, ChatTurn } from "./types";
+import type { ChatMessage, ChatTurn, AgentName } from "./types";
+import { getMemories, extractAndSaveMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
+import { shouldAutoConsult, startConsultation } from "./consultation";
 
 async function logGodEye(
   projectId: string,
@@ -38,10 +40,14 @@ async function saveChatTurn(
   });
 }
 
-async function getProjectContext(projectId: string): Promise<string> {
+async function getProjectContext(projectId: string, agentName?: string): Promise<string> {
   const supabase = createServerClient();
 
-  const [projectRes, loreRes, worldRes, recentChat] = await Promise.all([
+  const memoryPromise = agentName
+    ? getMemories(projectId, agentName, 10)
+    : Promise.resolve([]);
+
+  const [projectRes, loreRes, worldRes, recentChat, memories] = await Promise.all([
     supabase.from("projects").select("*").eq("id", projectId).single(),
     supabase.from("game_lore").select("*").eq("project_id", projectId),
     supabase.from("world_state").select("*").eq("project_id", projectId),
@@ -51,6 +57,7 @@ async function getProjectContext(projectId: string): Promise<string> {
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(20),
+    memoryPromise,
   ]);
 
   const project = projectRes.data;
@@ -81,19 +88,17 @@ async function getProjectContext(projectId: string): Promise<string> {
     }
   }
 
+  if (memories.length > 0) {
+    ctx += buildMemoryContext(memories);
+  }
+
   return ctx;
 }
 
-/**
- * When the Boss gives a command, ALL agents respond with their thoughts.
- * No auto-routing, no auto-task-creation. The Boss decides who does what.
- */
 export async function handleBossCommand(
   projectId: string,
   bossMessage: string
 ): Promise<void> {
-  const context = await getProjectContext(projectId);
-
   const discussionPrompt = `The Boss (ریس) just said: "${bossMessage}"
 
 You are in a team meeting. The Boss is the manager — they decide who does what.
@@ -102,6 +107,7 @@ Do NOT assign tasks or take ownership unless the Boss tells you to.
 Be concise. Address the Boss directly. Discuss what YOU could contribute if asked.`;
 
   for (const agent of TEAM) {
+    const context = await getProjectContext(projectId, agent.name);
     await logGodEye(projectId, "api_call", agent.name, `Calling ${agent.model}`);
 
     try {
@@ -113,13 +119,20 @@ Be concise. Address the Boss directly. Discuss what YOU could contribute if aske
 
       await logGodEye(projectId, "api_ok", agent.name, `Response received (${response.length} chars)`);
       await saveChatTurn(projectId, agent.name, agent.title, response, "discussion");
+
+      await extractAndSaveMemories(projectId, agent.name, response, bossMessage);
+
+      const { should, topic } = shouldAutoConsult(agent.name as AgentName, response);
+      if (should) {
+        await startConsultation(projectId, agent.name as AgentName, topic, response.slice(0, 1000), context);
+      }
     } catch (err) {
       await logGodEye(projectId, "error", agent.name, `API call failed: ${String(err)}`);
       await saveChatTurn(
         projectId,
         agent.name,
         agent.title,
-        `⚠️ I couldn't respond right now. Error: ${String(err).slice(0, 200)}`,
+        `I couldn't respond right now. Error: ${String(err).slice(0, 200)}`,
         "discussion"
       );
     }
@@ -128,18 +141,13 @@ Be concise. Address the Boss directly. Discuss what YOU could contribute if aske
   await logGodEye(projectId, "turn", "System", "All agents have responded to Boss command");
 }
 
-/**
- * Run a single agent turn — the Boss picks which agent speaks next via the UI.
- * This is called from the autonomous cycle or one-turn button.
- */
 export async function runNextTurn(projectId: string): Promise<{ done: boolean }> {
-  const context = await getProjectContext(projectId);
-
   const continuePrompt = `Continue the discussion based on what has been said so far.
 The Boss is the manager and will assign tasks. Share any new thoughts, updates, or suggestions.
 If you have nothing new to add, say so briefly.`;
 
   for (const agent of TEAM) {
+    const context = await getProjectContext(projectId, agent.name);
     await logGodEye(projectId, "api_call", agent.name, `Calling ${agent.model}`);
 
     try {
@@ -150,6 +158,7 @@ If you have nothing new to add, say so briefly.`;
       const response = await callAgent(agent, messages, context);
       await logGodEye(projectId, "api_ok", agent.name, `Response (${response.length} chars)`);
       await saveChatTurn(projectId, agent.name, agent.title, response, "discussion");
+      await extractAndSaveMemories(projectId, agent.name, response);
     } catch (err) {
       await logGodEye(projectId, "error", agent.name, `Failed: ${String(err)}`);
     }

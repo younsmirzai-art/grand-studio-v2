@@ -6,26 +6,21 @@ import { MessageSquare } from "lucide-react";
 import { ChatMessage } from "./ChatMessage";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AgentAvatar } from "./AgentAvatar";
 
 interface TeamChatProps {
   loading?: boolean;
   onExecuteCode?: (code: string) => void;
+  typingAgents?: string[];
 }
 
-export function TeamChat({ loading, onExecuteCode }: TeamChatProps) {
+export function TeamChat({ loading, onExecuteCode, typingAgents = [] }: TeamChatProps) {
   const chatTurns = useProjectStore((s) => s.chatTurns);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    console.log("[TeamChat] rendering", chatTurns.length, "chat turns");
-    if (chatTurns.length > 0) {
-      console.log("[TeamChat] last turn:", chatTurns[chatTurns.length - 1].agent_name, "-", chatTurns[chatTurns.length - 1].content?.slice(0, 80));
-    }
-  }, [chatTurns]);
-
-  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatTurns.length]);
+  }, [chatTurns.length, typingAgents.length]);
 
   if (loading) {
     return (
@@ -43,7 +38,7 @@ export function TeamChat({ loading, onExecuteCode }: TeamChatProps) {
     );
   }
 
-  if (chatTurns.length === 0) {
+  if (chatTurns.length === 0 && typingAgents.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <motion.div
@@ -55,6 +50,9 @@ export function TeamChat({ loading, onExecuteCode }: TeamChatProps) {
           <p className="text-text-secondary">No messages yet</p>
           <p className="text-text-muted text-sm">
             Send a command to start the conversation
+          </p>
+          <p className="text-text-muted text-xs mt-2">
+            Use <span className="text-gold font-mono">@name</span> to chat with a specific agent
           </p>
         </motion.div>
       </div>
@@ -72,6 +70,35 @@ export function TeamChat({ loading, onExecuteCode }: TeamChatProps) {
           />
         ))}
       </AnimatePresence>
+
+      {typingAgents.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="px-4 py-3 flex items-center gap-3"
+        >
+          <div className="flex -space-x-2">
+            {typingAgents.slice(0, 5).map((name) => (
+              <div key={name} className="relative">
+                <AgentAvatar name={name} size="sm" showStatus status="thinking" />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-text-muted text-xs">
+              {typingAgents.length === 1
+                ? `${typingAgents[0]} is thinking`
+                : `${typingAgents.length} agents are thinking`}
+            </span>
+            <span className="flex gap-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce" style={{ animationDelay: "300ms" }} />
+            </span>
+          </div>
+        </motion.div>
+      )}
+
       <div ref={bottomRef} />
     </div>
   );

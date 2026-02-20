@@ -19,10 +19,12 @@ const turnTypeConfig: Record<TurnType, { label: string; className: string }> = {
   critique: { label: "Critique", className: "bg-agent-amber/10 text-agent-amber border-agent-amber/20" },
   resolution: { label: "Resolution", className: "bg-agent-violet/10 text-agent-violet border-agent-violet/20" },
   discussion: { label: "Discussion", className: "bg-boss-elevated text-text-secondary border-boss-border" },
-  consultation: { label: "Review", className: "bg-agent-rose/10 text-agent-rose border-agent-rose/20" },
+  consultation: { label: "\u{1F91D} Consultation", className: "bg-agent-teal/10 text-agent-teal border-agent-teal/20" },
   routing: { label: "Routing", className: "bg-agent-teal/10 text-agent-teal border-agent-teal/20" },
   execution: { label: "Execution", className: "bg-agent-green/10 text-agent-green border-agent-green/20" },
   boss_command: { label: "Boss Order", className: "bg-gold/10 text-gold border-gold/20" },
+  direct: { label: "Direct Reply", className: "bg-agent-violet/10 text-agent-violet border-agent-violet/20" },
+  direct_command: { label: "DM", className: "bg-gold/10 text-gold border-gold/20" },
 };
 
 function parseCodeBlocks(text: string): { type: "text" | "code"; content: string; lang?: string }[] {
@@ -48,9 +50,7 @@ function parseCodeBlocks(text: string): { type: "text" | "code"; content: string
 
 function renderTextContent(text: string): React.ReactNode {
   return text.split("\n").map((line, i) => {
-    let processed: React.ReactNode = line;
-
-    processed = line.split(/(\*\*.*?\*\*)/).map((segment, j) => {
+    const processed = line.split(/(\*\*.*?\*\*)/).map((segment, j) => {
       if (segment.startsWith("**") && segment.endsWith("**")) {
         return <strong key={j} className="font-semibold text-text-primary">{segment.slice(2, -2)}</strong>;
       }
@@ -68,7 +68,9 @@ function renderTextContent(text: string): React.ReactNode {
 
 function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const isBoss = turn.turn_type === "boss_command";
+  const isBoss = turn.turn_type === "boss_command" || turn.turn_type === "direct_command";
+  const isDirect = turn.turn_type === "direct" || turn.turn_type === "direct_command";
+  const isConsultation = turn.turn_type === "consultation";
   const agent = getAgent(turn.agent_name);
   const typeConfig = turnTypeConfig[turn.turn_type] ?? turnTypeConfig.discussion;
 
@@ -80,18 +82,26 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
 
   const parts = parseCodeBlocks(turn.content || "");
 
+  const bgClass = isBoss
+    ? "bg-gold/[0.03] border-l-2 border-gold/30"
+    : isDirect
+      ? "bg-agent-violet/[0.03] border-l-2 border-agent-violet/30"
+      : isConsultation
+        ? "bg-agent-teal/[0.03] border-l-2 border-agent-teal/20"
+        : "hover:bg-boss-surface/50";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
-      className={`group px-4 py-3 ${isBoss ? "bg-gold/[0.03] border-l-2 border-gold/30" : "hover:bg-boss-surface/50"}`}
+      className={`group px-4 py-3 ${bgClass}`}
     >
       <div className="flex gap-3">
         <AgentAvatar name={isBoss ? "Boss" : turn.agent_name} size="md" />
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <AgentNameBadge name={isBoss ? "Boss" : turn.agent_name} />
             {agent && !isBoss && (
               <span className="text-text-muted text-xs">{agent.title}</span>
@@ -102,6 +112,11 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
             >
               {typeConfig.label}
             </Badge>
+            {isDirect && !isBoss && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border bg-agent-violet/10 text-agent-violet border-agent-violet/20">
+                DM to Boss
+              </Badge>
+            )}
             <span className="text-text-muted text-[11px] ml-auto">
               {new Date(turn.created_at).toLocaleTimeString()}
             </span>

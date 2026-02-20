@@ -34,9 +34,11 @@ export function AgentCard({ agent, status }: AgentCardProps) {
 }
 
 function StatusDot({ state }: { state: AgentStatus["state"] }) {
-  const config = {
+  const config: Record<AgentStatus["state"], { color: string; label: string }> = {
     idle: { color: "bg-text-muted", label: "Idle" },
     thinking: { color: "bg-agent-amber animate-pulse", label: "Thinking..." },
+    consulting: { color: "bg-agent-teal animate-pulse", label: "Consulting..." },
+    responding: { color: "bg-agent-green animate-pulse", label: "Responding..." },
     error: { color: "bg-agent-rose", label: "Error" },
   };
   const c = config[state];

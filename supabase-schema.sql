@@ -15,7 +15,7 @@ CREATE TABLE projects (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tasks (Nima creates these from Boss orders)
+-- Tasks (Boss assigns these)
 CREATE TABLE tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -39,7 +39,7 @@ CREATE TABLE chat_turns (
     agent_name TEXT NOT NULL,
     agent_title TEXT NOT NULL,
     content TEXT NOT NULL,
-    turn_type TEXT DEFAULT 'discussion' CHECK (turn_type IN ('proposal', 'critique', 'resolution', 'discussion', 'consultation', 'routing', 'execution', 'boss_command')),
+    turn_type TEXT DEFAULT 'discussion' CHECK (turn_type IN ('proposal', 'critique', 'resolution', 'discussion', 'consultation', 'routing', 'execution', 'boss_command', 'direct', 'direct_command')),
     task_id UUID REFERENCES tasks(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -110,9 +110,23 @@ CREATE TABLE voiceover_metadata (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Agent Memory (stores decisions, learnings, preferences per agent per project)
+CREATE TABLE agent_memory (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    agent_name TEXT NOT NULL,
+    memory_type TEXT NOT NULL CHECK (memory_type IN ('decision', 'task', 'learning', 'preference')),
+    content TEXT NOT NULL,
+    context TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_agent_memory_project ON agent_memory(project_id);
+CREATE INDEX idx_agent_memory_agent ON agent_memory(agent_name);
+
 -- Enable Realtime on key tables
 ALTER PUBLICATION supabase_realtime ADD TABLE chat_turns;
 ALTER PUBLICATION supabase_realtime ADD TABLE god_eye_log;
 ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE ue5_commands;
 ALTER PUBLICATION supabase_realtime ADD TABLE world_state;
+ALTER PUBLICATION supabase_realtime ADD TABLE agent_memory;

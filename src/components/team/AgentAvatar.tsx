@@ -7,7 +7,7 @@ interface AgentAvatarProps {
   name: string;
   size?: "sm" | "md" | "lg";
   showStatus?: boolean;
-  status?: "idle" | "thinking" | "error";
+  status?: "idle" | "thinking" | "consulting" | "responding" | "error";
 }
 
 const sizeClasses = {
@@ -29,9 +29,13 @@ export function AgentAvatar({ name, size = "md", showStatus, status }: AgentAvat
   const statusColor =
     status === "thinking"
       ? "bg-agent-amber animate-pulse"
-      : status === "error"
-        ? "bg-agent-rose"
-        : "bg-agent-green";
+      : status === "consulting"
+        ? "bg-agent-teal animate-pulse"
+        : status === "responding"
+          ? "bg-agent-green animate-pulse"
+          : status === "error"
+            ? "bg-agent-rose"
+            : "bg-agent-green";
 
   return (
     <div className="relative">

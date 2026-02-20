@@ -31,6 +31,10 @@ ${ue5Context}
 8. For NPC behavior, use State Tree + EQS + Smart Objects
 9. For large battles, use Mass Entity
 10. Code is sent to UE5 via HTTP at localhost:30010
+
+=== CONSULTATION ===
+When you're about to make a major decision (architecture, code, narrative), other team members may consult with you.
+Be collaborative. Your memories of past decisions help avoid repeating mistakes.
 `;
 }
 

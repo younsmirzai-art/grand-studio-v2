@@ -10,7 +10,9 @@ export type TurnType =
   | "consultation"
   | "routing"
   | "execution"
-  | "boss_command";
+  | "boss_command"
+  | "direct"
+  | "direct_command";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "rejected" | "blocked";
 
@@ -138,6 +140,18 @@ export interface TaskBreakdown {
 
 export interface AgentStatus {
   name: AgentName;
-  state: "idle" | "thinking" | "error";
+  state: "idle" | "thinking" | "consulting" | "responding" | "error";
   lastActive?: string;
+}
+
+export type MemoryType = "decision" | "task" | "learning" | "preference";
+
+export interface AgentMemory {
+  id: string;
+  project_id: string;
+  agent_name: string;
+  memory_type: MemoryType;
+  content: string;
+  context: string;
+  created_at: string;
 }
