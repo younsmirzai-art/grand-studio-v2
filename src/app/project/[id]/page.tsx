@@ -13,15 +13,29 @@ import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
+import type { ChatTurn } from "@/lib/agents/types";
 
 export default function ProjectPage() {
   const params = useParams();
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
   const { taskBoardVisible } = useUIStore();
-  const { setAutonomousRunning, isAutonomousRunning } = useProjectStore();
+  const { setAutonomousRunning, isAutonomousRunning, setChatTurns } = useProjectStore();
   const [isRunningTurn, setIsRunningTurn] = useState(false);
   const autonomousRef = useRef(false);
+
+  const refetchChat = useCallback(async () => {
+    const supabase = getClient();
+    const { data } = await supabase
+      .from("chat_turns")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true });
+    if (data) {
+      console.log("[ProjectPage] refetched", data.length, "chat turns");
+      setChatTurns(data as ChatTurn[]);
+    }
+  }, [projectId, setChatTurns]);
 
   const sendBossCommand = useCallback(
     async (message: string) => {
@@ -53,12 +67,14 @@ export default function ProjectPage() {
           const err = await res.text();
           toast.error("Agent error: " + err);
         }
+
+        await refetchChat();
       } catch (err) {
         toast.error("Network error communicating with agents");
         console.error(err);
       }
     },
-    [projectId]
+    [projectId, refetchChat]
   );
 
   const runOneTurn = useCallback(async () => {
@@ -72,12 +88,13 @@ export default function ProjectPage() {
       if (!res.ok) {
         toast.error("Failed to run turn");
       }
+      await refetchChat();
     } catch {
       toast.error("Network error");
     } finally {
       setIsRunningTurn(false);
     }
-  }, [projectId]);
+  }, [projectId, refetchChat]);
 
   const startAutonomous = useCallback(() => {
     autonomousRef.current = true;
@@ -95,6 +112,7 @@ export default function ProjectPage() {
           if (!res.ok) break;
 
           const data = await res.json();
+          await refetchChat();
           if (data.done) {
             toast.info("All tasks completed");
             break;

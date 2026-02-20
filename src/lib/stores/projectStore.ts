@@ -66,7 +66,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
     })),
   setChatTurns: (chatTurns) => set({ chatTurns }),
-  addChatTurn: (turn) => set((s) => ({ chatTurns: [...s.chatTurns, turn] })),
+  addChatTurn: (turn) =>
+    set((s) => {
+      if (s.chatTurns.some((t) => t.id === turn.id)) return s;
+      return { chatTurns: [...s.chatTurns, turn] };
+    }),
   setGodEyeLog: (godEyeLog) => set({ godEyeLog }),
   addGodEyeEntry: (entry) =>
     set((s) => ({
