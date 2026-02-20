@@ -29,6 +29,17 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Stripe billing
+
+Pricing tiers (Starter free, Pro $29/mo, Studio $99/mo, Enterprise $299/mo) use Stripe Checkout.
+
+1. In [Stripe Dashboard](https://dashboard.stripe.com/products) create three Products with recurring Prices (monthly): Pro $29, Studio $99, Enterprise $299.
+2. Copy each Price ID (e.g. `price_xxx`) and set in `.env.local`:
+   - `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+   - `STRIPE_PRICE_ID_PRO`, `STRIPE_PRICE_ID_STUDIO`, `STRIPE_PRICE_ID_ENTERPRISE`
+3. For production webhooks: Stripe Dashboard → Developers → Webhooks → Add endpoint → `https://your-domain.com/api/stripe/webhook`, events `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`. Set `STRIPE_WEBHOOK_SECRET` in Vercel.
+4. Run `supabase-migration-subscriptions.sql` in Supabase so subscription records are stored.
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

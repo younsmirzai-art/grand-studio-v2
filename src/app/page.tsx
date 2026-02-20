@@ -38,22 +38,33 @@ const TIERS = [
     name: "Starter",
     price: "Free",
     period: "",
-    features: ["1 project", "50 messages/day", "3 agents active", "Community support"],
+    features: ["1 project", "50 messages/day", "Basic agents", "Community support"],
     highlighted: false,
+    tierId: null as string | null,
   },
   {
     name: "Pro",
     price: "$29",
     period: "/month",
-    features: ["Unlimited projects", "Unlimited messages", "All 5 agents", "Priority AI models", "UE5 code execution", "Email support"],
+    features: ["Unlimited projects", "Unlimited messages", "All 5 agents", "UE5 code execution", "Pixel Streaming", "Email support"],
     highlighted: true,
+    tierId: "pro",
   },
   {
     name: "Studio",
     price: "$99",
     period: "/month",
-    features: ["Everything in Pro", "Custom agents", "Team collaboration", "Priority support", "API access", "Advanced analytics"],
+    features: ["Everything in Pro", "Custom agents", "Team collaboration", "Priority AI models", "API access", "Advanced analytics"],
     highlighted: false,
+    tierId: "studio",
+  },
+  {
+    name: "Enterprise",
+    price: "$299",
+    period: "/month",
+    features: ["Dedicated cloud UE5", "SLA", "Custom integrations", "Priority support", "Dedicated success manager"],
+    highlighted: false,
+    tierId: "enterprise",
   },
 ];
 
@@ -63,6 +74,7 @@ export default function HomePage() {
   const [showNewProject, setShowNewProject] = useState(false);
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [waitlistLoading, setWaitlistLoading] = useState(false);
+  const [checkoutTier, setCheckoutTier] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -103,6 +115,31 @@ export default function HomePage() {
       setWaitlistLoading(false);
     }
   }, [waitlistEmail, waitlistLoading]);
+
+  const handleCheckout = useCallback(
+    async (tierId: string) => {
+      if (checkoutTier) return;
+      setCheckoutTier(tierId);
+      try {
+        const res = await fetch("/api/stripe/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tier: tierId }),
+        });
+        const data = await res.json();
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+        toast.error(data.error ?? "Checkout failed");
+      } catch {
+        toast.error("Network error");
+      } finally {
+        setCheckoutTier(null);
+      }
+    },
+    [checkoutTier]
+  );
 
   return (
     <div className="min-h-screen bg-boss-bg overflow-x-hidden">
@@ -360,11 +397,11 @@ export default function HomePage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             {TIERS.map((tier) => (
               <div
                 key={tier.name}
-                className={`relative rounded-2xl border p-8 ${
+                className={`relative rounded-2xl border p-6 ${
                   tier.highlighted
                     ? "border-gold/40 bg-boss-card pricing-popular"
                     : "border-boss-border bg-boss-card/60"
@@ -375,9 +412,6 @@ export default function HomePage() {
                     Most Popular
                   </div>
                 )}
-                <div className="absolute top-4 right-4 px-2 py-0.5 rounded-full bg-agent-amber/10 text-agent-amber text-[10px] font-semibold">
-                  Coming Soon
-                </div>
 
                 <h3 className="text-xl font-bold text-text-primary mb-2">{tier.name}</h3>
                 <div className="flex items-baseline gap-1 mb-6">
@@ -394,17 +428,32 @@ export default function HomePage() {
                   ))}
                 </ul>
 
-                <Button
-                  variant={tier.highlighted ? "default" : "outline"}
-                  className={`w-full ${
-                    tier.highlighted
-                      ? "bg-gold hover:bg-gold/90 text-boss-bg font-semibold"
-                      : "border-boss-border text-text-secondary hover:text-text-primary"
-                  }`}
-                  disabled
-                >
-                  Coming Soon
-                </Button>
+                {tier.tierId ? (
+                  <Button
+                    variant={tier.highlighted ? "default" : "outline"}
+                    className={`w-full ${
+                      tier.highlighted
+                        ? "bg-gold hover:bg-gold/90 text-boss-bg font-semibold"
+                        : "border-boss-border text-text-secondary hover:text-text-primary"
+                    }`}
+                    disabled={!!checkoutTier}
+                    onClick={() => handleCheckout(tier.tierId!)}
+                  >
+                    {checkoutTier === tier.tierId ? (
+                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                    ) : (
+                      `Get ${tier.name}`
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full border-boss-border text-text-muted cursor-default"
+                    disabled
+                  >
+                    Current plan
+                  </Button>
+                )}
               </div>
             ))}
           </div>
