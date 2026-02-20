@@ -26,6 +26,7 @@ export type GodEyeEventType =
   | "turn"
   | "boss"
   | "execution"
+  | "screenshot"
   | "error"
   | "routing";
 
@@ -76,6 +77,7 @@ export interface ChatTurn {
   turn_type: TurnType;
   task_id: string | null;
   created_at: string;
+  screenshot_url?: string | null;
 }
 
 export interface Decision {
@@ -104,6 +106,7 @@ export interface UE5Command {
   error_log: string;
   created_at: string;
   executed_at: string | null;
+  screenshot_url?: string | null;
 }
 
 export interface WorldStateEntity {

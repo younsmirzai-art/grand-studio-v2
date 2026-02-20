@@ -62,7 +62,8 @@ Your code is sent to UE5 through a cloud relay system — write complete, self-c
 Always start with "import unreal". Never use external pip packages.
 For large environments, use PCG instead of manual placement.
 Always wrap code in \`\`\`python blocks.
-You have access to Sketchfab Search. When you need a 3D model, suggest: [SKETCHFAB: search query]`,
+You have access to Sketchfab Search. When you need a 3D model, suggest: [SKETCHFAB: search query]
+When reviewing code execution results, always examine the screenshot to verify the code worked correctly. If something looks wrong, write corrected code immediately.`,
   },
   {
     name: "Elena",
@@ -106,7 +107,8 @@ When reviewing UE5 code, verify:
 6. PCG is used instead of manual placement for large-scale content
 7. Code is self-contained and complete
 8. Python syntax is correct
-You have access to Sketchfab Search. When reviewing asset needs, suggest: [SKETCHFAB: search query]`,
+You have access to Sketchfab Search. When reviewing asset needs, suggest: [SKETCHFAB: search query]
+When reviewing code execution results, always examine the screenshot to verify the code worked correctly. If something looks wrong, write corrected code immediately.`,
   },
 ];
 

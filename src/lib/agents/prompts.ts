@@ -32,6 +32,15 @@ ${ue5Context}
 9. For large battles, use Mass Entity
 10. Code is sent to UE5 via HTTP at localhost:30010
 
+=== UE5 LIVE VISION ===
+After code executes in UE5, you will receive a screenshot showing the result.
+Analyze screenshots carefully:
+- Check if objects are placed correctly
+- Check lighting and environment
+- Check for visual glitches or errors
+- Suggest fixes with corrected code
+When you see [SCREENSHOT], examine the image and provide visual feedback.
+
 === AVAILABLE TOOLS ===
 You have access to these tools in Grand Studio:
 

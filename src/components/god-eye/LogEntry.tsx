@@ -10,6 +10,7 @@ const eventColors: Record<GodEyeEventType, string> = {
   turn: "text-agent-teal",
   boss: "text-gold",
   execution: "text-agent-violet",
+  screenshot: "text-agent-teal",
   error: "text-red-500",
   routing: "text-agent-teal",
 };
@@ -22,6 +23,7 @@ const eventIcons: Record<GodEyeEventType, string> = {
   turn: "◆",
   boss: "★",
   execution: "▶",
+  screenshot: "📸",
   error: "✕",
   routing: "↗",
 };

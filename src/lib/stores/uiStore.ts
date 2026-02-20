@@ -5,6 +5,7 @@ interface UIState {
   godEyeExpanded: boolean;
   taskBoardVisible: boolean;
   ue5ConsoleVisible: boolean;
+  liveViewVisible: boolean;
   activeTab: "chat" | "tasks" | "world" | "lore";
   godEyeFilter: string | null;
   sketchfabModalOpen: boolean;
@@ -16,6 +17,7 @@ interface UIState {
   setGodEyeExpanded: (expanded: boolean) => void;
   setTaskBoardVisible: (visible: boolean) => void;
   setUE5ConsoleVisible: (visible: boolean) => void;
+  setLiveViewVisible: (visible: boolean) => void;
   setActiveTab: (tab: UIState["activeTab"]) => void;
   setGodEyeFilter: (filter: string | null) => void;
   setSketchfabModalOpen: (open: boolean) => void;
@@ -27,6 +29,7 @@ export const useUIStore = create<UIState>((set) => ({
   godEyeExpanded: false,
   taskBoardVisible: false,
   ue5ConsoleVisible: false,
+  liveViewVisible: false,
   activeTab: "chat",
   godEyeFilter: null,
   sketchfabModalOpen: false,
@@ -38,6 +41,7 @@ export const useUIStore = create<UIState>((set) => ({
   setGodEyeExpanded: (godEyeExpanded) => set({ godEyeExpanded }),
   setTaskBoardVisible: (taskBoardVisible) => set({ taskBoardVisible }),
   setUE5ConsoleVisible: (ue5ConsoleVisible) => set({ ue5ConsoleVisible }),
+  setLiveViewVisible: (liveViewVisible) => set({ liveViewVisible }),
   setActiveTab: (activeTab) => set({ activeTab }),
   setGodEyeFilter: (godEyeFilter) => set({ godEyeFilter }),
   setSketchfabModalOpen: (sketchfabModalOpen) => set({ sketchfabModalOpen }),

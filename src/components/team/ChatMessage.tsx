@@ -1,11 +1,13 @@
 "use client";
 
 import { memo, useState } from "react";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Play, Copy, Check } from "lucide-react";
 import { AgentAvatar, AgentNameBadge } from "./AgentAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScreenshotPreview } from "@/components/chat/ScreenshotPreview";
 import type { ChatTurn, TurnType } from "@/lib/agents/types";
 import { getAgent } from "@/lib/agents/identity";
 
@@ -67,6 +69,8 @@ function renderTextContent(text: string): React.ReactNode {
 }
 
 function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
+  const params = useParams();
+  const projectId = params?.id as string | undefined;
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const isBoss = turn.turn_type === "boss_command" || turn.turn_type === "direct_command";
   const isDirect = turn.turn_type === "direct" || turn.turn_type === "direct_command";
@@ -122,7 +126,15 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
             </span>
           </div>
 
-          <div className="text-sm text-text-primary/90 leading-relaxed">
+          <div className="text-sm text-text-primary/90 leading-relaxed space-y-2">
+            {turn.screenshot_url && (
+              <ScreenshotPreview
+                url={turn.screenshot_url}
+                timestamp={turn.created_at}
+                success={turn.turn_type === "execution"}
+                projectId={projectId}
+              />
+            )}
             {parts.map((part, i) => {
               if (part.type === "code") {
                 const isPython = part.lang === "python";

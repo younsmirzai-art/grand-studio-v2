@@ -10,6 +10,7 @@ import { ControlPanel } from "@/components/boss/ControlPanel";
 import { TeamChat } from "@/components/team/TeamChat";
 import { GodEyePanel } from "@/components/god-eye/GodEyePanel";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { LiveViewPanel } from "@/components/ue5/LiveViewPanel";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
@@ -229,6 +230,26 @@ export default function ProjectPage() {
     [projectId]
   );
 
+  const handleCaptureNow = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ue5/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Screenshot requested. Relay will capture when ready.");
+      } else {
+        toast.error(data.error ?? "Capture failed");
+      }
+    } catch {
+      toast.error("Capture failed");
+    }
+  }, [projectId]);
+
+  const { liveViewVisible } = useUIStore();
+
   return (
     <>
       <Header projectName={project?.name ?? "Loading..."} />
@@ -240,6 +261,7 @@ export default function ProjectPage() {
               onStartAutonomous={startAutonomous}
               onStopAutonomous={stopAutonomous}
               isRunningTurn={isRunningTurn}
+              onCaptureNow={handleCaptureNow}
             />
           </div>
 
@@ -262,6 +284,9 @@ export default function ProjectPage() {
 
         <AnimatePresence>
           {taskBoardVisible && <TaskBoard />}
+        </AnimatePresence>
+        <AnimatePresence>
+          {liveViewVisible && <LiveViewPanel />}
         </AnimatePresence>
       </div>
     </>

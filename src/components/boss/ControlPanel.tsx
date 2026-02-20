@@ -1,15 +1,17 @@
 "use client";
 
-import { Play, Square, SkipForward, Loader2 } from "lucide-react";
+import { Play, Square, SkipForward, Loader2, Camera, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { useUIStore } from "@/lib/stores/uiStore";
 
 interface ControlPanelProps {
   onRunOneTurn: () => Promise<void>;
   onStartAutonomous: () => void;
   onStopAutonomous: () => void;
   isRunningTurn: boolean;
+  onCaptureNow?: () => void;
 }
 
 export function ControlPanel({
@@ -17,8 +19,10 @@ export function ControlPanel({
   onStartAutonomous,
   onStopAutonomous,
   isRunningTurn,
+  onCaptureNow,
 }: ControlPanelProps) {
   const isAutonomous = useProjectStore((s) => s.isAutonomousRunning);
+  const { liveViewVisible, setLiveViewVisible } = useUIStore();
 
   return (
     <div className="flex items-center gap-2">
@@ -78,6 +82,38 @@ export function ControlPanel({
           <div className={`w-2 h-2 rounded-full ${isAutonomous ? "bg-agent-green animate-pulse" : "bg-text-muted"}`} />
         </TooltipTrigger>
         <TooltipContent>{isAutonomous ? "Autonomous mode active" : "Idle"}</TooltipContent>
+      </Tooltip>
+
+      {onCaptureNow && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onCaptureNow}
+              className="border-boss-border hover:border-agent-teal/50 text-text-secondary hover:text-agent-teal gap-1.5"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              Capture
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Take UE5 viewport screenshot</TooltipContent>
+        </Tooltip>
+      )}
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant={liveViewVisible ? "secondary" : "ghost"}
+            onClick={() => setLiveViewVisible(!liveViewVisible)}
+            className="gap-1.5 text-text-secondary"
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            Live View
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Toggle Live View panel</TooltipContent>
       </Tooltip>
     </div>
   );
