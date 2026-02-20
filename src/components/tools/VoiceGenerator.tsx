@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Mic, Play, Loader2 } from "lucide-react";
+import { Mic, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ interface VoiceGeneratorProps {
   projectId: string;
 }
 
-export function VoiceGenerator({ projectId }: VoiceGeneratorProps) {
+export function VoiceGenerator({}: VoiceGeneratorProps) {
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState("21m00Tcm4TlvDq8ikWAM");
   const [generating, setGenerating] = useState(false);

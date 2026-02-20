@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Square, SkipForward, Zap, Loader2 } from "lucide-react";
+import { Play, Square, SkipForward, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectStore } from "@/lib/stores/projectStore";

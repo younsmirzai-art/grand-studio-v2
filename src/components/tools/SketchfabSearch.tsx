@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, ExternalLink, Loader2, Box } from "lucide-react";
+import { Search, Loader2, Box } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -72,6 +72,7 @@ export function SketchfabSearch() {
                 className="group block bg-boss-surface rounded-lg overflow-hidden border border-boss-border hover:border-agent-teal/30 transition-colors"
               >
                 {r.thumbnails?.images?.[0]?.url && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img
                     src={r.thumbnails.images[0].url}
                     alt={r.name}

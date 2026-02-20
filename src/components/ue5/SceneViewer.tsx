@@ -64,6 +64,7 @@ export function SceneViewer({ projectId }: SceneViewerProps) {
 
         {imageUrl ? (
           <div className="space-y-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl}
               alt="UE5 Screenshot"

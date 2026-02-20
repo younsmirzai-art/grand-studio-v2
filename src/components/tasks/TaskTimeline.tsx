@@ -27,7 +27,7 @@ export function TaskTimeline() {
     <div className="relative">
       <div className="absolute left-4 top-0 bottom-0 w-px bg-boss-border" />
       <div className="space-y-3">
-        {tasks.map((task, i) => (
+        {tasks.map((task) => (
           <div key={task.id} className="relative flex items-start gap-3 pl-8">
             <div className="absolute left-[11px] top-2 w-2.5 h-2.5 rounded-full bg-boss-card border border-boss-border flex items-center justify-center">
               <div

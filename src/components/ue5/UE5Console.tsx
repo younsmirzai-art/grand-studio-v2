@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { UE5_SERVER_CONFIG } from "@/lib/ue5/plugin-registry";
 import { toast } from "sonner";

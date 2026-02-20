@@ -1,6 +1,6 @@
 "use client";
 
-import { Crown, PanelLeftClose, PanelLeft, LayoutDashboard, ListTodo } from "lucide-react";
+import { Crown, PanelLeftClose, PanelLeft, ListTodo } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUIStore } from "@/lib/stores/uiStore";
