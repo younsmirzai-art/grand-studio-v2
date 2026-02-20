@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Crown, Loader2 } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Crown, Loader2, Mic } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/agents/types";
+import { startListening, normalizeAtMention } from "@/lib/voice/speechRecognition";
 
 interface ProjectStarterProps {
   open: boolean;
@@ -24,6 +25,57 @@ export function ProjectStarter({ open, onClose, onCreated }: ProjectStarterProps
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<ReturnType<typeof startListening> | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+      recognitionRef.current = null;
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopListening();
+    };
+  }, [stopListening]);
+
+  const toggleVoice = useCallback(() => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    if (loading) return;
+
+    recognitionRef.current = startListening(
+      (text) => {
+        stopListening();
+        setPrompt((prev) => {
+          const next = normalizeAtMention(text);
+          return prev ? `${prev} ${next}` : next;
+        });
+      },
+      () => {
+        stopListening();
+      }
+    );
+
+    if (recognitionRef.current) {
+      setIsListening(true);
+      silenceTimerRef.current = setTimeout(stopListening, 10000);
+    }
+  }, [isListening, loading, stopListening]);
 
   const handleCreate = async () => {
     if (!name.trim() || !prompt.trim()) return;
@@ -76,9 +128,29 @@ export function ProjectStarter({ open, onClose, onCreated }: ProjectStarterProps
           </div>
 
           <div>
-            <label className="text-sm text-text-secondary mb-1.5 block">
-              Initial Command for the Team
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm text-text-secondary">
+                Initial Command for the Team
+              </label>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={toggleVoice}
+                disabled={loading}
+                className={`h-7 w-7 p-0 rounded-full ${
+                  isListening
+                    ? "bg-red-500/20 text-red-500 animate-pulse"
+                    : "text-text-muted hover:text-text-primary"
+                }`}
+                title={isListening ? "Stop listening" : "Voice input"}
+              >
+                <Mic className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+            {isListening && (
+              <p className="text-[11px] text-red-500 mb-1">🔴 Listening…</p>
+            )}
             <Textarea
               placeholder="Describe what you want to build. Be as detailed as possible — your AI team will break this down into tasks."
               value={prompt}
