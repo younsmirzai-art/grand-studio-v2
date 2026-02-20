@@ -10,7 +10,9 @@ import { ControlPanel } from "@/components/boss/ControlPanel";
 import { TeamChat } from "@/components/team/TeamChat";
 import { GodEyePanel } from "@/components/god-eye/GodEyePanel";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
-import { LiveViewPanel } from "@/components/ue5/LiveViewPanel";
+import LiveViewport from "@/components/tools/LiveViewport";
+import PixelStreamingViewer from "@/components/tools/PixelStreamingViewer";
+import Link from "next/link";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
@@ -55,8 +57,10 @@ export default function ProjectPage() {
   const router = useRouter();
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
-  const { taskBoardVisible, setLiveViewVisible, liveViewVisible } = useUIStore();
-  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused } = useProjectStore();
+  const { taskBoardVisible, setLiveViewVisible, liveViewVisible, pipViewportVisible, setPipViewportVisible } = useUIStore();
+  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected } = useProjectStore();
+  const [pixelStreamingUrl, setPixelStreamingUrl] = useState<string | null>(null);
+  const [pixelStreamingConnected, setPixelStreamingConnected] = useState(false);
   const [isRunningTurn, setIsRunningTurn] = useState(false);
   const [typingAgents, setTypingAgents] = useState<string[]>([]);
   const [fullProjectDialogOpen, setFullProjectDialogOpen] = useState(false);
@@ -67,6 +71,21 @@ export default function ProjectPage() {
   const autonomousRef = useRef(false);
   const autoBuildStartedRef = useRef(false);
   const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
+
+  useEffect(() => {
+    const supabase = getClient();
+    supabase
+      .from("project_settings")
+      .select("pixel_streaming_url, pixel_streaming_connected")
+      .eq("project_id", projectId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setPixelStreamingUrl(data.pixel_streaming_url ?? null);
+          setPixelStreamingConnected(data.pixel_streaming_connected === true);
+        }
+      });
+  }, [projectId]);
 
   const refetchChat = useCallback(async () => {
     const supabase = getClient();
@@ -353,6 +372,7 @@ export default function ProjectPage() {
     }
     setFullProjectDialogOpen(false);
     setFullProjectRunning(true);
+    setPipViewportVisible(true);
     const prompt = fullProjectPrompt.trim();
     setFullProjectPrompt("");
     try {
@@ -375,7 +395,7 @@ export default function ProjectPage() {
       setFullProjectPaused(false);
       await refetchChat();
     }
-  }, [projectId, fullProjectPrompt, setFullProjectRunning, setFullProjectPaused, refetchChat]);
+  }, [projectId, fullProjectPrompt, setFullProjectRunning, setFullProjectPaused, setPipViewportVisible, refetchChat]);
 
   const handleFullProjectPause = useCallback(async () => {
     try {
@@ -470,7 +490,21 @@ export default function ProjectPage() {
                 </div>
               </div>
               <div className="flex-[0.4] flex flex-col min-w-0 bg-boss-bg">
-                <LiveViewPanel embedded />
+                {pixelStreamingConnected || isRelayConnected ? (
+                  <PixelStreamingViewer
+                    projectId={projectId}
+                    signalingUrl={pixelStreamingUrl}
+                    isConnected={pixelStreamingConnected}
+                    refreshInterval={5}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-6 text-center text-text-muted text-sm">
+                    <p>Connect UE5 to see the viewport</p>
+                    <Link href={`/project/${projectId}/settings`} className="text-agent-teal hover:underline text-xs mt-2">
+                      Pixel Streaming setup
+                    </Link>
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -506,8 +540,42 @@ export default function ProjectPage() {
           </AnimatePresence>
           {!showBuildingView && (
             <AnimatePresence>
-              {liveViewVisible && <LiveViewPanel />}
+              {liveViewVisible && (
+                <div className="shrink-0 border-l border-boss-border w-[360px] flex flex-col overflow-hidden">
+                  {pixelStreamingConnected || isRelayConnected ? (
+                    <PixelStreamingViewer
+                      projectId={projectId}
+                      signalingUrl={pixelStreamingUrl}
+                      isConnected={pixelStreamingConnected}
+                      refreshInterval={5}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-text-muted text-sm">
+                      <p className="mb-2">Connect UE5 to see the viewport</p>
+                      <p className="text-xs mb-3">Run the relay and open this project in UE5, or set up Pixel Streaming.</p>
+                      <Link
+                        href={`/project/${projectId}/settings`}
+                        className="text-agent-teal hover:underline text-xs"
+                      >
+                        Connect UE5 / Pixel Streaming setup
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
             </AnimatePresence>
+          )}
+          {pipViewportVisible && (
+            <LiveViewport
+              projectId={projectId}
+              refreshInterval={5}
+              pipMode
+              onExpandFromPiP={() => {
+                setPipViewportVisible(false);
+                setLiveViewVisible(true);
+              }}
+              onClosePiP={() => setPipViewportVisible(false)}
+            />
           )}
         </div>
 

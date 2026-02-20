@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { TEAM } from "@/lib/agents/identity";
 import { gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
+import { PixelStreamingSetup } from "@/components/tools/PixelStreamingSetup";
 
 const GENRES = ["Action", "RPG", "FPS", "Open World", "Platformer", "Puzzle", "Strategy", "Other"];
 const PLATFORMS = ["PC", "Console", "Mobile", "Multi-platform"];
@@ -26,6 +27,8 @@ interface ProjectSettings {
   active_agents: string[];
   ue5_host: string;
   debug_mode_auto: boolean;
+  pixel_streaming_url: string;
+  pixel_streaming_connected: boolean;
 }
 
 export default function ProjectSettingsPage() {
@@ -46,10 +49,14 @@ export default function ProjectSettingsPage() {
     active_agents: TEAM.map((a) => a.name.toLowerCase()),
     ue5_host: "localhost:30010",
     debug_mode_auto: true,
+    pixel_streaming_url: "ws://localhost:8888",
+    pixel_streaming_connected: false,
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [gameStyleApplying, setGameStyleApplying] = useState(false);
+  const [pixelStreamingSetupOpen, setPixelStreamingSetupOpen] = useState(false);
+  const [testingPixelStreaming, setTestingPixelStreaming] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -75,6 +82,8 @@ export default function ProjectSettingsPage() {
           active_agents: data.active_agents ?? TEAM.map((a) => a.name.toLowerCase()),
           ue5_host: data.ue5_host ?? "localhost:30010",
           debug_mode_auto: data.debug_mode_auto !== false,
+          pixel_streaming_url: data.pixel_streaming_url ?? "ws://localhost:8888",
+          pixel_streaming_connected: data.pixel_streaming_connected === true,
         });
       }
       setLoading(false);
@@ -107,6 +116,8 @@ export default function ProjectSettingsPage() {
         active_agents: settings.active_agents,
         ue5_host: settings.ue5_host,
         debug_mode_auto: settings.debug_mode_auto,
+        pixel_streaming_url: settings.pixel_streaming_url,
+        pixel_streaming_connected: settings.pixel_streaming_connected,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "project_id" }
@@ -325,6 +336,75 @@ export default function ProjectSettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* UE5 Pixel Streaming */}
+        <section>
+          <h3 className="text-sm font-semibold text-text-primary mb-3">UE5 Pixel Streaming</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-text-secondary mb-1 block">Signaling Server URL</label>
+              <Input
+                value={settings.pixel_streaming_url}
+                onChange={(e) => setSettings((s) => ({ ...s, pixel_streaming_url: e.target.value }))}
+                placeholder="ws://localhost:8888"
+                className="bg-boss-card border-boss-border text-text-primary font-mono text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testingPixelStreaming}
+                onClick={async () => {
+                  setTestingPixelStreaming(true);
+                  try {
+                    const res = await fetch("/api/tools/pixel-streaming-test", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ url: settings.pixel_streaming_url }),
+                    });
+                    const data = await res.json();
+                    const connected = data.connected === true;
+                    setSettings((s) => ({ ...s, pixel_streaming_connected: connected }));
+                    const supabase = getClient();
+                    await supabase.from("project_settings").upsert(
+                      {
+                        project_id: projectId,
+                        pixel_streaming_connected: connected,
+                        updated_at: new Date().toISOString(),
+                      },
+                      { onConflict: "project_id" }
+                    );
+                    if (connected) toast.success("Pixel Streaming connected");
+                    else toast.info("Could not connect. Ensure UE5 is running with Pixel Streaming.");
+                  } catch {
+                    setSettings((s) => ({ ...s, pixel_streaming_connected: false }));
+                    toast.error("Test failed");
+                  } finally {
+                    setTestingPixelStreaming(false);
+                  }
+                }}
+                className="border-boss-border"
+              >
+                {testingPixelStreaming ? "Testing…" : "Test Connection"}
+              </Button>
+              <span className={`text-xs ${settings.pixel_streaming_connected ? "text-agent-green" : "text-text-muted"}`}>
+                Status: {settings.pixel_streaming_connected ? "Connected" : "Disconnected"}
+              </span>
+            </div>
+            <p className="text-xs text-text-muted">
+              <button
+                type="button"
+                onClick={() => setPixelStreamingSetupOpen(true)}
+                className="text-agent-teal hover:underline"
+              >
+                How to set up Pixel Streaming
+              </button>
+            </p>
+          </div>
+        </section>
+
+        <PixelStreamingSetup open={pixelStreamingSetupOpen} onOpenChange={setPixelStreamingSetupOpen} />
 
         {/* API */}
         <section>

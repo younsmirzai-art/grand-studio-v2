@@ -205,6 +205,15 @@ export async function sendToUE5AndWait(projectId: string, code: string, agentNam
   return { success: false, commandId, error: "Execution timeout" };
 }
 
+function triggerCapture(projectId: string): void {
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  fetch(`${baseUrl}/api/ue5/capture`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  }).catch(() => {});
+}
+
 async function sendToAgentWithTimeout(projectId: string, agentName: AgentName, taskDescription: string): Promise<string> {
   const agent = getAgent(agentName);
   if (!agent) throw new Error(`Agent ${agentName} not found`);
@@ -369,6 +378,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
           success = true;
           completed++;
           await insertProgressChat(projectId, `✅ Task ${i + 1}/${tasks.length}: Complete!`);
+          triggerCapture(projectId);
         } else {
           lastError = ue5Result.error;
           task.retries = attempt + 1;
@@ -385,6 +395,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
               task.result = quickResult.result;
               success = true;
               completed++;
+              triggerCapture(projectId);
               break;
             }
           }
@@ -404,6 +415,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
             success = true;
             completed++;
             await insertProgressChat(projectId, `✅ Task ${i + 1}/${tasks.length}: Fixed by Morgan!`);
+            triggerCapture(projectId);
             break;
           }
 

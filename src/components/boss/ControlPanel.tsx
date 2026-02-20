@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Square, SkipForward, Loader2, Camera, Monitor, Rocket, Pause, SquareStop } from "lucide-react";
+import { Play, Square, SkipForward, Loader2, Camera, Monitor, Rocket, Pause, SquareStop, PictureInPicture2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -32,7 +32,7 @@ export function ControlPanel({
   const isAutonomous = useProjectStore((s) => s.isAutonomousRunning);
   const isFullProject = useProjectStore((s) => s.isFullProjectRunning);
   const isFullProjectPaused = useProjectStore((s) => s.isFullProjectPaused);
-  const { liveViewVisible, setLiveViewVisible } = useUIStore();
+  const { liveViewVisible, setLiveViewVisible, pipViewportVisible, setPipViewportVisible } = useUIStore();
 
   return (
     <div className="flex items-center gap-2">
@@ -169,6 +169,20 @@ export function ControlPanel({
         </Tooltip>
       )}
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant={pipViewportVisible ? "secondary" : "ghost"}
+            onClick={() => setPipViewportVisible(!pipViewportVisible)}
+            className="gap-1.5 text-text-secondary"
+          >
+            <PictureInPicture2 className="w-3.5 h-3.5" />
+            PiP View
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Floating viewport in corner; watch UE5 while chatting</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
