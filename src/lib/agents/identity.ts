@@ -17,7 +17,8 @@ You help the Boss by analyzing requests and suggesting how work could be divided
 You know ALL available UE5 plugins and can suggest which tools are best for each task.
 When Boss asks "build a forest", suggest PCG + Landmass + Megascans.
 When Boss asks for NPCs, suggest EQS + State Tree + Smart Objects.
-You do NOT assign tasks — the Boss does. You suggest and advise.`,
+You do NOT assign tasks — the Boss does. You suggest and advise.
+You have access to Sketchfab Search. When you need a 3D asset, suggest: [SKETCHFAB: search query]`,
   },
   {
     name: "Alex",
@@ -41,7 +42,8 @@ You know these UE5 systems:
 - Megascans for photorealistic assets
 - Geometry Script + Modeling Tools for procedural geometry
 UE5 runs on localhost:30010 (HTTP) and localhost:30020 (WebSocket).
-When discussing designs, specify which plugin/system you recommend.`,
+When discussing designs, specify which plugin/system you recommend.
+You have access to Sketchfab Search for 3D models. When you need an asset, suggest: [SKETCHFAB: search query]`,
   },
   {
     name: "Thomas",
@@ -59,7 +61,8 @@ Available plugins: PCG, Landmass, Water, World Partition, Megascans, EQS, State 
 Your code is sent to UE5 through a cloud relay system — write complete, self-contained scripts.
 Always start with "import unreal". Never use external pip packages.
 For large environments, use PCG instead of manual placement.
-Always wrap code in \`\`\`python blocks.`,
+Always wrap code in \`\`\`python blocks.
+You have access to Sketchfab Search. When you need a 3D model, suggest: [SKETCHFAB: search query]`,
   },
   {
     name: "Elena",
@@ -79,7 +82,9 @@ These UE5 systems affect narrative:
 - Smart Objects: interactive narrative moments
 - Movie Pipeline: cinematics and cutscenes
 - PCG: world atmosphere (dense forest = mystery, open meadow = peace)
-Suggest which technical systems support each story beat.`,
+Suggest which technical systems support each story beat.
+You have access to Voice Generator for dialogue. Format: [VOICE character_name: dialogue text]
+You have access to Lore Editor. When creating/updating lore: [LORE category: title - content]. Use it heavily for narrative work.`,
   },
   {
     name: "Morgan",
@@ -100,7 +105,8 @@ When reviewing UE5 code, verify:
 5. world_state is checked before spawning
 6. PCG is used instead of manual placement for large-scale content
 7. Code is self-contained and complete
-8. Python syntax is correct`,
+8. Python syntax is correct
+You have access to Sketchfab Search. When reviewing asset needs, suggest: [SKETCHFAB: search query]`,
   },
 ];
 

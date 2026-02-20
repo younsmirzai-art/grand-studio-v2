@@ -9,7 +9,7 @@ import { AgentCard } from "@/components/team/AgentCard";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { toast } from "sonner";
+import { useUIStore } from "@/lib/stores/uiStore";
 
 interface SidebarProps {
   projectName?: string;
@@ -21,11 +21,8 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const agentStatuses = useProjectStore((s) => s.agentStatuses);
   const params = useParams();
   const projectId = params?.id as string | undefined;
-  const toolActions: Record<string, () => void> = {
-    "Sketchfab Search": () => toast.info("Sketchfab Search — coming soon"),
-    "Voice Generator": () => toast.info("Voice Generator — coming soon"),
-    "Lore Editor": () => toast.info("Lore Editor — coming soon"),
-  };
+  const setSketchfabModalOpen = useUIStore((s) => s.setSketchfabModalOpen);
+  const setVoiceModalOpen = useUIStore((s) => s.setVoiceModalOpen);
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-boss-surface border-r border-boss-border shrink-0">
@@ -104,22 +101,36 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
           Tools
         </p>
         <div className="space-y-0.5">
-          {[
-            { icon: Globe, label: "Sketchfab Search" },
-            { icon: Mic, label: "Voice Generator" },
-            { icon: BookOpen, label: "Lore Editor" },
-          ].map(({ icon: Icon, label }) => (
-            <Button
-              key={label}
-              variant="ghost"
-              size="sm"
-              onClick={() => toolActions[label]?.()}
-              className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </Button>
-          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSketchfabModalOpen(true)}
+            className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Sketchfab Search
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setVoiceModalOpen(true)}
+            className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+          >
+            <Mic className="w-3.5 h-3.5" />
+            Voice Generator
+          </Button>
+          {projectId && (
+            <Link href={`/project/${projectId}/lore`}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Lore Editor
+              </Button>
+            </Link>
+          )}
           {projectId && (
             <Link href={`/project/${projectId}/settings`}>
               <Button

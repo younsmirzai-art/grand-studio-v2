@@ -5,6 +5,7 @@ import { buildConsultationPrompt } from "./prompts";
 import type { ChatMessage, ChatTurn, AgentName } from "./types";
 import { getMemories, extractAndSaveMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
 import { shouldAutoConsult, startConsultation } from "./consultation";
+import { triggerSketchfabFromResponse } from "@/lib/tools/sketchfab-trigger";
 
 async function logGodEye(
   projectId: string,
@@ -126,6 +127,7 @@ Be concise. Address the Boss directly. Discuss what YOU could contribute if aske
       if (should) {
         await startConsultation(projectId, agent.name as AgentName, topic, response.slice(0, 1000), context);
       }
+      await triggerSketchfabFromResponse(projectId, response);
     } catch (err) {
       await logGodEye(projectId, "error", agent.name, `API call failed: ${String(err)}`);
       await saveChatTurn(

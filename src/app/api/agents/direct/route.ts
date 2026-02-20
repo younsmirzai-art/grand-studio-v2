@@ -6,6 +6,7 @@ import type { ChatMessage, ChatTurn, AgentName } from "@/lib/agents/types";
 import { getMemories, extractAndSaveMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
 import { shouldAutoConsult, startConsultation } from "@/lib/agents/consultation";
 import { buildUE5CapabilitiesContext } from "@/lib/ue5/plugin-registry";
+import { triggerSketchfabFromResponse } from "@/lib/tools/sketchfab-trigger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -94,6 +95,7 @@ Boss says: "${message}"`;
     if (should) {
       await startConsultation(projectId, agent.name as AgentName, topic, response.slice(0, 1000), context);
     }
+    await triggerSketchfabFromResponse(projectId, response);
 
     return NextResponse.json({ success: true, response });
   } catch (error: unknown) {

@@ -13,6 +13,8 @@ import { useRealtimeTasks } from "@/hooks/useRealtimeTasks";
 import { useUE5Status } from "@/hooks/useUE5Status";
 import type { Project } from "@/lib/agents/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SketchfabSearchModal } from "@/components/tools/SketchfabSearch";
+import { VoiceGeneratorModal } from "@/components/tools/VoiceGenerator";
 
 export default function ProjectLayout({
   children,
@@ -85,6 +87,8 @@ export default function ProjectLayout({
       <main className="flex-1 flex flex-col overflow-hidden">
         {children}
       </main>
+      <SketchfabSearchModal projectId={projectId} />
+      <VoiceGeneratorModal projectId={projectId} />
     </div>
   );
 }

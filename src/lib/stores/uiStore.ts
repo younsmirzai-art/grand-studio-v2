@@ -7,6 +7,8 @@ interface UIState {
   ue5ConsoleVisible: boolean;
   activeTab: "chat" | "tasks" | "world" | "lore";
   godEyeFilter: string | null;
+  sketchfabModalOpen: boolean;
+  voiceModalOpen: boolean;
 
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -16,6 +18,8 @@ interface UIState {
   setUE5ConsoleVisible: (visible: boolean) => void;
   setActiveTab: (tab: UIState["activeTab"]) => void;
   setGodEyeFilter: (filter: string | null) => void;
+  setSketchfabModalOpen: (open: boolean) => void;
+  setVoiceModalOpen: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -25,6 +29,8 @@ export const useUIStore = create<UIState>((set) => ({
   ue5ConsoleVisible: false,
   activeTab: "chat",
   godEyeFilter: null,
+  sketchfabModalOpen: false,
+  voiceModalOpen: false,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -34,4 +40,6 @@ export const useUIStore = create<UIState>((set) => ({
   setUE5ConsoleVisible: (ue5ConsoleVisible) => set({ ue5ConsoleVisible }),
   setActiveTab: (activeTab) => set({ activeTab }),
   setGodEyeFilter: (godEyeFilter) => set({ godEyeFilter }),
+  setSketchfabModalOpen: (sketchfabModalOpen) => set({ sketchfabModalOpen }),
+  setVoiceModalOpen: (voiceModalOpen) => set({ voiceModalOpen }),
 }));
