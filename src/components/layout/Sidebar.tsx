@@ -1,8 +1,10 @@
 "use client";
 
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic } from "lucide-react";
+import { useState } from "react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, ChevronDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { TEAM } from "@/lib/agents/identity";
 import { AgentCard } from "@/components/team/AgentCard";
@@ -10,6 +12,14 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUIStore } from "@/lib/stores/uiStore";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import { gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
 
 interface SidebarProps {
   projectName?: string;
@@ -23,6 +33,32 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const projectId = params?.id as string | undefined;
   const setSketchfabModalOpen = useUIStore((s) => s.setSketchfabModalOpen);
   const setVoiceModalOpen = useUIStore((s) => s.setVoiceModalOpen);
+  const [gameStyleApplying, setGameStyleApplying] = useState<string | null>(null);
+
+  const applyGameStyle = async (presetKey: string) => {
+    if (!projectId) return;
+    const preset = gamePresets[presetKey];
+    if (!preset) return;
+    setGameStyleApplying(presetKey);
+    try {
+      const code = generatePresetCode(preset);
+      const res = await fetch("/api/ue5/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, code, agentName: "Boss" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to apply game style");
+        return;
+      }
+      toast.success(`Applied: ${preset.name}`);
+    } catch {
+      toast.error("Failed to send style to UE5");
+    } finally {
+      setGameStyleApplying(null);
+    }
+  };
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-boss-surface border-r border-boss-border shrink-0">
@@ -101,6 +137,44 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
           Tools
         </p>
         <div className="space-y-0.5">
+          {projectId && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!!gameStyleApplying}
+                  className="w-full justify-between gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+                >
+                  <span className="flex items-center gap-2">
+                    <Gamepad2 className="w-3.5 h-3.5" />
+                    Game Style
+                  </span>
+                  {gameStyleApplying ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="bg-boss-card border-boss-border w-64 max-h-[280px] overflow-y-auto">
+                <DropdownMenuLabel className="text-text-muted text-[10px] uppercase">
+                  Apply lighting / atmosphere
+                </DropdownMenuLabel>
+                {Object.entries(gamePresets).map(([key, preset]) => (
+                  <DropdownMenuItem
+                    key={key}
+                    onClick={() => applyGameStyle(key)}
+                    disabled={!!gameStyleApplying}
+                    className="flex flex-col items-start gap-0.5 py-2 text-text-primary cursor-pointer"
+                  >
+                    <span className="font-medium text-sm">{preset.name}</span>
+                    <span className="text-[11px] text-text-muted">{preset.description}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button
             variant="ghost"
             size="sm"

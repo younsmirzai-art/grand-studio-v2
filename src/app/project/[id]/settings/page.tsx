@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle } from "lucide-react";
+import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Gamepad2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,7 @@ import { getClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import Link from "next/link";
 import { TEAM } from "@/lib/agents/identity";
+import { gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
 
 const GENRES = ["Action", "RPG", "FPS", "Open World", "Platformer", "Puzzle", "Strategy", "Other"];
 const PLATFORMS = ["PC", "Console", "Mobile", "Multi-platform"];
@@ -46,6 +47,7 @@ export default function ProjectSettingsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [gameStyleApplying, setGameStyleApplying] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -136,6 +138,30 @@ export default function ProjectSettingsPage() {
     const supabase = getClient();
     await supabase.from("chat_turns").delete().eq("project_id", projectId);
     toast.success("Chat history deleted");
+  };
+
+  const applyGameStyle = async (presetKey: string) => {
+    const preset = gamePresets[presetKey];
+    if (!preset) return;
+    setGameStyleApplying(true);
+    try {
+      const code = generatePresetCode(preset);
+      const res = await fetch("/api/ue5/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, code, agentName: "Boss" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to apply game style");
+        return;
+      }
+      toast.success(`Applied: ${preset.name}`);
+    } catch {
+      toast.error("Failed to send style to UE5");
+    } finally {
+      setGameStyleApplying(false);
+    }
   };
 
   if (loading) return <div className="p-8 text-text-muted">Loading...</div>;
@@ -232,6 +258,33 @@ export default function ProjectSettingsPage() {
                 ))}
               </select>
             </div>
+          </div>
+        </section>
+
+        {/* GAME STYLE (Game DNA) */}
+        <section>
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <Gamepad2 className="w-4 h-4" />
+            Game Style
+          </h3>
+          <p className="text-xs text-text-muted mb-2">Apply lighting/atmosphere from famous game presets. Sends Python to UE5.</p>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value=""
+              onChange={(e) => {
+                const v = e.target.value;
+                e.target.value = "";
+                if (v) applyGameStyle(v);
+              }}
+              disabled={gameStyleApplying}
+              className="px-3 py-2 rounded-lg bg-boss-card border border-boss-border text-text-primary text-sm min-w-[180px]"
+            >
+              <option value="">Select preset to apply…</option>
+              {Object.entries(gamePresets).map(([key, preset]) => (
+                <option key={key} value={key}>{preset.name}</option>
+              ))}
+            </select>
+            {gameStyleApplying && <Loader2 className="w-4 h-4 animate-spin text-text-muted" />}
           </div>
         </section>
 

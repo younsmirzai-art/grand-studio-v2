@@ -16,6 +16,7 @@ import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
 import { TEAM } from "@/lib/agents/identity";
 import type { ChatTurn } from "@/lib/agents/types";
+import { detectGamePresetInPrompt, gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
 import {
   Dialog,
   DialogContent,
@@ -103,6 +104,32 @@ export default function ProjectPage() {
     [projectId, refetchChat]
   );
 
+  const handleExecuteCode = useCallback(
+    async (code: string, agentName?: string) => {
+      try {
+        const res = await fetch("/api/ue5/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            code,
+            agentName: agentName ?? "Thomas",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(data.error ?? "Failed to queue UE5 command");
+          throw new Error(data.error);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith("Failed")) return;
+        toast.error("Failed to send code to UE5");
+        throw e;
+      }
+    },
+    [projectId]
+  );
+
   const sendBossCommand = useCallback(
     async (message: string) => {
       console.log("[SendCommand] Raw message:", message);
@@ -112,6 +139,16 @@ export default function ProjectPage() {
         console.log("[SendCommand] Detected direct message to:", direct.agentName);
         await sendDirectMessage(direct.agentName, direct.cleanMessage);
         return;
+      }
+
+      const presetKey = detectGamePresetInPrompt(message);
+      if (presetKey && gamePresets[presetKey]) {
+        try {
+          await handleExecuteCode(generatePresetCode(gamePresets[presetKey]), "Boss");
+          toast.success(`Applied ${gamePresets[presetKey].name} style, then building.`);
+        } catch {
+          // toast already shown
+        }
       }
 
       console.log("[SendCommand] Broadcasting to ALL agents");
@@ -153,7 +190,7 @@ export default function ProjectPage() {
         await refetchChat();
       }
     },
-    [projectId, refetchChat, sendDirectMessage]
+    [projectId, refetchChat, sendDirectMessage, handleExecuteCode]
   );
 
   const sendToSpecificAgent = useCallback(
@@ -228,33 +265,6 @@ export default function ProjectPage() {
     setTypingAgents([]);
     toast.info("Autonomous mode stopped");
   }, [setAutonomousRunning]);
-
-  const handleExecuteCode = useCallback(
-    async (code: string, agentName?: string) => {
-      try {
-        const res = await fetch("/api/ue5/execute", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId,
-            code,
-            agentName: agentName ?? "Thomas",
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          toast.error(data.error ?? "Failed to queue UE5 command");
-          throw new Error(data.error);
-        }
-        // Success toast shown by ChatMessage after confirm
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith("Failed")) return;
-        toast.error("Failed to send code to UE5");
-        throw e;
-      }
-    },
-    [projectId]
-  );
 
   const handleCaptureNow = useCallback(async () => {
     try {
