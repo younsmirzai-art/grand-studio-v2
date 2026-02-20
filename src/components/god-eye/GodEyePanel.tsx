@@ -24,7 +24,7 @@ export function GodEyePanel() {
     }
   }, [filteredLog.length]);
 
-  const eventTypes = ["thinking", "api_call", "api_ok", "fallback", "turn", "boss", "execution", "screenshot", "error", "routing"];
+  const eventTypes = ["thinking", "api_call", "api_ok", "fallback", "turn", "boss", "execution", "screenshot", "error", "routing", "debug", "debug_success"];
 
   return (
     <motion.div

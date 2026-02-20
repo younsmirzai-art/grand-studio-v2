@@ -28,7 +28,9 @@ export type GodEyeEventType =
   | "execution"
   | "screenshot"
   | "error"
-  | "routing";
+  | "routing"
+  | "debug"
+  | "debug_success";
 
 export type UE5CommandStatus = "pending" | "executing" | "success" | "error";
 

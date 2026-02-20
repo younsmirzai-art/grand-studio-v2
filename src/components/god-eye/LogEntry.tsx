@@ -13,6 +13,8 @@ const eventColors: Record<GodEyeEventType, string> = {
   screenshot: "text-agent-teal",
   error: "text-red-500",
   routing: "text-agent-teal",
+  debug: "text-agent-amber",
+  debug_success: "text-agent-green",
 };
 
 const eventIcons: Record<GodEyeEventType, string> = {
@@ -26,6 +28,8 @@ const eventIcons: Record<GodEyeEventType, string> = {
   screenshot: "📸",
   error: "✕",
   routing: "↗",
+  debug: "🔧",
+  debug_success: "🔧",
 };
 
 interface LogEntryProps {

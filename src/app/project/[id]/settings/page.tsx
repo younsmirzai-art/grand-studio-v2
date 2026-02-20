@@ -25,6 +25,7 @@ interface ProjectSettings {
   response_length: string;
   active_agents: string[];
   ue5_host: string;
+  debug_mode_auto: boolean;
 }
 
 export default function ProjectSettingsPage() {
@@ -44,6 +45,7 @@ export default function ProjectSettingsPage() {
     response_length: "medium",
     active_agents: TEAM.map((a) => a.name.toLowerCase()),
     ue5_host: "localhost:30010",
+    debug_mode_auto: true,
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -72,6 +74,7 @@ export default function ProjectSettingsPage() {
           response_length: data.response_length ?? "medium",
           active_agents: data.active_agents ?? TEAM.map((a) => a.name.toLowerCase()),
           ue5_host: data.ue5_host ?? "localhost:30010",
+          debug_mode_auto: data.debug_mode_auto !== false,
         });
       }
       setLoading(false);
@@ -103,6 +106,7 @@ export default function ProjectSettingsPage() {
         response_length: settings.response_length,
         active_agents: settings.active_agents,
         ue5_host: settings.ue5_host,
+        debug_mode_auto: settings.debug_mode_auto,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "project_id" }
@@ -303,6 +307,21 @@ export default function ProjectSettingsPage() {
                 onChange={(e) => setSettings((s) => ({ ...s, ue5_host: e.target.value }))}
                 className="bg-boss-card border-boss-border text-text-primary font-mono text-sm"
               />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <label className="text-xs text-text-secondary block">Debug Mode</label>
+                <p className="text-xs text-text-muted mt-0.5">When ON, Morgan auto-debugs UE5 errors and retries with a fix. When OFF, errors only show in chat.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={settings.debug_mode_auto}
+                  onChange={(e) => setSettings((s) => ({ ...s, debug_mode_auto: e.target.checked }))}
+                  className="rounded border-boss-border"
+                />
+                <span className="text-sm text-text-primary">{settings.debug_mode_auto ? "ON" : "OFF"}</span>
+              </label>
             </div>
           </div>
         </section>

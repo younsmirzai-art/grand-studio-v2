@@ -5,6 +5,8 @@ import { buildSystemPrompt } from "./prompts";
 import { buildUE5CapabilitiesContext } from "@/lib/ue5/plugin-registry";
 import { getMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
 import { buildTrailerPlan, generateTrailerCode } from "@/lib/trailer/trailerEngine";
+import { quickFix } from "./errorPatterns";
+import { debugAndRetry } from "./autoDebug";
 
 export interface ProjectTask {
   id: string;
@@ -64,7 +66,7 @@ function parseNimaTaskLines(text: string): ProjectTask[] {
   return tasks;
 }
 
-async function buildProjectContext(projectId: string): Promise<string> {
+export async function buildProjectContext(projectId: string): Promise<string> {
   const supabase = createServerClient();
   const [projectRes, loreRes, memories] = await Promise.all([
     supabase.from("projects").select("*").eq("id", projectId).single(),
@@ -178,7 +180,7 @@ export async function insertProgressChat(projectId: string, content: string): Pr
   });
 }
 
-async function sendToUE5AndWait(projectId: string, code: string, agentName: string): Promise<{ success: boolean; commandId?: string; result?: string; error?: string }> {
+export async function sendToUE5AndWait(projectId: string, code: string, agentName: string): Promise<{ success: boolean; commandId?: string; result?: string; error?: string }> {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
   const res = await fetch(`${baseUrl}/api/ue5/execute`, {
     method: "POST",
@@ -314,6 +316,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
 
   let completed = 0;
   let failed = 0;
+  let morganDebuggedCount = 0;
 
   for (let i = 0; i < tasks.length; i++) {
     let status = await getRunStatus(projectId);
@@ -370,6 +373,40 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
           lastError = ue5Result.error;
           task.retries = attempt + 1;
           task.errorLog = ue5Result.error;
+
+          // Smart debugging: try quick fix first, then Morgan
+          const fixedByQuick = quickFix(code, ue5Result.error ?? "");
+          if (fixedByQuick) {
+            const quickResult = await sendToUE5AndWait(projectId, fixedByQuick, task.assignedTo);
+            if (quickResult.success) {
+              await insertProgressChat(projectId, `🔧 Auto-fixed common error pattern. Task ${i + 1}/${tasks.length}: Complete!`);
+              morganDebuggedCount++;
+              task.status = "completed";
+              task.result = quickResult.result;
+              success = true;
+              completed++;
+              break;
+            }
+          }
+          const projectContext = await buildProjectContext(projectId);
+          const debugOk = await debugAndRetry(
+            { projectId, code, error: ue5Result.error ?? "Execution failed", agentName: task.assignedTo },
+            projectContext,
+            async (pid, c, agent) => {
+              const r = await sendToUE5AndWait(pid, c, agent);
+              return { success: r.success, error: r.error };
+            },
+            3
+          );
+          if (debugOk) {
+            morganDebuggedCount++;
+            task.status = "completed";
+            success = true;
+            completed++;
+            await insertProgressChat(projectId, `✅ Task ${i + 1}/${tasks.length}: Fixed by Morgan!`);
+            break;
+          }
+
           if (attempt < MAX_RETRIES) {
             await insertProgressChat(projectId, `🔄 Retry ${attempt + 1}/${MAX_RETRIES} for task ${i + 1}…`);
           }
@@ -411,7 +448,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
   }
 
   const finalStatus = (await getRunStatus(projectId)) === "stopped" ? "stopped" : failed > 0 ? "completed" : "completed";
-  const summary = `🎉 Project ${finalStatus === "stopped" ? "stopped" : "complete"}! ${completed}/${tasks.length} tasks succeeded, ${failed} failed.`;
+  const summary = `🎉 Project ${finalStatus === "stopped" ? "stopped" : "complete"}! ${completed}/${tasks.length} tasks succeeded, ${failed} failed.${morganDebuggedCount > 0 ? ` ${morganDebuggedCount} task(s) auto-debugged by Morgan.` : ""}`;
   await supabase
     .from("full_project_run")
     .update({ status: finalStatus, plan_json: tasks, summary, updated_at: new Date().toISOString() })
