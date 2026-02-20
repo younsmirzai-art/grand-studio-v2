@@ -3,15 +3,8 @@ import { buildSystemPrompt } from "./prompts";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-function getApiKeyForAgent(agentName: string): string {
-  const keyMap: Record<string, string | undefined> = {
-    Nima: process.env.OPENROUTER_GEMINI_API_KEY ?? process.env.OPENROUTER_API_KEY,
-    Alex: process.env.OPENROUTER_ANTHROPIC_API_KEY ?? process.env.OPENROUTER_API_KEY,
-    Thomas: process.env.OPENROUTER_DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY,
-    Elena: process.env.OPENROUTER_CHATGPT_API_KEY ?? process.env.OPENROUTER_API_KEY,
-    Morgan: process.env.OPENROUTER_GEMINI_API_KEY ?? process.env.OPENROUTER_API_KEY,
-  };
-  return keyMap[agentName] ?? process.env.OPENROUTER_API_KEY ?? "";
+function getApiKey(): string {
+  return process.env.OPENROUTER_API_KEY ?? "";
 }
 
 async function callOpenRouter(
@@ -51,28 +44,17 @@ export async function callAgent(
   projectContext: string
 ): Promise<string> {
   const systemPrompt = buildSystemPrompt(agent, projectContext);
-  const apiKey = getApiKeyForAgent(agent.name);
-
-  try {
-    return await callOpenRouter(agent.model, apiKey, systemPrompt, messages, agent.maxTokens);
-  } catch (primaryError) {
-    console.error(`Primary call failed for ${agent.name}:`, primaryError);
-
-    const fallbackKey = process.env.OPENROUTER_API_KEY ?? "";
-    if (fallbackKey && fallbackKey !== apiKey) {
-      return await callOpenRouter(agent.model, fallbackKey, systemPrompt, messages, agent.maxTokens);
-    }
-    throw primaryError;
-  }
+  const apiKey = getApiKey();
+  return callOpenRouter(agent.model, apiKey, systemPrompt, messages, agent.maxTokens);
 }
 
 export async function callAgentRaw(
-  agentName: AgentName,
+  _agentName: AgentName,
   model: string,
   systemPrompt: string,
   messages: ChatMessage[],
   maxTokens: number
 ): Promise<string> {
-  const apiKey = getApiKeyForAgent(agentName);
+  const apiKey = getApiKey();
   return callOpenRouter(model, apiKey, systemPrompt, messages, maxTokens);
 }

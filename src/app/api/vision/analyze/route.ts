@@ -21,12 +21,11 @@ export async function POST(request: NextRequest) {
       detail: "Analyzing screenshot with GPT-4o Vision",
     });
 
-    const visionKey = process.env.OPENROUTER_CHATGPT_API_KEY ?? process.env.OPENROUTER_API_KEY;
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${visionKey}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "HTTP-Referer": "https://grand-studio-v2.vercel.app",
         "X-Title": "Grand Studio v2",
       },
