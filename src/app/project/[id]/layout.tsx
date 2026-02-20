@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SketchfabSearchModal } from "@/components/tools/SketchfabSearch";
 import { VoiceGeneratorModal } from "@/components/tools/VoiceGenerator";
 import { MusicStudioModal } from "@/components/tools/MusicStudioModal";
+import { TrailerMakerModal } from "@/components/tools/TrailerMakerModal";
 
 export default function ProjectLayout({
   children,
@@ -91,6 +92,7 @@ export default function ProjectLayout({
       <SketchfabSearchModal projectId={projectId} />
       <VoiceGeneratorModal projectId={projectId} />
       <MusicStudioModal projectId={projectId} />
+      <TrailerMakerModal projectId={projectId} />
     </div>
   );
 }

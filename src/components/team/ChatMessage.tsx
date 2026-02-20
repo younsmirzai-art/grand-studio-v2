@@ -21,6 +21,9 @@ import type { ChatTurn, TurnType } from "@/lib/agents/types";
 import { getAgent } from "@/lib/agents/identity";
 import { parseMusicBlock } from "@/lib/music/musicEngine";
 import { MusicPlayer } from "@/components/tools/MusicPlayer";
+import { parseTrailerTag } from "@/lib/trailer/trailerEngine";
+import { TrailerPreviewCard } from "@/components/tools/TrailerPreviewCard";
+import type { TrailerTemplateKey } from "@/lib/trailer/trailerEngine";
 
 interface ChatMessageProps {
   turn: ChatTurn;
@@ -226,11 +229,30 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
                 );
               }
 
-              return (
-                <div key={i} className="whitespace-pre-wrap">
-                  {renderTextContent(part.content.trim())}
-                </div>
-              );
+              if (part.type === "text") {
+                const trailerMatch = parseTrailerTag(part.content);
+                if (trailerMatch && projectId && onExecuteCode) {
+                  return (
+                    <div key={i} className="space-y-2">
+                      <div className="whitespace-pre-wrap">
+                        {renderTextContent(part.content.replace(/\[TRAILER\s+[\w]+\s*(?:\:[^\]]*)?\]/gi, "").trim())}
+                      </div>
+                      <TrailerPreviewCard
+                        templateKey={trailerMatch.templateKey as TrailerTemplateKey}
+                        description={trailerMatch.description}
+                        projectId={projectId}
+                        onExecuteCode={onExecuteCode}
+                      />
+                    </div>
+                  );
+                }
+                return (
+                  <div key={i} className="whitespace-pre-wrap">
+                    {renderTextContent(part.content.trim())}
+                  </div>
+                );
+              }
+              return null;
             })}
           </div>
         </div>

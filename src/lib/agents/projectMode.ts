@@ -4,6 +4,7 @@ import type { AgentName } from "./types";
 import { buildSystemPrompt } from "./prompts";
 import { buildUE5CapabilitiesContext } from "@/lib/ue5/plugin-registry";
 import { getMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
+import { buildTrailerPlan, generateTrailerCode } from "@/lib/trailer/trailerEngine";
 
 export interface ProjectTask {
   id: string;
@@ -389,6 +390,23 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
     if ((i + 1) % 2 === 0 && i + 1 < tasks.length) {
       await insertProgressChat(projectId, `🔍 Morgan reviewing tasks 1–${i + 1}…`);
       await askMorganToReview(projectId, `Tasks 1–${i + 1} completed. ${completed} succeeded, ${failed} failed.`);
+    }
+  }
+
+  const runStatusBeforeTrailer = await getRunStatus(projectId);
+  if (runStatusBeforeTrailer !== "stopped" && tasks.length > 0) {
+    await insertProgressChat(projectId, `🎬 Creating cinematic trailer… (Thomas)`);
+    try {
+      const trailerPlan = buildTrailerPlan("epic_reveal", "Cinematic Trailer", "1080p");
+      const trailerCode = generateTrailerCode(trailerPlan);
+      const ue5Result = await sendToUE5AndWait(projectId, trailerCode, "Thomas");
+      if (ue5Result.success) {
+        await insertProgressChat(projectId, `✅ Trailer cameras placed. Use Sequencer and Movie Pipeline to animate and render.`);
+      } else {
+        await insertProgressChat(projectId, `⚠️ Trailer camera placement failed: ${ue5Result.error}`);
+      }
+    } catch (e) {
+      await insertProgressChat(projectId, `⚠️ Trailer step error: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
