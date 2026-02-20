@@ -1,12 +1,26 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { getClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import type { UE5Command } from "@/lib/agents/types";
 
 export function useUE5Status(projectId: string | null) {
-  const { setUE5Commands, addUE5Command, updateUE5Command } = useProjectStore();
+  const { setUE5Commands, addUE5Command, updateUE5Command, setRelayConnected } =
+    useProjectStore();
+
+  const checkRelayConnection = useCallback(
+    (commands: UE5Command[]) => {
+      const recentExecuted = commands.find(
+        (c) => c.status === "success" || c.status === "error"
+      );
+      if (recentExecuted?.executed_at) {
+        const age = Date.now() - new Date(recentExecuted.executed_at).getTime();
+        setRelayConnected(age < 60_000);
+      }
+    },
+    [setRelayConnected]
+  );
 
   useEffect(() => {
     if (!projectId) return;
@@ -20,7 +34,11 @@ export function useUE5Status(projectId: string | null) {
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data }) => {
-        if (data) setUE5Commands(data as UE5Command[]);
+        if (data) {
+          const typed = data as UE5Command[];
+          setUE5Commands(typed);
+          checkRelayConnection(typed);
+        }
       });
 
     const channel = supabase
@@ -48,6 +66,9 @@ export function useUE5Status(projectId: string | null) {
         (payload) => {
           const updated = payload.new as UE5Command;
           updateUE5Command(updated.id, updated);
+          if (updated.status === "success" || updated.status === "error") {
+            setRelayConnected(true);
+          }
         }
       )
       .subscribe();
@@ -55,5 +76,5 @@ export function useUE5Status(projectId: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [projectId, setUE5Commands, addUE5Command, updateUE5Command]);
+  }, [projectId, setUE5Commands, addUE5Command, updateUE5Command, checkRelayConnection, setRelayConnected]);
 }

@@ -1,15 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 
+const DANGEROUS_PATTERNS = [
+  "os.system",
+  "subprocess",
+  "eval(",
+  "exec(",
+  "__import__",
+  "shutil.rmtree",
+  "shutil.move",
+  "os.remove",
+  "os.rmdir",
+];
+
 export async function POST(request: NextRequest) {
   try {
-    const { projectId, code } = await request.json();
+    const { projectId, code, agentName } = await request.json();
 
     if (!projectId || !code) {
       return NextResponse.json(
         { error: "Missing projectId or code" },
         { status: 400 }
       );
+    }
+
+    if (!code.includes("import unreal")) {
+      return NextResponse.json(
+        { error: 'Code must include "import unreal"' },
+        { status: 400 }
+      );
+    }
+
+    for (const pattern of DANGEROUS_PATTERNS) {
+      if (code.includes(pattern)) {
+        return NextResponse.json(
+          { error: `Dangerous operation detected: ${pattern}` },
+          { status: 400 }
+        );
+      }
     }
 
     const supabase = createServerClient();
@@ -34,11 +62,16 @@ export async function POST(request: NextRequest) {
     await supabase.from("god_eye_log").insert({
       project_id: projectId,
       event_type: "execution",
-      agent_name: "System",
-      detail: `UE5 command queued: ${code.slice(0, 100)}`,
+      agent_name: agentName ?? "System",
+      detail: `Code queued for UE5 execution (${code.length} chars)`,
     });
 
-    return NextResponse.json({ commandId: data.id });
+    return NextResponse.json({
+      success: true,
+      commandId: data.id,
+      message:
+        "Code queued for UE5 execution. Waiting for local relay to pick it up.",
+    });
   } catch (error) {
     console.error("UE5 execute error:", error);
     return NextResponse.json(

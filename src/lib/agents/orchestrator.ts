@@ -172,7 +172,7 @@ export async function runNextTurn(projectId: string): Promise<{ done: boolean }>
   const messages: ChatMessage[] = [
     {
       role: "user",
-      content: `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task. If you need to write UE5 Python code, wrap it in \`\`\`python blocks.`,
+      content: `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task. If you need to write UE5 Python code, wrap it in \`\`\`python blocks. All code must start with "import unreal" and target the UE5 server at localhost:30010.`,
     },
   ];
 
@@ -196,12 +196,17 @@ export async function runNextTurn(projectId: string): Promise<{ done: boolean }>
     const approved = await runConsultationLoop(projectId, hasUE5Code, context, task.id);
 
     if (approved) {
-      await supabase.from("ue5_commands").insert({
+      const { data: cmdData } = await supabase.from("ue5_commands").insert({
         project_id: projectId,
         code: hasUE5Code,
         status: "pending",
-      });
-      await logGodEye(projectId, "execution", agent.name, "Code queued for UE5 execution");
+      }).select("id").single();
+
+      await logGodEye(projectId, "execution", agent.name, "Code queued for UE5 execution via localhost:30010");
+
+      if (cmdData) {
+        setTimeout(() => checkAndAutoDebug(projectId, cmdData.id, hasUE5Code), 15_000);
+      }
     }
   }
 
@@ -219,7 +224,11 @@ function extractUE5Code(response: string): string | null {
 
   for (const match of matches) {
     const code = match[1];
-    const ue5Keywords = ["unreal", "spawn", "actor", "EditorLevelLibrary", "EditorAssetLibrary", "StaticMesh", "Blueprint", "remote/object"];
+    const ue5Keywords = [
+      "unreal", "spawn", "actor", "EditorLevelLibrary", "EditorAssetLibrary",
+      "StaticMesh", "Blueprint", "remote/object", "PCGComponent", "LandscapeProxy",
+      "DynamicWeatherSystem", "EQS", "StateTree", "SmartObject", "MassEntity",
+    ];
     if (ue5Keywords.some((kw) => code.toLowerCase().includes(kw.toLowerCase()))) {
       return code.trim();
     }
@@ -268,6 +277,113 @@ async function runConsultationLoop(
   }
 
   await logGodEye(projectId, "api_ok", "System", "Code APPROVED by consultation loop");
+  return true;
+}
+
+async function checkAndAutoDebug(
+  projectId: string,
+  commandId: string,
+  originalCode: string
+) {
+  const supabase = createServerClient();
+  const { data: cmd } = await supabase
+    .from("ue5_commands")
+    .select("*")
+    .eq("id", commandId)
+    .single();
+
+  if (!cmd || cmd.status !== "error") return;
+
+  await autoDebugLoop(projectId, originalCode, cmd.error_log, 1);
+}
+
+async function autoDebugLoop(
+  projectId: string,
+  failedCode: string,
+  errorLog: string,
+  attempt: number = 1,
+  maxAttempts: number = 3
+): Promise<boolean> {
+  if (attempt > maxAttempts) {
+    await saveChatTurn(
+      projectId,
+      "System",
+      "Auto-Debug",
+      `❌ Auto-debug failed after ${maxAttempts} attempts. ریس, manual intervention needed.\n\nLast error: ${errorLog}`,
+      "execution"
+    );
+    await logGodEye(projectId, "error", "System", `Auto-debug exhausted all ${maxAttempts} retries`);
+    return false;
+  }
+
+  await logGodEye(
+    projectId,
+    "thinking",
+    "Thomas",
+    `Auto-debug attempt ${attempt}/${maxAttempts}`
+  );
+
+  const fixPrompt = `The following UE5 Python code FAILED to execute on the UE5 server at localhost:30010.
+
+CODE:
+\`\`\`python
+${failedCode}
+\`\`\`
+
+ERROR:
+${errorLog}
+
+This is auto-debug attempt ${attempt}/${maxAttempts}.
+Fix the code and return ONLY the corrected Python code in a \`\`\`python block.
+Remember: code runs via Web Remote Control PUT http://localhost:30010/remote/object/call
+Code must start with "import unreal". No external pip packages.
+Do NOT explain — just fix the code.`;
+
+  const thomas = TEAM.find((a) => a.name === "Thomas")!;
+  let fixedResponse: string;
+  try {
+    fixedResponse = await callAgent(thomas, [{ role: "user", content: fixPrompt }], "");
+  } catch {
+    return autoDebugLoop(projectId, failedCode, "Thomas failed to respond", attempt + 1, maxAttempts);
+  }
+
+  const codeMatch = fixedResponse.match(/```python\s*\n([\s\S]*?)```/);
+  if (!codeMatch) {
+    return autoDebugLoop(projectId, failedCode, "Thomas could not produce a fix", attempt + 1, maxAttempts);
+  }
+
+  const fixedCode = codeMatch[1].trim();
+
+  const reviewPrompt = `Quick review this UE5 Python fix. Is it safe to execute on localhost:30010? Reply YES or NO with brief reason.\n\`\`\`python\n${fixedCode}\n\`\`\``;
+  const morgan = TEAM.find((a) => a.name === "Morgan")!;
+  let review: string;
+  try {
+    review = await callAgent(morgan, [{ role: "user", content: reviewPrompt }], "");
+  } catch {
+    review = "YES — unable to review, proceeding cautiously";
+  }
+
+  if (review.toLowerCase().includes("no") || review.toLowerCase().includes("reject")) {
+    return autoDebugLoop(projectId, fixedCode, "Morgan rejected the fix: " + review, attempt + 1, maxAttempts);
+  }
+
+  const supabase = createServerClient();
+  await supabase.from("ue5_commands").insert({
+    project_id: projectId,
+    code: fixedCode,
+    status: "pending",
+  });
+
+  await saveChatTurn(
+    projectId,
+    "Thomas",
+    "Lead Programmer",
+    `🔧 Auto-debug attempt ${attempt}: Fixed code and resubmitted for UE5 execution at localhost:30010.`,
+    "execution"
+  );
+
+  await logGodEye(projectId, "execution", "Thomas", `Auto-debug attempt ${attempt}: fixed code queued`);
+
   return true;
 }
 

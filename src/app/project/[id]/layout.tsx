@@ -22,7 +22,7 @@ export default function ProjectLayout({
   const params = useParams();
   const projectId = params.id as string;
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
-  const { project, setProject } = useProjectStore();
+  const { project, setProject, isRelayConnected } = useProjectStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -77,6 +77,7 @@ export default function ProjectLayout({
             <Sidebar
               projectName={project?.name}
               projectStatus={project?.status}
+              ue5Connected={isRelayConnected}
             />
           </motion.div>
         )}
