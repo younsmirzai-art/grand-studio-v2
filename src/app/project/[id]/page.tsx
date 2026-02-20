@@ -218,14 +218,28 @@ export default function ProjectPage() {
   }, [setAutonomousRunning]);
 
   const handleExecuteCode = useCallback(
-    async (code: string) => {
-      const supabase = getClient();
-      await supabase.from("ue5_commands").insert({
-        project_id: projectId,
-        code,
-        status: "pending",
-      });
-      toast.success("Code queued for UE5 execution");
+    async (code: string, agentName?: string) => {
+      try {
+        const res = await fetch("/api/ue5/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            code,
+            agentName: agentName ?? "Thomas",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(data.error ?? "Failed to queue UE5 command");
+          throw new Error(data.error);
+        }
+        // Success toast shown by ChatMessage after confirm
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith("Failed")) return;
+        toast.error("Failed to send code to UE5");
+        throw e;
+      }
     },
     [projectId]
   );

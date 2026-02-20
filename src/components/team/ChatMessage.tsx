@@ -3,17 +3,26 @@
 import { memo, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Play, Copy, Check } from "lucide-react";
+import { Copy, Check, Rocket } from "lucide-react";
 import { AgentAvatar, AgentNameBadge } from "./AgentAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScreenshotPreview } from "@/components/chat/ScreenshotPreview";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import type { ChatTurn, TurnType } from "@/lib/agents/types";
 import { getAgent } from "@/lib/agents/identity";
 
 interface ChatMessageProps {
   turn: ChatTurn;
-  onExecuteCode?: (code: string) => void;
+  onExecuteCode?: (code: string, agentName?: string) => void | Promise<void>;
 }
 
 const turnTypeConfig: Record<TurnType, { label: string; className: string }> = {
@@ -72,6 +81,9 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [ue5Confirm, setUe5Confirm] = useState<{ code: string; index: number } | null>(null);
+  const [ue5Sending, setUe5Sending] = useState(false);
+  const [ue5SentBlocks, setUe5SentBlocks] = useState<Set<number>>(new Set());
   const isBoss = turn.turn_type === "boss_command" || turn.turn_type === "direct_command";
   const isDirect = turn.turn_type === "direct" || turn.turn_type === "direct_command";
   const isConsultation = turn.turn_type === "consultation";
@@ -82,6 +94,21 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
     await navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  const handleConfirmSendToUE5 = async () => {
+    if (!onExecuteCode || !ue5Confirm) return;
+    setUe5Sending(true);
+    try {
+      await onExecuteCode(ue5Confirm.code.trim(), turn.agent_name);
+      setUe5SentBlocks((prev) => new Set([...prev, ue5Confirm.index]));
+      setUe5Confirm(null);
+      toast.success("Code queued for UE5 execution");
+    } catch {
+      toast.error("Failed to send code to UE5");
+    } finally {
+      setUe5Sending(false);
+    }
   };
 
   const parts = parseCodeBlocks(turn.content || "");
@@ -138,20 +165,27 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
             {parts.map((part, i) => {
               if (part.type === "code") {
                 const isPython = part.lang === "python";
+                const sent = ue5SentBlocks.has(i);
+                const canSendToUE5 = isPython && onExecuteCode && projectId;
                 return (
                   <div key={i} className="relative my-2 rounded-lg overflow-hidden border border-boss-border">
                     <div className="flex items-center justify-between px-3 py-1.5 bg-boss-elevated/50 border-b border-boss-border">
                       <span className="text-[11px] text-text-muted font-mono">{part.lang}</span>
                       <div className="flex items-center gap-1">
-                        {isPython && onExecuteCode && (
+                        {canSendToUE5 && (
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => onExecuteCode(part.content.trim())}
-                            className="h-6 px-2 text-[11px] text-agent-green hover:text-agent-green hover:bg-agent-green/10 gap-1"
+                            onClick={() => setUe5Confirm({ code: part.content.trim(), index: i })}
+                            disabled={sent}
+                            className={`h-6 px-2 text-[11px] gap-1 ${
+                              sent
+                                ? "text-agent-green/70 cursor-default"
+                                : "text-agent-green hover:text-agent-green hover:bg-agent-green/15 border border-agent-green/30 animate-pulse"
+                            }`}
                           >
-                            <Play className="w-3 h-3" />
-                            Execute in UE5
+                            <Rocket className="w-3 h-3" />
+                            {sent ? "✅ Sent to UE5!" : "🚀 Send to UE5"}
                           </Button>
                         )}
                         <Button
@@ -184,6 +218,47 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
           </div>
         </div>
       </div>
+
+      <Dialog open={ue5Confirm !== null} onOpenChange={(open) => !open && setUe5Confirm(null)}>
+        <DialogContent className="bg-boss-surface border-boss-border">
+          <DialogHeader>
+            <DialogTitle className="text-text-primary">Send to Unreal Engine 5?</DialogTitle>
+            <DialogDescription className="text-text-muted">
+              This code will be queued for execution on your local UE5 instance. The relay must be running.
+            </DialogDescription>
+          </DialogHeader>
+          {ue5Confirm && (
+            <pre className="max-h-32 overflow-auto rounded bg-boss-elevated p-3 text-xs font-mono text-agent-green/90 border border-boss-border">
+              {ue5Confirm.code.split("\n").slice(0, 5).join("\n")}
+              {ue5Confirm.code.split("\n").length > 5 && "\n..."}
+            </pre>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setUe5Confirm(null)}
+              disabled={ue5Sending}
+              className="border-boss-border"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSendToUE5}
+              disabled={ue5Sending}
+              className="bg-agent-green hover:bg-agent-green/90 text-white gap-1.5"
+            >
+              {ue5Sending ? (
+                <>Sending…</>
+              ) : (
+                <>
+                  <Rocket className="w-3.5 h-3.5" />
+                  Confirm & Execute
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
