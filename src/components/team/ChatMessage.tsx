@@ -19,6 +19,8 @@ import {
 import { toast } from "sonner";
 import type { ChatTurn, TurnType } from "@/lib/agents/types";
 import { getAgent } from "@/lib/agents/identity";
+import { parseMusicBlock } from "@/lib/music/musicEngine";
+import { MusicPlayer } from "@/components/tools/MusicPlayer";
 
 interface ChatMessageProps {
   turn: ChatTurn;
@@ -164,9 +166,23 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
             )}
             {parts.map((part, i) => {
               if (part.type === "code") {
+                const prevContent = i > 0 && parts[i - 1].type === "text" ? parts[i - 1].content : "";
+                const musicBlock =
+                  (part.lang === "javascript" || part.lang === "js") && parseMusicBlock(prevContent + "\n```javascript\n" + part.content + "\n```");
+                if (musicBlock && projectId) {
+                  return (
+                    <div key={i} className="my-3">
+                      <MusicPlayer
+                        title={musicBlock.title}
+                        description={musicBlock.description}
+                        code={musicBlock.code}
+                        projectId={projectId}
+                      />
+                    </div>
+                  );
+                }
                 const isPython = part.lang === "python";
                 const sent = ue5SentBlocks.has(i);
-                // Show Send to UE5 for ANY agent's Python code (Nima, Alex, Thomas, Elena, Morgan)
                 const canSendToUE5 = isPython && onExecuteCode && projectId;
                 return (
                   <div key={i} className="relative my-2 rounded-lg overflow-hidden border border-boss-border">

@@ -10,6 +10,8 @@ interface UIState {
   godEyeFilter: string | null;
   sketchfabModalOpen: boolean;
   voiceModalOpen: boolean;
+  musicModalOpen: boolean;
+  chatPresetMessage: string | null;
 
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -22,6 +24,8 @@ interface UIState {
   setGodEyeFilter: (filter: string | null) => void;
   setSketchfabModalOpen: (open: boolean) => void;
   setVoiceModalOpen: (open: boolean) => void;
+  setMusicModalOpen: (open: boolean) => void;
+  setChatPresetMessage: (msg: string | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -34,6 +38,8 @@ export const useUIStore = create<UIState>((set) => ({
   godEyeFilter: null,
   sketchfabModalOpen: false,
   voiceModalOpen: false,
+  musicModalOpen: false,
+  chatPresetMessage: null,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -46,4 +52,6 @@ export const useUIStore = create<UIState>((set) => ({
   setGodEyeFilter: (godEyeFilter) => set({ godEyeFilter }),
   setSketchfabModalOpen: (sketchfabModalOpen) => set({ sketchfabModalOpen }),
   setVoiceModalOpen: (voiceModalOpen) => set({ voiceModalOpen }),
+  setMusicModalOpen: (musicModalOpen) => set({ musicModalOpen }),
+  setChatPresetMessage: (chatPresetMessage) => set({ chatPresetMessage }),
 }));

@@ -49,6 +49,7 @@ const defaultAgentStatuses: Record<AgentName, AgentStatus> = {
   Thomas: { name: "Thomas", state: "idle" },
   Elena: { name: "Elena", state: "idle" },
   Morgan: { name: "Morgan", state: "idle" },
+  Sana: { name: "Sana", state: "idle" },
 };
 
 export const useProjectStore = create<ProjectState>((set) => ({

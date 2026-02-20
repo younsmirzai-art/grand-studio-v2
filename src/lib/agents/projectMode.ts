@@ -25,7 +25,7 @@ export interface ProjectPlan {
   status: "planning" | "executing" | "paused" | "stopped" | "completed" | "failed";
 }
 
-const AGENT_NAMES_LIST = ["Nima", "Alex", "Thomas", "Elena", "Morgan"] as const;
+const AGENT_NAMES_LIST = ["Nima", "Alex", "Thomas", "Elena", "Morgan", "Sana"] as const;
 const MAX_RETRIES = 3;
 const AGENT_RESPONSE_TIMEOUT_MS = 60_000;
 const UE5_WAIT_TIMEOUT_MS = 120_000;
@@ -102,7 +102,7 @@ TASK|Add lighting|Set up directional light and sky atmosphere|Thomas
 
 Rules:
 - Use 4 to 8 tasks.
-- AssignedAgent must be exactly one of: Nima, Alex, Thomas, Elena, Morgan.
+- AssignedAgent must be exactly one of: Nima, Alex, Thomas, Elena, Morgan, Sana.
 - Order tasks logically (e.g. terrain before trees).
 - End your reply with the task lines only; you can add a short intro line before them if needed.`;
 
@@ -338,6 +338,20 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
     for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
       try {
         const agentResponse = await sendToAgentWithTimeout(projectId, task.assignedTo as AgentName, task.description);
+        if (task.assignedTo === "Sana") {
+          await supabase.from("chat_turns").insert({
+            project_id: projectId,
+            agent_name: "Sana",
+            agent_title: "Composer",
+            content: agentResponse,
+            turn_type: "discussion",
+          });
+          task.status = "completed";
+          success = true;
+          completed++;
+          await insertProgressChat(projectId, `✅ Task ${i + 1}/${tasks.length}: Complete!`);
+          break;
+        }
         const code = extractPythonCode(agentResponse);
         if (!code || !code.includes("import unreal")) {
           lastError = "No valid UE5 Python code in response";

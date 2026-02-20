@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { TEAM } from "@/lib/agents/identity";
 import { startListening, normalizeAtMention } from "@/lib/voice/speechRecognition";
+import { useUIStore } from "@/lib/stores/uiStore";
 
 interface CommandInputProps {
   onSend: (message: string) => Promise<void>;
@@ -25,6 +26,16 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<ReturnType<typeof startListening> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatPresetMessage = useUIStore((s) => s.chatPresetMessage);
+  const setChatPresetMessage = useUIStore((s) => s.setChatPresetMessage);
+
+  useEffect(() => {
+    if (chatPresetMessage) {
+      setValue(chatPresetMessage);
+      setChatPresetMessage(null);
+      textareaRef.current?.focus();
+    }
+  }, [chatPresetMessage, setChatPresetMessage]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {

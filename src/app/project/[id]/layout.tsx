@@ -15,6 +15,7 @@ import type { Project } from "@/lib/agents/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SketchfabSearchModal } from "@/components/tools/SketchfabSearch";
 import { VoiceGeneratorModal } from "@/components/tools/VoiceGenerator";
+import { MusicStudioModal } from "@/components/tools/MusicStudioModal";
 
 export default function ProjectLayout({
   children,
@@ -89,6 +90,7 @@ export default function ProjectLayout({
       </main>
       <SketchfabSearchModal projectId={projectId} />
       <VoiceGeneratorModal projectId={projectId} />
+      <MusicStudioModal projectId={projectId} />
     </div>
   );
 }

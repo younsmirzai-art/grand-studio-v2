@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, ChevronDown, Loader2 } from "lucide-react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, ChevronDown, Loader2, Music } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const projectId = params?.id as string | undefined;
   const setSketchfabModalOpen = useUIStore((s) => s.setSketchfabModalOpen);
   const setVoiceModalOpen = useUIStore((s) => s.setVoiceModalOpen);
+  const setMusicModalOpen = useUIStore((s) => s.setMusicModalOpen);
   const [gameStyleApplying, setGameStyleApplying] = useState<string | null>(null);
 
   const applyGameStyle = async (presetKey: string) => {
@@ -183,6 +184,15 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
           >
             <Globe className="w-3.5 h-3.5" />
             Sketchfab Search
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMusicModalOpen(true)}
+            className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+          >
+            <Music className="w-3.5 h-3.5" />
+            Music Studio
           </Button>
           <Button
             variant="ghost"

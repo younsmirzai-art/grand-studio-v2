@@ -1,6 +1,6 @@
 export type Provider = "openrouter";
 
-export type AgentName = "Nima" | "Alex" | "Thomas" | "Elena" | "Morgan";
+export type AgentName = "Nima" | "Alex" | "Thomas" | "Elena" | "Morgan" | "Sana";
 
 export type TurnType =
   | "proposal"

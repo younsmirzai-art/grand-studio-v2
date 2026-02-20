@@ -227,6 +227,16 @@
   100% { transform: translate(var(--dx, 50px), var(--dy, -100px)); opacity: 0; }
 }
 
+@keyframes music-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+.animate-music-bar {
+  animation: music-bar 0.5s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
 .animate-grid-fade { animation: grid-fade 8s ease-in-out infinite; }
 .animate-float { animation: float-up 6s ease-in-out infinite; }
 .animate-glow-pulse { animation: glow-pulse 4s ease-in-out infinite; }
