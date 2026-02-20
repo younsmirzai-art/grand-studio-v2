@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { Header } from "@/components/layout/Header";
@@ -39,17 +39,34 @@ function parseDirectMention(message: string): { agentName: string; cleanMessage:
   return { agentName: found.name, cleanMessage: match[2].trim() };
 }
 
+interface FullProjectStatus {
+  running: boolean;
+  status: string | null;
+  currentTaskIndex: number;
+  totalTasks: number;
+  currentTaskTitle: string | null;
+  plan: { title: string; status: string; assignedTo: string }[];
+  summary: string | null;
+}
+
 export default function ProjectPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
-  const { taskBoardVisible } = useUIStore();
-  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, setFullProjectPaused } = useProjectStore();
+  const { taskBoardVisible, setLiveViewVisible, liveViewVisible } = useUIStore();
+  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused } = useProjectStore();
   const [isRunningTurn, setIsRunningTurn] = useState(false);
   const [typingAgents, setTypingAgents] = useState<string[]>([]);
   const [fullProjectDialogOpen, setFullProjectDialogOpen] = useState(false);
   const [fullProjectPrompt, setFullProjectPrompt] = useState("");
+  const [buildStatus, setBuildStatus] = useState<FullProjectStatus | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
   const autonomousRef = useRef(false);
+  const autoBuildStartedRef = useRef(false);
+  const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
 
   const refetchChat = useCallback(async () => {
     const supabase = getClient();
@@ -62,6 +79,51 @@ export default function ProjectPage() {
       setChatTurns(data as ChatTurn[]);
     }
   }, [projectId, setChatTurns]);
+
+  const autoBuild = searchParams.get("autoBuild") === "1";
+  useEffect(() => {
+    if (!project?.id || !project?.initial_prompt || !autoBuild || autoBuildStartedRef.current) return;
+    autoBuildStartedRef.current = true;
+    const prompt = (project.initial_prompt as string).trim();
+    setFullProjectRunning(true);
+    setLiveViewVisible?.(true);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("autoBuild");
+    router.replace(`/project/${projectId}${params.toString() ? `?${params}` : ""}`, { scroll: false });
+    fetch("/api/agents/full-project", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, prompt }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) toast.error(data.error ?? "Full project failed");
+      })
+      .finally(() => {
+        setFullProjectRunning(false);
+        setFullProjectPaused(false);
+        refetchChat();
+      });
+  }, [project?.id, project?.initial_prompt, autoBuild, projectId, searchParams, router, setFullProjectRunning, setFullProjectPaused, refetchChat, setLiveViewVisible]);
+
+  useEffect(() => {
+    if (!isFullProjectRunning && !buildStatus?.running) return;
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/agents/full-project/status?projectId=${projectId}`);
+        const data = await res.json();
+        if (data.plan) setBuildStatus(data);
+        if (!data.running && isFullProjectRunning) {
+          setFullProjectRunning(false);
+          setFullProjectPaused(false);
+          refetchChat();
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [projectId, isFullProjectRunning, buildStatus?.running, setFullProjectRunning, setFullProjectPaused, refetchChat]);
 
   const sendDirectMessage = useCallback(
     async (agentName: string, message: string) => {
@@ -284,8 +346,6 @@ export default function ProjectPage() {
     }
   }, [projectId]);
 
-  const { liveViewVisible } = useUIStore();
-
   const handleFullProjectStart = useCallback(async () => {
     if (!fullProjectPrompt.trim()) {
       toast.error("Enter a project prompt");
@@ -366,48 +426,130 @@ export default function ProjectPage() {
     }
   }, [projectId, setFullProjectRunning, setFullProjectPaused]);
 
+  const handleFeedbackSubmit = useCallback(async () => {
+    const msg = feedbackMessage.trim();
+    if (!msg) return;
+    setFeedbackOpen(false);
+    setFeedbackMessage("");
+    await sendBossCommand(msg);
+  }, [feedbackMessage, sendBossCommand]);
+
   return (
     <>
       <Header projectName={project?.name ?? "Loading..."} />
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col">
-          <div className="px-4 py-2 border-b border-boss-border flex items-center justify-between">
-            <ControlPanel
-              onRunOneTurn={runOneTurn}
-              onStartAutonomous={startAutonomous}
-              onStopAutonomous={stopAutonomous}
-              isRunningTurn={isRunningTurn}
-              onCaptureNow={handleCaptureNow}
-              onFullProjectClick={() => setFullProjectDialogOpen(true)}
-              onFullProjectPause={handleFullProjectPause}
-              onFullProjectResume={handleFullProjectResume}
-              onFullProjectStop={handleFullProjectStop}
-            />
+      <div className="flex flex-1 overflow-hidden flex-col">
+        {showBuildingView && (
+          <div className="px-4 py-2 border-b border-boss-border bg-boss-surface/80 shrink-0">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-text-primary truncate">
+                  Building your game… {buildStatus?.totalTasks ? `Task ${(buildStatus.currentTaskIndex ?? 0) + 1}/${buildStatus.totalTasks}` : "Starting…"}
+                </p>
+                {buildStatus?.currentTaskTitle && (
+                  <p className="text-xs text-text-muted truncate">{buildStatus.currentTaskTitle}</p>
+                )}
+                {(buildStatus?.totalTasks ?? 0) > 0 && (
+                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-boss-elevated overflow-hidden">
+                    <div
+                      className="h-full bg-agent-green rounded-full transition-all duration-500"
+                      style={{ width: `${(((buildStatus?.currentTaskIndex ?? 0) + 1) / (buildStatus?.totalTasks || 1)) * 100}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
+        )}
 
-          <TeamChat
-            onExecuteCode={handleExecuteCode}
-            typingAgents={typingAgents}
-          />
+        <div className="flex flex-1 overflow-hidden">
+          {showBuildingView ? (
+            <>
+              <div className="flex-[0.6] flex flex-col min-w-0 border-r border-boss-border">
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  <TeamChat onExecuteCode={handleExecuteCode} typingAgents={typingAgents} />
+                </div>
+              </div>
+              <div className="flex-[0.4] flex flex-col min-w-0 bg-boss-bg">
+                <LiveViewPanel embedded />
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="px-4 py-2 border-b border-boss-border flex items-center justify-between shrink-0">
+                <ControlPanel
+                  onRunOneTurn={runOneTurn}
+                  onStartAutonomous={startAutonomous}
+                  onStopAutonomous={stopAutonomous}
+                  isRunningTurn={isRunningTurn}
+                  onCaptureNow={handleCaptureNow}
+                  onFullProjectClick={() => setFullProjectDialogOpen(true)}
+                  onFullProjectPause={handleFullProjectPause}
+                  onFullProjectResume={handleFullProjectResume}
+                  onFullProjectStop={handleFullProjectStop}
+                />
+              </div>
+              <TeamChat onExecuteCode={handleExecuteCode} typingAgents={typingAgents} />
+              <GodEyePanel />
+              <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
+                <CommandInput
+                  onSend={sendBossCommand}
+                  onSendDirect={sendToSpecificAgent}
+                  disabled={isAutonomousRunning || isFullProjectRunning}
+                  agentNames={AGENT_NAMES}
+                />
+              </div>
+            </div>
+          )}
 
-          <GodEyePanel />
-
-          <div className="p-4 border-t border-boss-border bg-boss-surface/50">
-            <CommandInput
-              onSend={sendBossCommand}
-              onSendDirect={sendToSpecificAgent}
-              disabled={isAutonomousRunning || isFullProjectRunning}
-              agentNames={AGENT_NAMES}
-            />
-          </div>
+          <AnimatePresence>
+            {taskBoardVisible && <TaskBoard />}
+          </AnimatePresence>
+          {!showBuildingView && (
+            <AnimatePresence>
+              {liveViewVisible && <LiveViewPanel />}
+            </AnimatePresence>
+          )}
         </div>
 
-        <AnimatePresence>
-          {taskBoardVisible && <TaskBoard />}
-        </AnimatePresence>
-        <AnimatePresence>
-          {liveViewVisible && <LiveViewPanel />}
-        </AnimatePresence>
+        {showBuildingView && (
+          <div className="px-4 py-3 border-t border-boss-border bg-boss-surface/80 flex items-center gap-2 shrink-0">
+            {isFullProjectPaused ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleFullProjectResume}
+                className="border-agent-green/30 text-agent-green hover:bg-agent-green/10 gap-1.5"
+              >
+                ▶️ Resume
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleFullProjectPause}
+                className="border-agent-amber/30 text-agent-amber hover:bg-agent-amber/10 gap-1.5"
+              >
+                ⏸️ Pause
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleFullProjectStop}
+              className="border-agent-rose/30 text-agent-rose hover:bg-agent-rose/10 gap-1.5"
+            >
+              ⏹️ Stop
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setFeedbackOpen(true)}
+              className="border-boss-border text-text-secondary hover:text-text-primary gap-1.5"
+            >
+              💬 Give Feedback
+            </Button>
+          </div>
+        )}
       </div>
 
       <Dialog open={fullProjectDialogOpen} onOpenChange={setFullProjectDialogOpen}>
@@ -435,6 +577,31 @@ export default function ProjectPage() {
               className="bg-gold hover:bg-gold/90 text-black gap-1.5"
             >
               🚀 Start Full Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
+        <DialogContent className="bg-boss-surface border-boss-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-text-primary">💬 Give Feedback</DialogTitle>
+            <DialogDescription className="text-text-muted">
+              Send a message to the team while they build. They can adjust based on your feedback.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="e.g. Make the castle bigger, add more trees..."
+            value={feedbackMessage}
+            onChange={(e) => setFeedbackMessage(e.target.value)}
+            className="min-h-20 bg-boss-elevated border-boss-border text-text-primary placeholder:text-text-muted"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFeedbackOpen(false)} className="border-boss-border">
+              Cancel
+            </Button>
+            <Button onClick={handleFeedbackSubmit} disabled={!feedbackMessage.trim()} className="bg-gold hover:bg-gold/90 text-boss-bg gap-1.5">
+              Send
             </Button>
           </DialogFooter>
         </DialogContent>

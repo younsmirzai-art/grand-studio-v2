@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startFullProject } from "@/lib/agents/projectMode";
+import { expandPrompt } from "@/lib/agents/smartPrompt";
 
 export const maxDuration = 300;
 
@@ -14,7 +15,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await startFullProject(projectId, prompt.trim());
+    const trimmed = prompt.trim();
+    const expanded = await expandPrompt(trimmed, projectId);
+    const result = await startFullProject(projectId, expanded);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

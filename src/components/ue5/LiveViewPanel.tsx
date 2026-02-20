@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useParams } from "next/navigation";
 
-export function LiveViewPanel() {
+interface LiveViewPanelProps {
+  /** When true, panel fills container (e.g. building view right column) */
+  embedded?: boolean;
+}
+
+export function LiveViewPanel({ embedded }: LiveViewPanelProps = {}) {
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const ue5Commands = useProjectStore((s) => s.ue5Commands);
@@ -38,10 +43,10 @@ export function LiveViewPanel() {
 
   return (
     <motion.div
-      initial={{ width: 0, opacity: 0 }}
-      animate={{ width: 280, opacity: 1 }}
-      exit={{ width: 0, opacity: 0 }}
-      className="shrink-0 overflow-hidden border-l border-boss-border bg-boss-surface flex flex-col"
+      initial={embedded ? undefined : { width: 0, opacity: 0 }}
+      animate={embedded ? { opacity: 1 } : { width: 280, opacity: 1 }}
+      exit={embedded ? undefined : { width: 0, opacity: 0 }}
+      className={`overflow-hidden border-boss-border bg-boss-surface flex flex-col ${embedded ? "w-full h-full border-l" : "shrink-0 border-l w-[280px]"}`}
     >
       <div className="px-3 py-2 border-b border-boss-border flex items-center justify-between">
         <div className="flex items-center gap-2">

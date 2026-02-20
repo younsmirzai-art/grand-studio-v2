@@ -68,6 +68,14 @@ const TIERS = [
   },
 ];
 
+const EXAMPLE_PROMPTS = [
+  "Medieval castle with knights and dragons",
+  "Sci-fi space station with aliens",
+  "Horror haunted mansion at night",
+  "Tropical island with pirates",
+  "Modern city with skyscrapers",
+];
+
 export default function HomePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +83,8 @@ export default function HomePage() {
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [waitlistLoading, setWaitlistLoading] = useState(false);
   const [checkoutTier, setCheckoutTier] = useState<string | null>(null);
+  const [quickPrompt, setQuickPrompt] = useState("");
+  const [quickBuilding, setQuickBuilding] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -93,6 +103,35 @@ export default function HomePage() {
     setShowNewProject(false);
     router.push(`/project/${project.id}`);
   };
+
+  const handleBuildMyGame = useCallback(async () => {
+    const prompt = quickPrompt.trim();
+    if (!prompt || quickBuilding) return;
+    setQuickBuilding(true);
+    try {
+      const supabase = getClient();
+      const name = prompt.length > 50 ? prompt.slice(0, 47) + "…" : prompt;
+      const { data, error } = await supabase
+        .from("projects")
+        .insert({
+          name,
+          initial_prompt: prompt,
+          status: "active",
+        })
+        .select()
+        .single();
+      if (error) {
+        toast.error("Failed to create project");
+        return;
+      }
+      const project = data as Project;
+      router.push(`/project/${project.id}?autoBuild=1`);
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setQuickBuilding(false);
+    }
+  }, [quickPrompt, quickBuilding, router]);
 
   const joinWaitlist = useCallback(async () => {
     if (!waitlistEmail || waitlistLoading) return;
@@ -169,75 +208,93 @@ export default function HomePage() {
         </div>
       </nav>
 
-      {/* ────────── HERO ────────── */}
-      <section className="relative min-h-screen flex items-center justify-center pt-16">
+      {/* ────────── LOVABLE-STYLE HERO: One prompt, build everything ────────── */}
+      <section className="relative min-h-[85vh] flex items-center justify-center pt-20 pb-16 px-4">
         <div className="absolute inset-0 hero-grid" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-gold/5 animate-glow-pulse" />
-        <div className="absolute top-1/3 left-1/4 w-[300px] h-[300px] rounded-full bg-agent-violet/5 animate-glow-pulse" style={{ animationDelay: "2s" }} />
-        <div className="absolute top-1/3 right-1/4 w-[300px] h-[300px] rounded-full bg-agent-teal/5 animate-glow-pulse" style={{ animationDelay: "4s" }} />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-gold/5 animate-glow-pulse" />
 
-        <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
-          <div className="animate-fade-in-up">
-            <p className="text-sm uppercase tracking-[0.3em] text-gold/80 mb-6 font-medium">
-              AI-Powered Game Development
-            </p>
-            <h1 className="text-6xl md:text-8xl font-black tracking-tight leading-[0.9] mb-6">
-              <span className="text-gradient-hero">Grand</span>
-              <br />
-              <span className="text-text-primary">Studio</span>
+        <div className="relative z-10 w-full max-w-2xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-text-primary mb-2">
+              Describe your game.
             </h1>
-            <p className="text-xl md:text-2xl text-text-secondary font-medium mb-2">
-              Command Your AI Army. Build AAA Games.
-            </p>
-            <p className="text-text-muted max-w-xl mx-auto mb-10">
-              5 AI agents. One vision. Your game, built in months, not years.
+            <p className="text-text-muted text-sm md:text-base">
+              One prompt. AI builds everything. You watch.
             </p>
           </div>
 
-          <div className="animate-fade-in-up stagger-2">
+          <div className="relative">
+            <textarea
+              value={quickPrompt}
+              onChange={(e) => setQuickPrompt(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleBuildMyGame()}
+              placeholder="e.g. Build me a medieval castle with a dragon and magical forest"
+              rows={4}
+              className="w-full px-5 py-4 rounded-2xl bg-boss-card border-2 border-boss-border text-text-primary placeholder:text-text-muted resize-none text-base focus:outline-none focus:border-gold/60 focus:ring-2 focus:ring-gold/20 transition-all shadow-lg"
+              disabled={quickBuilding}
+            />
+            <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-[calc(100%+8px)] h-1 rounded-full bg-gradient-to-r from-transparent via-gold/40 to-transparent blur-sm pointer-events-none" />
+          </div>
+
+          <div className="mt-6 flex flex-col items-center gap-4">
             <Button
-              onClick={() => setShowNewProject(true)}
+              onClick={handleBuildMyGame}
+              disabled={!quickPrompt.trim() || quickBuilding}
               size="lg"
-              className="bg-gold hover:bg-gold/90 text-boss-bg font-bold text-lg px-10 py-6 cta-glow gap-2 transition-all duration-300"
+              className="w-full max-w-sm bg-agent-green hover:bg-agent-green/90 text-white font-bold text-lg py-6 rounded-xl shadow-lg shadow-agent-green/25 gap-2 transition-all disabled:opacity-50"
             >
-              Start Building
-              <ChevronRight className="w-5 h-5" />
+              {quickBuilding ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                "🚀"
+              )}
+              Build My Game
             </Button>
-          </div>
 
-          {/* Agent lineup */}
-          <div className="mt-20 flex items-end justify-center gap-4 md:gap-6 animate-fade-in-up stagger-3">
-            {AGENTS.map((agent, i) => (
-              <div
-                key={agent.name}
-                className="flex flex-col items-center animate-float"
-                style={{ animationDelay: `${i * 0.4}s` }}
-              >
-                <div
-                  className="w-14 h-14 md:w-20 md:h-20 rounded-2xl border-2 flex items-center justify-center text-2xl md:text-4xl mb-2 transition-all duration-300 hover:scale-110"
-                  style={{
-                    borderColor: agent.color + "60",
-                    backgroundColor: agent.color + "10",
-                    boxShadow: `0 0 25px ${agent.glow}`,
-                  }}
+            <p className="text-text-muted text-xs">Try an example:</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {EXAMPLE_PROMPTS.map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setQuickPrompt(example)}
+                  className="px-4 py-2 rounded-full border border-boss-border bg-boss-elevated/80 text-text-secondary text-sm hover:border-gold/40 hover:text-text-primary transition-colors"
                 >
-                  {agent.icon}
-                </div>
-                <span className="text-xs font-bold" style={{ color: agent.color }}>
-                  {agent.name}
-                </span>
-                <span className="text-[10px] text-text-muted hidden md:block">
-                  {agent.role}
-                </span>
-              </div>
-            ))}
+                  {example}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce">
-          <div className="w-6 h-10 rounded-full border-2 border-text-muted/30 flex items-start justify-center p-1.5">
-            <div className="w-1.5 h-3 rounded-full bg-gold/50" />
-          </div>
+          <p className="text-center text-text-muted text-xs mt-6">
+            Or{" "}
+            <button
+              type="button"
+              onClick={() => setShowNewProject(true)}
+              className="text-gold hover:underline"
+            >
+              create a project with name + prompt
+            </button>{" "}
+            for more control.
+          </p>
+
+          {!loading && projects.length > 0 && (
+            <div className="mt-10 w-full max-w-xl mx-auto">
+              <p className="text-xs text-text-muted mb-3 text-center">Recent projects</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {projects.slice(0, 5).map((proj) => (
+                  <button
+                    key={proj.id}
+                    type="button"
+                    onClick={() => router.push(`/project/${proj.id}`)}
+                    className="px-4 py-2 rounded-xl border border-boss-border bg-boss-card/60 text-text-secondary text-sm hover:border-gold/40 hover:text-text-primary transition-colors text-left max-w-[200px] truncate"
+                  >
+                    {proj.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
