@@ -19,6 +19,8 @@ interface ProjectState {
   worldState: WorldStateEntity[];
   agentStatuses: Record<AgentName, AgentStatus>;
   isAutonomousRunning: boolean;
+  isFullProjectRunning: boolean;
+  isFullProjectPaused: boolean;
   isRelayConnected: boolean;
 
   setProject: (project: Project | null) => void;
@@ -35,6 +37,8 @@ interface ProjectState {
   setWorldState: (entities: WorldStateEntity[]) => void;
   setAgentStatus: (name: AgentName, state: AgentStatus["state"]) => void;
   setAutonomousRunning: (running: boolean) => void;
+  setFullProjectRunning: (running: boolean) => void;
+  setFullProjectPaused: (paused: boolean) => void;
   setRelayConnected: (connected: boolean) => void;
   reset: () => void;
 }
@@ -56,6 +60,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   worldState: [],
   agentStatuses: { ...defaultAgentStatuses },
   isAutonomousRunning: false,
+  isFullProjectRunning: false,
+  isFullProjectPaused: false,
   isRelayConnected: false,
 
   setProject: (project) => set({ project }),
@@ -94,6 +100,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
       },
     })),
   setAutonomousRunning: (isAutonomousRunning) => set({ isAutonomousRunning }),
+  setFullProjectRunning: (isFullProjectRunning) => set({ isFullProjectRunning, isFullProjectPaused: false }),
+  setFullProjectPaused: (isFullProjectPaused) => set({ isFullProjectPaused }),
   setRelayConnected: (isRelayConnected) => set({ isRelayConnected }),
   reset: () =>
     set({
@@ -105,6 +113,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
       worldState: [],
       agentStatuses: { ...defaultAgentStatuses },
       isAutonomousRunning: false,
+      isFullProjectRunning: false,
+      isFullProjectPaused: false,
       isRelayConnected: false,
     }),
 }));

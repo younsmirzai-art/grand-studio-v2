@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Square, SkipForward, Loader2, Camera, Monitor } from "lucide-react";
+import { Play, Square, SkipForward, Loader2, Camera, Monitor, Rocket, Pause, SquareStop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -12,6 +12,10 @@ interface ControlPanelProps {
   onStopAutonomous: () => void;
   isRunningTurn: boolean;
   onCaptureNow?: () => void;
+  onFullProjectClick?: () => void;
+  onFullProjectPause?: () => void;
+  onFullProjectResume?: () => void;
+  onFullProjectStop?: () => void;
 }
 
 export function ControlPanel({
@@ -20,8 +24,14 @@ export function ControlPanel({
   onStopAutonomous,
   isRunningTurn,
   onCaptureNow,
+  onFullProjectClick,
+  onFullProjectPause,
+  onFullProjectResume,
+  onFullProjectStop,
 }: ControlPanelProps) {
   const isAutonomous = useProjectStore((s) => s.isAutonomousRunning);
+  const isFullProject = useProjectStore((s) => s.isFullProjectRunning);
+  const isFullProjectPaused = useProjectStore((s) => s.isFullProjectPaused);
   const { liveViewVisible, setLiveViewVisible } = useUIStore();
 
   return (
@@ -32,7 +42,7 @@ export function ControlPanel({
             size="sm"
             variant="outline"
             onClick={onRunOneTurn}
-            disabled={isRunningTurn || isAutonomous}
+            disabled={isRunningTurn || isAutonomous || isFullProject}
             className="border-boss-border hover:border-boss-border-focus text-text-secondary hover:text-text-primary gap-1.5"
           >
             {isRunningTurn ? (
@@ -66,7 +76,7 @@ export function ControlPanel({
             <Button
               size="sm"
               onClick={onStartAutonomous}
-              disabled={isRunningTurn}
+              disabled={isRunningTurn || isFullProject}
               className="bg-agent-green/10 hover:bg-agent-green/20 text-agent-green border border-agent-green/20 gap-1.5"
             >
               <Play className="w-3.5 h-3.5" />
@@ -79,10 +89,68 @@ export function ControlPanel({
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className={`w-2 h-2 rounded-full ${isAutonomous ? "bg-agent-green animate-pulse" : "bg-text-muted"}`} />
+          <div className={`w-2 h-2 rounded-full ${isAutonomous || isFullProject ? "bg-agent-green animate-pulse" : "bg-text-muted"}`} />
         </TooltipTrigger>
-        <TooltipContent>{isAutonomous ? "Autonomous mode active" : "Idle"}</TooltipContent>
+        <TooltipContent>{isAutonomous ? "Autonomous mode active" : isFullProject ? "Full Project running" : "Idle"}</TooltipContent>
       </Tooltip>
+
+      {onFullProjectClick && !isFullProject && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onFullProjectClick}
+              disabled={isRunningTurn || isAutonomous}
+              className="border-gold/30 hover:border-gold/50 text-gold hover:bg-gold/10 gap-1.5"
+            >
+              <Rocket className="w-3.5 h-3.5" />
+              🚀 Full Project
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Run full project autonomously (plan + execute all tasks)</TooltipContent>
+        </Tooltip>
+      )}
+      {isFullProject && (
+        <>
+          {isFullProjectPaused ? (
+            onFullProjectResume && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="sm" variant="outline" onClick={onFullProjectResume} className="border-agent-green/30 text-agent-green hover:bg-agent-green/10 gap-1.5">
+                    <Play className="w-3.5 h-3.5" />
+                    ▶️ Resume
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Resume Full Project</TooltipContent>
+              </Tooltip>
+            )
+          ) : (
+            onFullProjectPause && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="sm" variant="outline" onClick={onFullProjectPause} className="border-agent-amber/30 text-agent-amber hover:bg-agent-amber/10 gap-1.5">
+                    <Pause className="w-3.5 h-3.5" />
+                    ⏸️ Pause
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Pause Full Project</TooltipContent>
+              </Tooltip>
+            )
+          )}
+          {onFullProjectStop && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" variant="outline" onClick={onFullProjectStop} className="border-agent-rose/30 text-agent-rose hover:bg-agent-rose/10 gap-1.5">
+                  <SquareStop className="w-3.5 h-3.5" />
+                  ⏹️ Stop
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Stop Full Project</TooltipContent>
+            </Tooltip>
+          )}
+        </>
+      )}
 
       {onCaptureNow && (
         <Tooltip>

@@ -16,6 +16,16 @@ import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
 import { TEAM } from "@/lib/agents/identity";
 import type { ChatTurn } from "@/lib/agents/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 const AGENT_NAMES = TEAM.map((a) => a.name.toLowerCase());
 
@@ -33,9 +43,11 @@ export default function ProjectPage() {
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
   const { taskBoardVisible } = useUIStore();
-  const { setAutonomousRunning, isAutonomousRunning, setChatTurns } = useProjectStore();
+  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, setFullProjectPaused } = useProjectStore();
   const [isRunningTurn, setIsRunningTurn] = useState(false);
   const [typingAgents, setTypingAgents] = useState<string[]>([]);
+  const [fullProjectDialogOpen, setFullProjectDialogOpen] = useState(false);
+  const [fullProjectPrompt, setFullProjectPrompt] = useState("");
   const autonomousRef = useRef(false);
 
   const refetchChat = useCallback(async () => {
@@ -264,6 +276,86 @@ export default function ProjectPage() {
 
   const { liveViewVisible } = useUIStore();
 
+  const handleFullProjectStart = useCallback(async () => {
+    if (!fullProjectPrompt.trim()) {
+      toast.error("Enter a project prompt");
+      return;
+    }
+    setFullProjectDialogOpen(false);
+    setFullProjectRunning(true);
+    const prompt = fullProjectPrompt.trim();
+    setFullProjectPrompt("");
+    try {
+      const res = await fetch("/api/agents/full-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Full Project failed");
+        return;
+      }
+      toast.success(data.summary ?? "Full Project complete");
+    } catch (e) {
+      toast.error("Full Project request failed");
+      console.error(e);
+    } finally {
+      setFullProjectRunning(false);
+      setFullProjectPaused(false);
+      await refetchChat();
+    }
+  }, [projectId, fullProjectPrompt, setFullProjectRunning, setFullProjectPaused, refetchChat]);
+
+  const handleFullProjectPause = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/full-project/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action: "pause" }),
+      });
+      if (res.ok) {
+        toast.info("Project paused");
+        setFullProjectPaused(true);
+      }
+    } catch {
+      toast.error("Failed to pause");
+    }
+  }, [projectId, setFullProjectPaused]);
+
+  const handleFullProjectResume = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/full-project/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action: "resume" }),
+      });
+      if (res.ok) {
+        toast.info("Project resumed");
+        setFullProjectPaused(false);
+      }
+    } catch {
+      toast.error("Failed to resume");
+    }
+  }, [projectId, setFullProjectPaused]);
+
+  const handleFullProjectStop = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/full-project/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action: "stop" }),
+      });
+      if (res.ok) {
+        toast.info("Project stop requested");
+        setFullProjectRunning(false);
+        setFullProjectPaused(false);
+      }
+    } catch {
+      toast.error("Failed to stop");
+    }
+  }, [projectId, setFullProjectRunning, setFullProjectPaused]);
+
   return (
     <>
       <Header projectName={project?.name ?? "Loading..."} />
@@ -276,6 +368,10 @@ export default function ProjectPage() {
               onStopAutonomous={stopAutonomous}
               isRunningTurn={isRunningTurn}
               onCaptureNow={handleCaptureNow}
+              onFullProjectClick={() => setFullProjectDialogOpen(true)}
+              onFullProjectPause={handleFullProjectPause}
+              onFullProjectResume={handleFullProjectResume}
+              onFullProjectStop={handleFullProjectStop}
             />
           </div>
 
@@ -290,7 +386,7 @@ export default function ProjectPage() {
             <CommandInput
               onSend={sendBossCommand}
               onSendDirect={sendToSpecificAgent}
-              disabled={isAutonomousRunning}
+              disabled={isAutonomousRunning || isFullProjectRunning}
               agentNames={AGENT_NAMES}
             />
           </div>
@@ -303,6 +399,36 @@ export default function ProjectPage() {
           {liveViewVisible && <LiveViewPanel />}
         </AnimatePresence>
       </div>
+
+      <Dialog open={fullProjectDialogOpen} onOpenChange={setFullProjectDialogOpen}>
+        <DialogContent className="bg-boss-surface border-boss-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-text-primary">🚀 Full Project</DialogTitle>
+            <DialogDescription className="text-text-muted">
+              Describe the full project. Nima will break it into tasks; each task will be executed in UE5 automatically. You can Pause or Stop at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="e.g. Build me a medieval castle with landscape, trees, lighting, and a dragon"
+            value={fullProjectPrompt}
+            onChange={(e) => setFullProjectPrompt(e.target.value)}
+            className="min-h-24 bg-boss-elevated border-boss-border text-text-primary placeholder:text-text-muted"
+            disabled={isFullProjectRunning}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFullProjectDialogOpen(false)} className="border-boss-border">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFullProjectStart}
+              disabled={!fullProjectPrompt.trim() || isFullProjectRunning}
+              className="bg-gold hover:bg-gold/90 text-black gap-1.5"
+            >
+              🚀 Start Full Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

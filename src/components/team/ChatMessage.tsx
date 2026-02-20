@@ -166,6 +166,7 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
               if (part.type === "code") {
                 const isPython = part.lang === "python";
                 const sent = ue5SentBlocks.has(i);
+                // Show Send to UE5 for ANY agent's Python code (Nima, Alex, Thomas, Elena, Morgan)
                 const canSendToUE5 = isPython && onExecuteCode && projectId;
                 return (
                   <div key={i} className="relative my-2 rounded-lg overflow-hidden border border-boss-border">
