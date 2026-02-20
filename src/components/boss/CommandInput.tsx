@@ -119,7 +119,7 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
-            placeholder={placeholder ?? "Give your team an order, ریس... (use @name for direct chat)"}
+            placeholder={placeholder ?? "Give your team an order... (use @name for direct chat)"}
             disabled={disabled || sending}
             rows={1}
             className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted resize-none outline-none text-sm min-h-[36px] py-1.5"

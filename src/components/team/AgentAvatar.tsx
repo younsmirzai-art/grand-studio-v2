@@ -18,7 +18,7 @@ const sizeClasses = {
 
 export function AgentAvatar({ name, size = "md", showStatus, status }: AgentAvatarProps) {
   const agent = getAgent(name);
-  const isBoss = name === "Boss" || name === "ریس";
+  const isBoss = name === "Boss";
 
   const bgColor = isBoss
     ? "bg-gold/15 border-gold/30"
@@ -60,14 +60,14 @@ export function AgentAvatar({ name, size = "md", showStatus, status }: AgentAvat
 
 export function AgentNameBadge({ name }: { name: string }) {
   const agent = getAgent(name as AgentName);
-  const isBoss = name === "Boss" || name === "ریس";
+  const isBoss = name === "Boss";
 
   return (
     <span
       className={`font-semibold text-sm ${isBoss ? "text-gold" : ""}`}
       style={agent && !isBoss ? { color: agent.colorHex } : undefined}
     >
-      {isBoss ? "ریس (Boss)" : name}
+      {isBoss ? "Boss" : name}
     </span>
   );
 }

@@ -99,7 +99,7 @@ export async function handleBossCommand(
   projectId: string,
   bossMessage: string
 ): Promise<void> {
-  const discussionPrompt = `The Boss (ریس) just said: "${bossMessage}"
+  const discussionPrompt = `The Boss just said: "${bossMessage}"
 
 You are in a team meeting. The Boss is the manager — they decide who does what.
 Share your thoughts, ideas, and suggestions based on your expertise.

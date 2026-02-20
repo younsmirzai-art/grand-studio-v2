@@ -68,7 +68,7 @@ export async function runAutoDebugLoop(
     project_id: projectId,
     agent_name: "System",
     agent_title: "Auto-Debug",
-    content: "⚠️ ریس, I've tried to fix the UE5 code 3 times but it keeps failing. Please check the God-Eye log for details.",
+    content: "Auto-debug failed after 3 attempts. Please check the God-Eye log for details.",
     turn_type: "discussion",
   });
 

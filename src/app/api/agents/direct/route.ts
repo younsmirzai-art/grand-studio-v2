@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     context += memoryCtx;
     context += "\n" + buildUE5CapabilitiesContext();
 
-    const directPrompt = `The Boss (ریس) is speaking DIRECTLY to you in a private conversation.
+    const directPrompt = `The Boss is speaking DIRECTLY to you in a private conversation.
 This is a direct message — only you are responding. Give your full attention and expertise.
 
 Boss says: "${message}"`;

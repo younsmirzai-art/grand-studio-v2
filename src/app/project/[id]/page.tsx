@@ -51,12 +51,13 @@ export default function ProjectPage() {
 
   const sendDirectMessage = useCallback(
     async (agentName: string, message: string) => {
+      console.log("[DirectChat] Sending direct message to:", agentName, "message:", message.slice(0, 50));
       const supabase = getClient();
 
       await supabase.from("chat_turns").insert({
         project_id: projectId,
         agent_name: "Boss",
-        agent_title: "ریس",
+        agent_title: "Boss",
         content: `@${agentName} ${message}`,
         turn_type: "direct_command",
       });
@@ -64,6 +65,7 @@ export default function ProjectPage() {
       setTypingAgents([agentName]);
 
       try {
+        console.log("[DirectChat] Calling /api/agents/direct for:", agentName);
         const res = await fetch("/api/agents/direct", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -72,11 +74,14 @@ export default function ProjectPage() {
 
         if (!res.ok) {
           const err = await res.text();
+          console.error("[DirectChat] Error response:", err);
           toast.error(`${agentName} error: ${err}`);
+        } else {
+          console.log("[DirectChat] Success from", agentName);
         }
       } catch (err) {
         toast.error(`Network error reaching ${agentName}`);
-        console.error(err);
+        console.error("[DirectChat] Network error:", err);
       } finally {
         setTypingAgents([]);
         await refetchChat();
@@ -87,17 +92,22 @@ export default function ProjectPage() {
 
   const sendBossCommand = useCallback(
     async (message: string) => {
+      console.log("[SendCommand] Raw message:", message);
       const direct = parseDirectMention(message);
+
       if (direct) {
-        return sendDirectMessage(direct.agentName, direct.cleanMessage);
+        console.log("[SendCommand] Detected direct message to:", direct.agentName);
+        await sendDirectMessage(direct.agentName, direct.cleanMessage);
+        return;
       }
 
+      console.log("[SendCommand] Broadcasting to ALL agents");
       const supabase = getClient();
 
       await supabase.from("chat_turns").insert({
         project_id: projectId,
         agent_name: "Boss",
-        agent_title: "ریس",
+        agent_title: "Boss",
         content: message,
         turn_type: "boss_command",
       });

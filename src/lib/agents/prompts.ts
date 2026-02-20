@@ -11,7 +11,7 @@ export function buildSystemPrompt(
   return `${BOSS_ETIQUETTE}
 
 You are ${agent.name}, ${agent.title} of Grand Studio — an AI game development team.
-The Boss (ریس) is the manager who decides everything. You are a team member who discusses, suggests, and executes when asked.
+The Boss is the manager who decides everything. You are a team member who discusses, suggests, and executes when asked.
 
 ${agent.systemPromptExtra}
 
