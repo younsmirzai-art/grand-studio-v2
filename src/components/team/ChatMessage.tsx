@@ -1,13 +1,8 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { motion } from "framer-motion";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Play, Copy, Check } from "lucide-react";
-import { useState } from "react";
 import { AgentAvatar, AgentNameBadge } from "./AgentAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +25,47 @@ const turnTypeConfig: Record<TurnType, { label: string; className: string }> = {
   boss_command: { label: "Boss Order", className: "bg-gold/10 text-gold border-gold/20" },
 };
 
+function parseCodeBlocks(text: string): { type: "text" | "code"; content: string; lang?: string }[] {
+  const parts: { type: "text" | "code"; content: string; lang?: string }[] = [];
+  const regex = /```(\w*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", content: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: "code", content: match[2], lang: match[1] || "text" });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ type: "text", content: text.slice(lastIndex) });
+  }
+
+  return parts;
+}
+
+function renderTextContent(text: string): React.ReactNode {
+  return text.split("\n").map((line, i) => {
+    let processed: React.ReactNode = line;
+
+    processed = line.split(/(\*\*.*?\*\*)/).map((segment, j) => {
+      if (segment.startsWith("**") && segment.endsWith("**")) {
+        return <strong key={j} className="font-semibold text-text-primary">{segment.slice(2, -2)}</strong>;
+      }
+      return segment;
+    });
+
+    return (
+      <span key={i}>
+        {i > 0 && <br />}
+        {processed}
+      </span>
+    );
+  });
+}
+
 function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const isBoss = turn.turn_type === "boss_command";
@@ -42,6 +78,8 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  const parts = parseCodeBlocks(turn.content || "");
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -53,7 +91,7 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
         <AgentAvatar name={isBoss ? "Boss" : turn.agent_name} size="md" />
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1.5">
             <AgentNameBadge name={isBoss ? "Boss" : turn.agent_name} />
             {agent && !isBoss && (
               <span className="text-text-muted text-xs">{agent.title}</span>
@@ -69,76 +107,53 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
             </span>
           </div>
 
-          <div className="prose prose-invert prose-sm max-w-none text-text-primary/90 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_ul]:mb-2 [&_ol]:mb-2 [&_li]:text-text-primary/90">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ className, children, ...props }) {
-                  const match = /language-(\w+)/.exec(className || "");
-                  const codeStr = String(children).replace(/\n$/, "");
-
-                  if (match) {
-                    const lang = match[1];
-                    const isPython = lang === "python";
-
-                    return (
-                      <div className="relative group/code my-2 rounded-lg overflow-hidden border border-boss-border">
-                        <div className="flex items-center justify-between px-3 py-1.5 bg-boss-elevated/50 border-b border-boss-border">
-                          <span className="text-[11px] text-text-muted font-mono">{lang}</span>
-                          <div className="flex items-center gap-1">
-                            {isPython && onExecuteCode && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => onExecuteCode(codeStr)}
-                                className="h-6 px-2 text-[11px] text-agent-green hover:text-agent-green hover:bg-agent-green/10 gap-1"
-                              >
-                                <Play className="w-3 h-3" />
-                                Execute in UE5
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleCopy(codeStr)}
-                              className="h-6 px-2 text-text-muted hover:text-text-primary"
-                            >
-                              {copiedCode === codeStr ? (
-                                <Check className="w-3 h-3" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                        <SyntaxHighlighter
-                          style={oneDark}
-                          language={lang}
-                          PreTag="div"
-                          customStyle={{
-                            margin: 0,
-                            background: "#0b0d12",
-                            padding: "12px",
-                            fontSize: "13px",
-                          }}
+          <div className="text-sm text-text-primary/90 leading-relaxed">
+            {parts.map((part, i) => {
+              if (part.type === "code") {
+                const isPython = part.lang === "python";
+                return (
+                  <div key={i} className="relative my-2 rounded-lg overflow-hidden border border-boss-border">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-boss-elevated/50 border-b border-boss-border">
+                      <span className="text-[11px] text-text-muted font-mono">{part.lang}</span>
+                      <div className="flex items-center gap-1">
+                        {isPython && onExecuteCode && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => onExecuteCode(part.content.trim())}
+                            className="h-6 px-2 text-[11px] text-agent-green hover:text-agent-green hover:bg-agent-green/10 gap-1"
+                          >
+                            <Play className="w-3 h-3" />
+                            Execute in UE5
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleCopy(part.content.trim())}
+                          className="h-6 px-2 text-text-muted hover:text-text-primary"
                         >
-                          {codeStr}
-                        </SyntaxHighlighter>
+                          {copiedCode === part.content.trim() ? (
+                            <Check className="w-3 h-3" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </Button>
                       </div>
-                    );
-                  }
+                    </div>
+                    <pre className="p-3 bg-[#0b0d12] overflow-x-auto text-[13px] font-mono text-agent-green/80">
+                      <code>{part.content}</code>
+                    </pre>
+                  </div>
+                );
+              }
 
-                  return (
-                    <code
-                      className="bg-boss-elevated px-1.5 py-0.5 rounded text-[13px] font-mono text-agent-teal"
-                      {...props}
-                    >
-                      {children}
-                    </code>
-                  );
-                },
-              }}
-            />
+              return (
+                <div key={i} className="whitespace-pre-wrap">
+                  {renderTextContent(part.content.trim())}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

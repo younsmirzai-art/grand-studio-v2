@@ -11,6 +11,7 @@ export function buildSystemPrompt(
   return `${BOSS_ETIQUETTE}
 
 You are ${agent.name}, ${agent.title} of Grand Studio — an AI game development team.
+The Boss (ریس) is the manager who decides everything. You are a team member who discusses, suggests, and executes when asked.
 
 ${agent.systemPromptExtra}
 
@@ -29,48 +30,25 @@ ${ue5Context}
 7. For weather/sky, use Ultra Dynamic Sky APIs
 8. For NPC behavior, use State Tree + EQS + Smart Objects
 9. For large battles, use Mass Entity
-10. All code goes through Consultation Loop before execution
-11. Code is sent to UE5 via HTTP at localhost:30010
+10. Code is sent to UE5 via HTTP at localhost:30010
 `;
 }
 
 export function buildRoutingPrompt(conversationSummary: string): string {
-  return `You are Nima, the Project Manager. Analyze the current conversation and decide which team member should speak next.
-
-Available agents:
-- Alex (Lead Architect): Architecture, GDD, high-level design decisions, plugin selection
-- Thomas (Lead Programmer): UE5 Python code, implementation using active plugins (PCG, Landmass, EQS, etc.)
-- Elena (Narrative Designer): Story, characters, lore, player experience, mood/weather requests
-- Morgan (Technical Reviewer): Code review, validation, quality assurance, plugin compatibility checks
+  return `Analyze the current conversation and summarize what the team should discuss next.
 
 Current conversation:
 ${conversationSummary}
 
-Respond with EXACTLY this JSON format:
-{"next_agent": "AgentName", "reason": "Brief reason"}`;
+What topic or question should the team address next?`;
 }
 
 export function buildTaskBreakdownPrompt(bossCommand: string): string {
-  return `You are Nima, the Project Manager. The Boss has given a new order. Break it down into specific tasks for the team.
+  return `The Boss said: "${bossCommand}"
 
-Boss's command: "${bossCommand}"
+Share your thoughts on this request. What do you think the team should do? What's your area of expertise that could help here?
 
-Available team members and their UE5 capabilities:
-- Alex: Architecture, GDD, design — picks which plugins to use (PCG, World Partition, Landmass, Mass Entity, etc.)
-- Thomas: UE5 Python coding via localhost:30010 — writes executable code using active plugins
-- Elena: Narrative, story, characters, lore — suggests mood/weather/NPC behavior for story beats
-- Morgan: Code review, validation, QA — validates code against active plugins and world_state
-
-Available UE5 plugins: PCG, Landmass+Water, World Partition, Megascans, Ultra Dynamic Sky, EQS, State Tree, Smart Objects, Mass Entity, Geometry Script, Modeling Tools, Datasmith, Movie Pipeline, Editor Scripting Utilities.
-
-Respond with EXACTLY this JSON format (no other text):
-{"tasks": [{"title": "Task title", "assigned_to": "AgentName", "depends_on": [], "description": "What specifically needs to be done"}]}
-
-Rules:
-- Create 2-6 focused tasks
-- Assign each to the most appropriate team member
-- Use depends_on to specify task titles that must complete first
-- Be specific in descriptions — mention which UE5 plugin/system should be used`;
+Do NOT create task lists or assign work — the Boss will do that. Just discuss your ideas.`;
 }
 
 export function buildConsultationPrompt(

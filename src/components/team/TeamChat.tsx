@@ -17,6 +17,13 @@ export function TeamChat({ loading, onExecuteCode }: TeamChatProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    console.log("[TeamChat] rendering", chatTurns.length, "chat turns");
+    if (chatTurns.length > 0) {
+      console.log("[TeamChat] last turn:", chatTurns[chatTurns.length - 1].agent_name, "-", chatTurns[chatTurns.length - 1].content?.slice(0, 80));
+    }
+  }, [chatTurns]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatTurns.length]);
 
@@ -55,7 +62,7 @@ export function TeamChat({ loading, onExecuteCode }: TeamChatProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin">
+    <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
       <AnimatePresence initial={false}>
         {chatTurns.map((turn) => (
           <ChatMessage

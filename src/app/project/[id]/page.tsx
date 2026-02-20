@@ -67,11 +67,12 @@ export default function ProjectPage() {
           const err = await res.text();
           toast.error("Agent error: " + err);
         }
-
-        await refetchChat();
       } catch (err) {
         toast.error("Network error communicating with agents");
         console.error(err);
+      } finally {
+        console.log("[ProjectPage] sendBossCommand done, refetching chat...");
+        await refetchChat();
       }
     },
     [projectId, refetchChat]
@@ -127,7 +128,7 @@ export default function ProjectPage() {
     };
 
     run();
-  }, [projectId, setAutonomousRunning]);
+  }, [projectId, setAutonomousRunning, refetchChat]);
 
   const stopAutonomous = useCallback(() => {
     autonomousRef.current = false;
