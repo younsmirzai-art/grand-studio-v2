@@ -196,6 +196,7 @@ export default function HomePage() {
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
             <Link href="/marketplace" className="hover:text-text-primary transition-colors">Marketplace</Link>
+            <Link href="/publish" className="hover:text-text-primary transition-colors">Publish</Link>
             <a href="#team" className="hover:text-text-primary transition-colors">Team</a>
             <a href="#features" className="hover:text-text-primary transition-colors">Features</a>
             <a href="#pricing" className="hover:text-text-primary transition-colors">Pricing</a>
@@ -520,7 +521,11 @@ export default function HomePage() {
           <p className="text-center mt-10 text-text-muted text-sm">
             Or{" "}
             <Link href="/marketplace" className="text-gold hover:underline">
-              🏪 browse free game templates in the Marketplace
+              🏪 browse free game templates
+            </Link>
+            {" · "}
+            <Link href="/publish" className="text-gold hover:underline">
+              🚀 Publish to Steam
             </Link>
           </p>
 
