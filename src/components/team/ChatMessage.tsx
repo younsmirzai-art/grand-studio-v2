@@ -24,11 +24,15 @@ import { MusicPlayer } from "@/components/tools/MusicPlayer";
 import { parseTrailerTag } from "@/lib/trailer/trailerEngine";
 import { TrailerPreviewCard } from "@/components/tools/TrailerPreviewCard";
 import type { TrailerTemplateKey } from "@/lib/trailer/trailerEngine";
+import { PlaytestReportCard } from "@/components/tools/PlaytestReportCard";
+import { parsePlaytestReportFromMessage } from "@/lib/agents/playtester";
 
 interface ChatMessageProps {
   turn: ChatTurn;
   onExecuteCode?: (code: string, agentName?: string) => void | Promise<void>;
   onRecreateImage?: (imageUrl: string) => void | Promise<void>;
+  onFixCritical?: (issues: string[]) => void | Promise<void>;
+  onRunPlaytest?: () => void | Promise<void>;
 }
 
 const turnTypeConfig: Record<TurnType, { label: string; className: string }> = {
@@ -83,7 +87,7 @@ function renderTextContent(text: string): React.ReactNode {
   });
 }
 
-function ChatMessageInner({ turn, onExecuteCode, onRecreateImage }: ChatMessageProps) {
+function ChatMessageInner({ turn, onExecuteCode, onRecreateImage, onFixCritical, onRunPlaytest }: ChatMessageProps) {
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -91,6 +95,8 @@ function ChatMessageInner({ turn, onExecuteCode, onRecreateImage }: ChatMessageP
   const [ue5Sending, setUe5Sending] = useState(false);
   const [ue5SentBlocks, setUe5SentBlocks] = useState<Set<number>>(new Set());
   const [recreateLoading, setRecreateLoading] = useState(false);
+  const [playtestRetestLoading, setPlaytestRetestLoading] = useState(false);
+  const playtestReport = parsePlaytestReportFromMessage(turn.content ?? "");
   const isBoss = turn.turn_type === "boss_command" || turn.turn_type === "direct_command";
   const isDirect = turn.turn_type === "direct" || turn.turn_type === "direct_command";
   const isConsultation = turn.turn_type === "consultation";
@@ -161,6 +167,16 @@ function ChatMessageInner({ turn, onExecuteCode, onRecreateImage }: ChatMessageP
           </div>
 
           <div className="text-sm text-text-primary/90 leading-relaxed space-y-2">
+            {playtestReport && turn.agent_name === "Amir" && (
+              <div className="my-3">
+                <PlaytestReportCard
+                  report={playtestReport}
+                  screenshotUrl={turn.screenshot_url ?? undefined}
+                  onFixCritical={onFixCritical}
+                  onRetest={onRunPlaytest ? async () => { setPlaytestRetestLoading(true); try { await onRunPlaytest(); } finally { setPlaytestRetestLoading(false); } } : undefined}
+                />
+              </div>
+            )}
             {turn.screenshot_url && (
               <ScreenshotPreview
                 url={turn.screenshot_url}

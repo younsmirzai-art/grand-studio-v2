@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, ChevronDown, Loader2, Music, Film, ImageIcon } from "lucide-react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -36,6 +36,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const setMusicModalOpen = useUIStore((s) => s.setMusicModalOpen);
   const setTrailerModalOpen = useUIStore((s) => s.setTrailerModalOpen);
   const setImageTo3DModalOpen = useUIStore((s) => s.setImageTo3DModalOpen);
+  const setRunPlaytestTrigger = useUIStore((s) => s.setRunPlaytestTrigger);
   const [gameStyleApplying, setGameStyleApplying] = useState<string | null>(null);
 
   const applyGameStyle = async (presetKey: string) => {
@@ -177,6 +178,22 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+          {projectId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setRunPlaytestTrigger(Date.now())}
+                  className="w-full justify-start gap-2 text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 h-8 text-xs"
+                >
+                  <TestTube2 className="w-3.5 h-3.5" />
+                  Run Playtest
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Capture + Amir playtest</TooltipContent>
+            </Tooltip>
           )}
           <Button
             variant="ghost"

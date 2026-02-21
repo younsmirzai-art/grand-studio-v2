@@ -7,6 +7,7 @@ import { getMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
 import { buildTrailerPlan, generateTrailerCode } from "@/lib/trailer/trailerEngine";
 import { quickFix } from "./errorPatterns";
 import { debugAndRetry } from "./autoDebug";
+import { runPlaytest, formatReportAsMessage } from "./playtester";
 
 export interface ProjectTask {
   id: string;
@@ -244,6 +245,28 @@ function triggerCapture(projectId: string): void {
   }).catch(() => {});
 }
 
+const SCREENSHOT_WAIT_MS = 30_000;
+const SCREENSHOT_POLL_MS = 2_000;
+
+async function waitForScreenshot(projectId: string): Promise<string | null> {
+  const supabase = createServerClient();
+  const deadline = Date.now() + SCREENSHOT_WAIT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, SCREENSHOT_POLL_MS));
+    const { data } = await supabase
+      .from("ue5_commands")
+      .select("screenshot_url")
+      .eq("project_id", projectId)
+      .not("screenshot_url", "is", null)
+      .order("executed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const url = (data as { screenshot_url?: string } | null)?.screenshot_url;
+    if (url) return url;
+  }
+  return null;
+}
+
 async function sendToAgentWithTimeout(projectId: string, agentName: AgentName, taskDescription: string): Promise<string> {
   const agent = getAgent(agentName);
   if (!agent) throw new Error(`Agent ${agentName} not found`);
@@ -474,6 +497,72 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
   }
 
   const runStatusBeforeTrailer = await getRunStatus(projectId);
+  let playtestCount = 0;
+  const MAX_PLAYTEST_FIX_ROUNDS = 2;
+
+  if (runStatusBeforeTrailer !== "stopped" && tasks.length > 0) {
+    await insertProgressChat(projectId, `🎮 Running Amir playtest…`);
+    triggerCapture(projectId);
+    let screenshotUrl: string | null = await waitForScreenshot(projectId);
+    let report = await runPlaytest({ projectId, screenshotUrl: screenshotUrl ?? undefined, focusArea: "all" });
+    report.screenshotUrl = screenshotUrl ?? undefined;
+    const message = formatReportAsMessage(report);
+    await supabase.from("chat_turns").insert({
+      project_id: projectId,
+      agent_name: "Amir",
+      agent_title: "Playtester",
+      content: message + (report.rawResponse ? "\n\n---\n\n" + report.rawResponse.slice(0, 2000) : ""),
+      turn_type: "critique",
+      screenshot_url: report.screenshotUrl ?? null,
+    });
+    await supabase.from("playtest_reports").insert({
+      project_id: projectId,
+      score: report.score,
+      critical_count: report.criticalIssues.length,
+      warning_count: report.warnings.length,
+      minor_count: report.minorIssues.length,
+      report_json: report as unknown as Record<string, unknown>,
+      screenshot_url: report.screenshotUrl ?? null,
+    });
+    playtestCount++;
+
+    for (let fixRound = 0; fixRound < MAX_PLAYTEST_FIX_ROUNDS && report.criticalIssues.length > 0; fixRound++) {
+      await insertProgressChat(projectId, `🔧 Thomas fixing ${report.criticalIssues.length} critical playtest issue(s)…`);
+      const fixPrompt = "Fix these critical issues from the playtest. Output ONLY UE5 Python code in a ```python block.\n\n" + report.criticalIssues.join("\n");
+      const agentResponse = await sendToAgentWithTimeout(projectId, "Thomas", fixPrompt);
+      const code = extractPythonCode(agentResponse);
+      if (code) {
+        const ue5Result = await sendToUE5AndWait(projectId, code, "Thomas");
+        if (ue5Result.success) {
+          triggerCapture(projectId);
+          screenshotUrl = await waitForScreenshot(projectId);
+          report = await runPlaytest({ projectId, screenshotUrl: screenshotUrl ?? undefined, focusArea: "all" });
+          report.screenshotUrl = screenshotUrl ?? undefined;
+          const msg2 = formatReportAsMessage(report);
+          await supabase.from("chat_turns").insert({
+            project_id: projectId,
+            agent_name: "Amir",
+            agent_title: "Playtester",
+            content: msg2 + (report.rawResponse ? "\n\n---\n\n" + report.rawResponse.slice(0, 2000) : ""),
+            turn_type: "critique",
+            screenshot_url: report.screenshotUrl ?? null,
+          });
+          await supabase.from("playtest_reports").insert({
+            project_id: projectId,
+            score: report.score,
+            critical_count: report.criticalIssues.length,
+            warning_count: report.warnings.length,
+            minor_count: report.minorIssues.length,
+            report_json: report as unknown as Record<string, unknown>,
+            screenshot_url: report.screenshotUrl ?? null,
+          });
+          playtestCount++;
+          if (report.criticalIssues.length === 0) break;
+        }
+      }
+    }
+  }
+
   if (runStatusBeforeTrailer !== "stopped" && tasks.length > 0) {
     await insertProgressChat(projectId, `🎬 Creating cinematic trailer… (Thomas)`);
     try {
@@ -491,7 +580,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
   }
 
   const finalStatus = (await getRunStatus(projectId)) === "stopped" ? "stopped" : failed > 0 ? "completed" : "completed";
-  const summary = `🎉 Project ${finalStatus === "stopped" ? "stopped" : "complete"}! ${completed}/${tasks.length} tasks succeeded, ${failed} failed.${morganDebuggedCount > 0 ? ` ${morganDebuggedCount} task(s) auto-debugged by Morgan.` : ""}`;
+  const summary = `🎉 Project ${finalStatus === "stopped" ? "stopped" : "complete"}! ${completed}/${tasks.length} tasks succeeded, ${failed} failed.${morganDebuggedCount > 0 ? ` ${morganDebuggedCount} task(s) auto-debugged by Morgan.` : ""}${playtestCount > 0 ? ` ${playtestCount} Amir playtest(s) run.` : ""}`;
   await supabase
     .from("full_project_run")
     .update({ status: finalStatus, plan_json: tasks, summary, updated_at: new Date().toISOString() })

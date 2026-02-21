@@ -12,10 +12,12 @@ interface TeamChatProps {
   loading?: boolean;
   onExecuteCode?: (code: string) => void;
   onRecreateImage?: (imageUrl: string) => void | Promise<void>;
+  onFixCritical?: (issues: string[]) => void | Promise<void>;
+  onRunPlaytest?: () => void | Promise<void>;
   typingAgents?: string[];
 }
 
-export function TeamChat({ loading, onExecuteCode, onRecreateImage, typingAgents = [] }: TeamChatProps) {
+export function TeamChat({ loading, onExecuteCode, onRecreateImage, onFixCritical, onRunPlaytest, typingAgents = [] }: TeamChatProps) {
   const chatTurns = useProjectStore((s) => s.chatTurns);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -69,6 +71,8 @@ export function TeamChat({ loading, onExecuteCode, onRecreateImage, typingAgents
             turn={turn}
             onExecuteCode={onExecuteCode}
             onRecreateImage={onRecreateImage}
+            onFixCritical={onFixCritical}
+            onRunPlaytest={onRunPlaytest}
           />
         ))}
       </AnimatePresence>

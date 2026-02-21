@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Square, SkipForward, Loader2, Camera, Monitor, Rocket, Pause, SquareStop, PictureInPicture2 } from "lucide-react";
+import { Play, Square, SkipForward, Loader2, Camera, Monitor, Rocket, Pause, SquareStop, PictureInPicture2, Gamepad2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -12,6 +12,7 @@ interface ControlPanelProps {
   onStopAutonomous: () => void;
   isRunningTurn: boolean;
   onCaptureNow?: () => void;
+  onRunPlaytest?: () => void | Promise<void>;
   onFullProjectClick?: () => void;
   onFullProjectPause?: () => void;
   onFullProjectResume?: () => void;
@@ -24,6 +25,7 @@ export function ControlPanel({
   onStopAutonomous,
   isRunningTurn,
   onCaptureNow,
+  onRunPlaytest,
   onFullProjectClick,
   onFullProjectPause,
   onFullProjectResume,
@@ -166,6 +168,22 @@ export function ControlPanel({
             </Button>
           </TooltipTrigger>
           <TooltipContent>Take UE5 viewport screenshot</TooltipContent>
+        </Tooltip>
+      )}
+      {onRunPlaytest && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRunPlaytest}
+              className="border-cyan-500/30 hover:border-cyan-500/50 text-cyan-500 hover:bg-cyan-500/10 gap-1.5"
+            >
+              <Gamepad2 className="w-3.5 h-3.5" />
+              Playtest
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Run Amir playtest (screenshot + analysis)</TooltipContent>
         </Tooltip>
       )}
 

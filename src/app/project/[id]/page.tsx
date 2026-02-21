@@ -316,6 +316,64 @@ export default function ProjectPage() {
     [projectId, refetchChat]
   );
 
+  const handleFixCritical = useCallback(
+    async (issues: string[]) => {
+      await sendDirectMessage("Thomas", "Fix these critical issues from the playtest:\n\n" + issues.join("\n"));
+      await refetchChat();
+      toast.success("Sent to Thomas");
+    },
+    [sendDirectMessage, refetchChat]
+  );
+
+  const handleRunPlaytest = useCallback(async () => {
+    try {
+      await fetch("/api/ue5/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      toast.info("Capturing screenshot…");
+      const supabase = getClient();
+      const deadline = Date.now() + 30000;
+      let screenshotUrl: string | null = null;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const { data } = await supabase
+          .from("ue5_commands")
+          .select("screenshot_url")
+          .eq("project_id", projectId)
+          .not("screenshot_url", "is", null)
+          .order("executed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data?.screenshot_url) {
+          screenshotUrl = data.screenshot_url as string;
+          break;
+        }
+      }
+      const res = await fetch("/api/agents/playtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, screenshotUrl: screenshotUrl ?? undefined, focusArea: "all" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Playtest failed");
+      await refetchChat();
+      toast.success("Playtest complete. See Amir's report above.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Playtest failed");
+    }
+  }, [projectId, refetchChat]);
+
+  const runPlaytestTrigger = useUIStore((s) => s.runPlaytestTrigger);
+  const setRunPlaytestTrigger = useUIStore((s) => s.setRunPlaytestTrigger);
+  useEffect(() => {
+    if (runPlaytestTrigger > 0) {
+      setRunPlaytestTrigger(0);
+      handleRunPlaytest();
+    }
+  }, [runPlaytestTrigger, setRunPlaytestTrigger, handleRunPlaytest]);
+
   const sendToSpecificAgent = useCallback(
     (agentName: string) => {
       return async (message: string) => {
@@ -528,7 +586,7 @@ export default function ProjectPage() {
             <>
               <div className="flex-[0.6] flex flex-col min-w-0 border-r border-boss-border">
                 <div className="flex-1 overflow-hidden flex flex-col">
-                  <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} typingAgents={typingAgents} />
+                  <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} />
                 </div>
               </div>
               <div className="flex-[0.4] flex flex-col min-w-0 bg-boss-bg">
@@ -558,13 +616,14 @@ export default function ProjectPage() {
                   onStopAutonomous={stopAutonomous}
                   isRunningTurn={isRunningTurn}
                   onCaptureNow={handleCaptureNow}
+                  onRunPlaytest={handleRunPlaytest}
                   onFullProjectClick={() => setFullProjectDialogOpen(true)}
                   onFullProjectPause={handleFullProjectPause}
                   onFullProjectResume={handleFullProjectResume}
                   onFullProjectStop={handleFullProjectStop}
                 />
               </div>
-              <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} typingAgents={typingAgents} />
+              <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} />
               <GodEyePanel />
               <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
                 <CommandInput
