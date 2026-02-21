@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Plus, Folder, Clock, Crown, Sparkles, ChevronRight, Users, Monitor, ArrowRight, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -194,6 +195,7 @@ export default function HomePage() {
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
+            <Link href="/marketplace" className="hover:text-text-primary transition-colors">Marketplace</Link>
             <a href="#team" className="hover:text-text-primary transition-colors">Team</a>
             <a href="#features" className="hover:text-text-primary transition-colors">Features</a>
             <a href="#pricing" className="hover:text-text-primary transition-colors">Pricing</a>
@@ -514,6 +516,13 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+
+          <p className="text-center mt-10 text-text-muted text-sm">
+            Or{" "}
+            <Link href="/marketplace" className="text-gold hover:underline">
+              🏪 browse free game templates in the Marketplace
+            </Link>
+          </p>
 
           {/* Waitlist */}
           <div className="mt-16 max-w-lg mx-auto text-center">

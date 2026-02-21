@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon } from "lucide-react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -113,7 +113,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
       )}
 
       {/* Navigation */}
-      <div className="px-3 py-2">
+      <div className="px-3 py-2 space-y-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
             <Link href="/">
@@ -128,6 +128,21 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
             </Link>
           </TooltipTrigger>
           <TooltipContent side="right">Back to all projects</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href="/marketplace">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
+              >
+                <Store className="w-4 h-4" />
+                Marketplace
+              </Button>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right">Game templates</TooltipContent>
         </Tooltip>
       </div>
 
