@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { Crown, Send, Loader2, AtSign, Mic } from "lucide-react";
+import { Crown, Send, Loader2, AtSign, Mic, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { TEAM } from "@/lib/agents/identity";
@@ -9,7 +9,7 @@ import { startListening, normalizeAtMention } from "@/lib/voice/speechRecognitio
 import { useUIStore } from "@/lib/stores/uiStore";
 
 interface CommandInputProps {
-  onSend: (message: string) => Promise<void>;
+  onSend: (message: string, file?: File) => Promise<void>;
   onSendDirect?: (agentName: string) => (message: string) => Promise<void>;
   disabled?: boolean;
   placeholder?: string;
@@ -23,6 +23,9 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
   const [sending, setSending] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<ReturnType<typeof startListening> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,16 +104,40 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
     if (!trimmed || sending || disabled) return;
 
     setSending(true);
+    const fileToSend = attachmentFile;
     try {
-      await onSend(trimmed);
+      await onSend(trimmed, fileToSend ?? undefined);
       setValue("");
+      setAttachmentFile(null);
+      if (attachmentPreview) {
+        URL.revokeObjectURL(attachmentPreview);
+        setAttachmentPreview(null);
+      }
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
     } finally {
       setSending(false);
     }
-  }, [value, sending, disabled, onSend]);
+  }, [value, sending, disabled, onSend, attachmentFile, attachmentPreview]);
+
+  const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f && f.type.startsWith("image/")) {
+      if (attachmentPreview) URL.revokeObjectURL(attachmentPreview);
+      setAttachmentFile(f);
+      setAttachmentPreview(URL.createObjectURL(f));
+    }
+    e.target.value = "";
+  }, [attachmentPreview]);
+
+  const clearAttachment = useCallback(() => {
+    setAttachmentFile(null);
+    if (attachmentPreview) {
+      URL.revokeObjectURL(attachmentPreview);
+      setAttachmentPreview(null);
+    }
+  }, [attachmentPreview]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -178,10 +205,26 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
           </div>
         )}
 
+        {attachmentPreview && (
+          <div className="px-4 pt-2 flex items-center gap-2">
+            <img src={attachmentPreview} alt="Attach" className="h-12 w-12 rounded border border-boss-border object-cover" />
+            <button type="button" onClick={clearAttachment} className="p-1 rounded hover:bg-boss-border text-text-muted">
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-xs text-text-muted">Image attached</span>
+          </div>
+        )}
         <div className="flex items-start gap-3 p-4 pt-3">
           <div className="mt-1 w-8 h-8 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
             <Crown className="w-4 h-4 text-gold" />
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={onFileChange}
+          />
           <textarea
             ref={textareaRef}
             value={value}
@@ -207,6 +250,15 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
               title={isListening ? "Stop listening" : "Voice command (speak to type)"}
             >
               <Mic className="w-4 h-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-text-muted hover:text-text-primary h-8 w-8 p-0"
+              title="Attach image (e.g. for Image to 3D)"
+            >
+              <ImagePlus className="w-4 h-4" />
             </Button>
             <Button
               size="sm"

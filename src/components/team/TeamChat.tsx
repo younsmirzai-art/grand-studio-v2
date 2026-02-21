@@ -11,10 +11,11 @@ import { AgentAvatar } from "./AgentAvatar";
 interface TeamChatProps {
   loading?: boolean;
   onExecuteCode?: (code: string) => void;
+  onRecreateImage?: (imageUrl: string) => void | Promise<void>;
   typingAgents?: string[];
 }
 
-export function TeamChat({ loading, onExecuteCode, typingAgents = [] }: TeamChatProps) {
+export function TeamChat({ loading, onExecuteCode, onRecreateImage, typingAgents = [] }: TeamChatProps) {
   const chatTurns = useProjectStore((s) => s.chatTurns);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +68,7 @@ export function TeamChat({ loading, onExecuteCode, typingAgents = [] }: TeamChat
             key={turn.id}
             turn={turn}
             onExecuteCode={onExecuteCode}
+            onRecreateImage={onRecreateImage}
           />
         ))}
       </AnimatePresence>

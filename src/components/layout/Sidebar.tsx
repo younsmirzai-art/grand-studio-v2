@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, ChevronDown, Loader2, Music, Film } from "lucide-react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, ChevronDown, Loader2, Music, Film, ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -35,6 +35,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const setVoiceModalOpen = useUIStore((s) => s.setVoiceModalOpen);
   const setMusicModalOpen = useUIStore((s) => s.setMusicModalOpen);
   const setTrailerModalOpen = useUIStore((s) => s.setTrailerModalOpen);
+  const setImageTo3DModalOpen = useUIStore((s) => s.setImageTo3DModalOpen);
   const [gameStyleApplying, setGameStyleApplying] = useState<string | null>(null);
 
   const applyGameStyle = async (presetKey: string) => {
@@ -177,6 +178,15 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setImageTo3DModalOpen(true)}
+            className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            Image to 3D
+          </Button>
           <Button
             variant="ghost"
             size="sm"

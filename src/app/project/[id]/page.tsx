@@ -12,6 +12,7 @@ import { GodEyePanel } from "@/components/god-eye/GodEyePanel";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import LiveViewport from "@/components/tools/LiveViewport";
 import PixelStreamingViewer from "@/components/tools/PixelStreamingViewer";
+import { ImageTo3D } from "@/components/tools/ImageTo3D";
 import Link from "next/link";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
@@ -57,7 +58,7 @@ export default function ProjectPage() {
   const router = useRouter();
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
-  const { taskBoardVisible, setLiveViewVisible, liveViewVisible, pipViewportVisible, setPipViewportVisible } = useUIStore();
+  const { taskBoardVisible, setLiveViewVisible, liveViewVisible, pipViewportVisible, setPipViewportVisible, imageTo3DModalOpen, setImageTo3DModalOpen } = useUIStore();
   const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected } = useProjectStore();
   const [pixelStreamingUrl, setPixelStreamingUrl] = useState<string | null>(null);
   const [pixelStreamingConnected, setPixelStreamingConnected] = useState(false);
@@ -212,7 +213,7 @@ export default function ProjectPage() {
   );
 
   const sendBossCommand = useCallback(
-    async (message: string) => {
+    async (message: string, file?: File) => {
       console.log("[SendCommand] Raw message:", message);
       const direct = parseDirectMention(message);
 
@@ -234,13 +235,22 @@ export default function ProjectPage() {
 
       console.log("[SendCommand] Broadcasting to ALL agents");
       const supabase = getClient();
-
+      let attachmentUrl: string | undefined;
+      if (file) {
+        const path = `${projectId}/${Date.now()}-${file.name}`;
+        const { error: uploadErr } = await supabase.storage.from("reference-images").upload(path, file, { cacheControl: "3600", upsert: false });
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage.from("reference-images").getPublicUrl(path);
+          attachmentUrl = urlData.publicUrl;
+        }
+      }
       await supabase.from("chat_turns").insert({
         project_id: projectId,
         agent_name: "Boss",
         agent_title: "Boss",
         content: message,
         turn_type: "boss_command",
+        ...(attachmentUrl && { attachment_url: attachmentUrl }),
       });
 
       await supabase.from("god_eye_log").insert({
@@ -272,6 +282,38 @@ export default function ProjectPage() {
       }
     },
     [projectId, refetchChat, sendDirectMessage, handleExecuteCode]
+  );
+
+  const handleRecreateImage = useCallback(
+    async (imageUrl: string) => {
+      try {
+        const res = await fetch("/api/tools/image-analyze-from-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, imageUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Analysis failed");
+        const analysis = data.analysis ?? "";
+        const code = data.code ?? "";
+        const content = code
+          ? `**Image analysis:**\n\n${analysis}\n\n**Generated code:**\n\`\`\`python\n${code}\n\`\`\``
+          : `**Image analysis:**\n\n${analysis}`;
+        const supabase = getClient();
+        await supabase.from("chat_turns").insert({
+          project_id: projectId,
+          agent_name: "Thomas",
+          agent_title: "Programmer",
+          content,
+          turn_type: "execution",
+        });
+        await refetchChat();
+        toast.success("Analysis complete. Use Send to UE5 on the code block to run in UE5.");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Recreate failed");
+      }
+    },
+    [projectId, refetchChat]
   );
 
   const sendToSpecificAgent = useCallback(
@@ -486,7 +528,7 @@ export default function ProjectPage() {
             <>
               <div className="flex-[0.6] flex flex-col min-w-0 border-r border-boss-border">
                 <div className="flex-1 overflow-hidden flex flex-col">
-                  <TeamChat onExecuteCode={handleExecuteCode} typingAgents={typingAgents} />
+                  <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} typingAgents={typingAgents} />
                 </div>
               </div>
               <div className="flex-[0.4] flex flex-col min-w-0 bg-boss-bg">
@@ -522,7 +564,7 @@ export default function ProjectPage() {
                   onFullProjectStop={handleFullProjectStop}
                 />
               </div>
-              <TeamChat onExecuteCode={handleExecuteCode} typingAgents={typingAgents} />
+              <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} typingAgents={typingAgents} />
               <GodEyePanel />
               <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
                 <CommandInput
@@ -672,6 +714,12 @@ export default function ProjectPage() {
               Send
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={imageTo3DModalOpen} onOpenChange={setImageTo3DModalOpen}>
+        <DialogContent className="bg-boss-surface border-boss-border max-w-2xl p-0 overflow-hidden">
+          <ImageTo3D projectId={projectId} onCodeGenerated={handleExecuteCode} />
         </DialogContent>
       </Dialog>
     </>

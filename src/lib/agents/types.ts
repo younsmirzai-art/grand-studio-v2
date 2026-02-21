@@ -80,6 +80,7 @@ export interface ChatTurn {
   task_id: string | null;
   created_at: string;
   screenshot_url?: string | null;
+  attachment_url?: string | null;
 }
 
 export interface Decision {

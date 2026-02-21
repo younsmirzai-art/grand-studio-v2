@@ -28,6 +28,7 @@ import type { TrailerTemplateKey } from "@/lib/trailer/trailerEngine";
 interface ChatMessageProps {
   turn: ChatTurn;
   onExecuteCode?: (code: string, agentName?: string) => void | Promise<void>;
+  onRecreateImage?: (imageUrl: string) => void | Promise<void>;
 }
 
 const turnTypeConfig: Record<TurnType, { label: string; className: string }> = {
@@ -82,13 +83,14 @@ function renderTextContent(text: string): React.ReactNode {
   });
 }
 
-function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
+function ChatMessageInner({ turn, onExecuteCode, onRecreateImage }: ChatMessageProps) {
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [ue5Confirm, setUe5Confirm] = useState<{ code: string; index: number } | null>(null);
   const [ue5Sending, setUe5Sending] = useState(false);
   const [ue5SentBlocks, setUe5SentBlocks] = useState<Set<number>>(new Set());
+  const [recreateLoading, setRecreateLoading] = useState(false);
   const isBoss = turn.turn_type === "boss_command" || turn.turn_type === "direct_command";
   const isDirect = turn.turn_type === "direct" || turn.turn_type === "direct_command";
   const isConsultation = turn.turn_type === "consultation";
@@ -166,6 +168,32 @@ function ChatMessageInner({ turn, onExecuteCode }: ChatMessageProps) {
                 success={turn.turn_type === "execution"}
                 projectId={projectId}
               />
+            )}
+            {turn.attachment_url && isBoss && (
+              <div className="space-y-2">
+                <img src={turn.attachment_url} alt="Attached" className="max-w-xs rounded-lg border border-boss-border object-cover" />
+                {onRecreateImage && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-text-muted text-xs">Want to recreate this image in UE5?</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 border-agent-teal/50 text-agent-teal hover:bg-agent-teal/10"
+                      onClick={async () => {
+                        setRecreateLoading(true);
+                        try {
+                          await onRecreateImage(turn.attachment_url!);
+                        } finally {
+                          setRecreateLoading(false);
+                        }
+                      }}
+                      disabled={recreateLoading}
+                    >
+                      {recreateLoading ? "Building…" : "Yes, build it"}
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
             {parts.map((part, i) => {
               if (part.type === "code") {

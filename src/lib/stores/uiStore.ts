@@ -13,6 +13,7 @@ interface UIState {
   voiceModalOpen: boolean;
   musicModalOpen: boolean;
   trailerModalOpen: boolean;
+  imageTo3DModalOpen: boolean;
   chatPresetMessage: string | null;
 
   toggleSidebar: () => void;
@@ -29,6 +30,7 @@ interface UIState {
   setVoiceModalOpen: (open: boolean) => void;
   setMusicModalOpen: (open: boolean) => void;
   setTrailerModalOpen: (open: boolean) => void;
+  setImageTo3DModalOpen: (open: boolean) => void;
   setChatPresetMessage: (msg: string | null) => void;
 }
 
@@ -45,6 +47,7 @@ export const useUIStore = create<UIState>((set) => ({
   voiceModalOpen: false,
   musicModalOpen: false,
   trailerModalOpen: false,
+  imageTo3DModalOpen: false,
   chatPresetMessage: null,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -61,5 +64,6 @@ export const useUIStore = create<UIState>((set) => ({
   setVoiceModalOpen: (voiceModalOpen) => set({ voiceModalOpen }),
   setMusicModalOpen: (musicModalOpen) => set({ musicModalOpen }),
   setTrailerModalOpen: (trailerModalOpen) => set({ trailerModalOpen }),
+  setImageTo3DModalOpen: (imageTo3DModalOpen) => set({ imageTo3DModalOpen }),
   setChatPresetMessage: (chatPresetMessage) => set({ chatPresetMessage }),
 }));

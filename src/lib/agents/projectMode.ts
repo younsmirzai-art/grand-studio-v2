@@ -85,6 +85,36 @@ export async function buildProjectContext(projectId: string): Promise<string> {
   return ctx;
 }
 
+async function expandBossPromptWithImageAnalysis(projectId: string, bossPrompt: string): Promise<string> {
+  if (!/like this image|based on this photo/i.test(bossPrompt)) return bossPrompt;
+  const supabase = createServerClient();
+  const { data: turn } = await supabase
+    .from("chat_turns")
+    .select("attachment_url")
+    .eq("project_id", projectId)
+    .eq("agent_name", "Boss")
+    .not("attachment_url", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const imageUrl = (turn as { attachment_url?: string } | null)?.attachment_url;
+  if (!imageUrl) return bossPrompt;
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  try {
+    const res = await fetch(`${baseUrl}/api/tools/image-analyze-from-url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, imageUrl }),
+    });
+    const data = await res.json();
+    const analysis = data.analysis ?? "";
+    if (analysis) return `${bossPrompt}\n\nReference image analysis:\n${analysis}`;
+  } catch {
+    // ignore
+  }
+  return bossPrompt;
+}
+
 export async function askNimaToCreatePlan(projectId: string, bossPrompt: string): Promise<ProjectTask[]> {
   const supabase = createServerClient();
   const nima = getAgent("Nima");
@@ -311,7 +341,8 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
 
   await insertProgressChat(projectId, `📋 Full Project started: "${bossPrompt.slice(0, 80)}${bossPrompt.length > 80 ? "…" : ""}"`);
 
-  const tasks = await askNimaToCreatePlan(projectId, bossPrompt);
+  const promptForNima = await expandBossPromptWithImageAnalysis(projectId, bossPrompt);
+  const tasks = await askNimaToCreatePlan(projectId, promptForNima);
   const planJson = tasks.map((t) => ({ ...t }));
 
   await supabase
