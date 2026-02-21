@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store, Rocket } from "lucide-react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store, Rocket, Key } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -295,6 +295,16 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
               </Button>
             </Link>
           )}
+          <Link href="/developer">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
+            >
+              <Key className="w-3.5 h-3.5" />
+              API
+            </Button>
+          </Link>
           {projectId && (
             <Link href={`/project/${projectId}/settings`}>
               <Button

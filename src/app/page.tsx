@@ -197,6 +197,7 @@ export default function HomePage() {
           <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
             <Link href="/marketplace" className="hover:text-text-primary transition-colors">Marketplace</Link>
             <Link href="/publish" className="hover:text-text-primary transition-colors">Publish</Link>
+            <Link href="/developer" className="hover:text-text-primary transition-colors">API</Link>
             <a href="#team" className="hover:text-text-primary transition-colors">Team</a>
             <a href="#features" className="hover:text-text-primary transition-colors">Features</a>
             <a href="#pricing" className="hover:text-text-primary transition-colors">Pricing</a>
@@ -526,6 +527,10 @@ export default function HomePage() {
             {" · "}
             <Link href="/publish" className="text-gold hover:underline">
               🚀 Publish to Steam
+            </Link>
+            {" · "}
+            <Link href="/developer" className="text-gold hover:underline">
+              🔌 API
             </Link>
           </p>
 
