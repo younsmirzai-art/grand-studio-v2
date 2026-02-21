@@ -195,6 +195,7 @@ export default function HomePage() {
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
+            <Link href="/cloud" className="hover:text-text-primary transition-colors">Cloud</Link>
             <Link href="/marketplace" className="hover:text-text-primary transition-colors">Marketplace</Link>
             <Link href="/publish" className="hover:text-text-primary transition-colors">Publish</Link>
             <Link href="/developer" className="hover:text-text-primary transition-colors">API</Link>
@@ -521,6 +522,10 @@ export default function HomePage() {
 
           <p className="text-center mt-10 text-text-muted text-sm">
             Or{" "}
+            <Link href="/cloud" className="text-gold hover:underline">
+              ☁️ Cloud UE5
+            </Link>
+            {" · "}
             <Link href="/marketplace" className="text-gold hover:underline">
               🏪 browse free game templates
             </Link>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store, Rocket, Key } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store, Rocket, Key, Cloud, Monitor } from "lucide-react";
 import Link from "next/link";
+import { CLOUD_SESSION_KEY } from "@/lib/cloud/constants";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -39,20 +40,51 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const setRunPlaytestTrigger = useUIStore((s) => s.setRunPlaytestTrigger);
   const [gameStyleApplying, setGameStyleApplying] = useState<string | null>(null);
   const [relayOnline, setRelayOnline] = useState<boolean | null>(null);
+  const [cloudSession, setCloudSession] = useState<{ minutesRemaining: number } | null>(null);
+
+  const checkRelay = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ue5/status");
+      const data = await res.json();
+      setRelayOnline(data.relay_online === true);
+    } catch {
+      setRelayOnline(false);
+    }
+  }, []);
 
   useEffect(() => {
+    checkRelay();
+    const interval = setInterval(checkRelay, 10000);
+    return () => clearInterval(interval);
+  }, [checkRelay]);
+
+  useEffect(() => {
+    let sessionId: string | null = null;
+    try {
+      sessionId = localStorage.getItem(CLOUD_SESSION_KEY);
+    } catch {}
+    if (!sessionId) {
+      setCloudSession(null);
+      return;
+    }
     const check = async () => {
       try {
-        const res = await fetch("/api/ue5/status");
+        const res = await fetch(`/api/cloud/session?sessionId=${encodeURIComponent(sessionId!)}`);
         const data = await res.json();
-        setRelayOnline(data.relay_online === true);
+        if (res.ok && (data.status === "active" || data.status === "starting")) {
+          const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : 0;
+          const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 60000));
+          setCloudSession({ minutesRemaining: remaining });
+        } else {
+          setCloudSession(null);
+        }
       } catch {
-        setRelayOnline(false);
+        setCloudSession(null);
       }
     };
     check();
-    const interval = setInterval(check, 10000);
-    return () => clearInterval(interval);
+    const t = setInterval(check, 60000);
+    return () => clearInterval(t);
   }, []);
 
   const applyGameStyle = async (presetKey: string) => {
@@ -128,6 +160,21 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
             </Link>
           </TooltipTrigger>
           <TooltipContent side="right">Back to all projects</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href="/cloud">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
+              >
+                <Cloud className="w-4 h-4" />
+                Cloud
+              </Button>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right">Cloud UE5 &amp; local setup</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -323,17 +370,29 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
       {/* Bottom status */}
       <div className="mt-auto border-t border-boss-border px-4 py-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-text-muted">UE5 Bridge</span>
+          <span className="text-[11px] text-text-muted">UE5</span>
           <div className="flex items-center gap-1.5">
-            {relayOnline === true ? (
+            {cloudSession != null ? (
               <>
-                <Wifi className="w-3 h-3 text-agent-green" />
-                <span className="text-[11px] text-agent-green">Relay Connected</span>
+                <Cloud className="w-3 h-3 text-blue-400" />
+                <span className="text-[11px] text-blue-400">
+                  Cloud UE5 Active — {cloudSession.minutesRemaining} min left
+                </span>
+              </>
+            ) : relayOnline === true ? (
+              <>
+                <Monitor className="w-3 h-3 text-agent-green" />
+                <span className="text-[11px] text-agent-green">Local UE5 Connected</span>
               </>
             ) : relayOnline === false ? (
               <>
                 <WifiOff className="w-3 h-3 text-text-muted" />
-                <span className="text-[11px] text-text-muted">Relay Offline</span>
+                <Link
+                  href="/cloud"
+                  className="text-[11px] text-text-muted hover:text-text-secondary underline"
+                >
+                  Not Connected — Setup UE5
+                </Link>
               </>
             ) : (
               <>
