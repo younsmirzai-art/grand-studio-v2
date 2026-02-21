@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start UE5 Relay",
+      "type": "shell",
+      "command": "cd ue5-relay && pip install -r requirements.txt --quiet && python relay.py",
+      "windows": {
+        "command": "cd ue5-relay; pip install -r requirements.txt --quiet; python relay.py"
+      },
+      "isBackground": true,
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "dedicated",
+        "showReuseMessage": false,
+        "clear": false,
+        "group": "relay"
+      },
+      "problemMatcher": [],
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}

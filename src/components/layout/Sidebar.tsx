@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -38,6 +38,22 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
   const setImageTo3DModalOpen = useUIStore((s) => s.setImageTo3DModalOpen);
   const setRunPlaytestTrigger = useUIStore((s) => s.setRunPlaytestTrigger);
   const [gameStyleApplying, setGameStyleApplying] = useState<string | null>(null);
+  const [relayOnline, setRelayOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch("/api/ue5/status");
+        const data = await res.json();
+        setRelayOnline(data.relay_online === true);
+      } catch {
+        setRelayOnline(false);
+      }
+    };
+    check();
+    const interval = setInterval(check, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const applyGameStyle = async (presetKey: string) => {
     if (!projectId) return;
@@ -272,15 +288,20 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-text-muted">UE5 Bridge</span>
           <div className="flex items-center gap-1.5">
-            {ue5Connected ? (
+            {relayOnline === true ? (
               <>
                 <Wifi className="w-3 h-3 text-agent-green" />
-                <span className="text-[11px] text-agent-green">Connected</span>
+                <span className="text-[11px] text-agent-green">Relay Connected</span>
+              </>
+            ) : relayOnline === false ? (
+              <>
+                <WifiOff className="w-3 h-3 text-text-muted" />
+                <span className="text-[11px] text-text-muted">Relay Offline</span>
               </>
             ) : (
               <>
                 <WifiOff className="w-3 h-3 text-text-muted" />
-                <span className="text-[11px] text-text-muted">Offline</span>
+                <span className="text-[11px] text-text-muted">Checking…</span>
               </>
             )}
           </div>
