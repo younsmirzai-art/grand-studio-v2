@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Folder, Clock, Crown, Sparkles, ChevronRight, Users, Monitor, ArrowRight, Check, Loader2 } from "lucide-react";
+import { Plus, Folder, Clock, Crown, Sparkles, ChevronRight, Users, Monitor, ArrowRight, Check, Loader2, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getClient } from "@/lib/supabase/client";
@@ -195,6 +195,7 @@ export default function HomePage() {
             </span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
+            <Link href="/learn" className="hover:text-text-primary transition-colors">Learn</Link>
             <Link href="/cloud" className="hover:text-text-primary transition-colors">Cloud</Link>
             <Link href="/team" className="hover:text-text-primary transition-colors">Team</Link>
             <Link href="/store" className="hover:text-text-primary transition-colors">Store</Link>
@@ -422,6 +423,25 @@ export default function HomePage() {
               </span>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ────────── LEARN GAME DEVELOPMENT ────────── */}
+      <section className="py-24 px-6 relative">
+        <div className="max-w-4xl mx-auto text-center">
+          <p className="text-sm uppercase tracking-[0.25em] text-gold mb-3">Grand Studio Academy</p>
+          <h2 className="text-3xl md:text-4xl font-black text-text-primary tracking-tight mb-4">
+            Learn Game Development
+          </h2>
+          <p className="text-text-secondary mb-8 max-w-xl mx-auto">
+            Free interactive courses. AI agents teach you step by step. Build real UE5 scenes while learning.
+          </p>
+          <Link href="/learn">
+            <Button size="lg" className="bg-gold hover:bg-gold/90 text-boss-bg font-semibold gap-2">
+              <GraduationCap className="w-5 h-5" />
+              Start Learning — Free
+            </Button>
+          </Link>
         </div>
       </section>
 
