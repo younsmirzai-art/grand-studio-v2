@@ -197,6 +197,7 @@ export default function HomePage() {
           <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
             <Link href="/cloud" className="hover:text-text-primary transition-colors">Cloud</Link>
             <Link href="/team" className="hover:text-text-primary transition-colors">Team</Link>
+            <Link href="/store" className="hover:text-text-primary transition-colors">Store</Link>
             <Link href="/marketplace" className="hover:text-text-primary transition-colors">Marketplace</Link>
             <Link href="/publish" className="hover:text-text-primary transition-colors">Publish</Link>
             <Link href="/developer" className="hover:text-text-primary transition-colors">API</Link>
@@ -525,6 +526,10 @@ export default function HomePage() {
             Or{" "}
             <Link href="/cloud" className="text-gold hover:underline">
               ☁️ Cloud UE5
+            </Link>
+            {" · "}
+            <Link href="/store" className="text-gold hover:underline">
+              💰 Game Store
             </Link>
             {" · "}
             <Link href="/marketplace" className="text-gold hover:underline">

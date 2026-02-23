@@ -206,6 +206,23 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
           </TooltipTrigger>
           <TooltipContent side="right">Game templates</TooltipContent>
         </Tooltip>
+        {projectId && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link href={`/project/${projectId}/publish-store`}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
+                >
+                  <span className="text-base">💰</span>
+                  Publish to Store
+                </Button>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">Sell this game on the Store</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       <Separator className="bg-boss-border" />
