@@ -81,6 +81,8 @@ export interface ChatTurn {
   created_at: string;
   screenshot_url?: string | null;
   attachment_url?: string | null;
+  user_email?: string | null;
+  user_name?: string | null;
 }
 
 export interface Decision {
@@ -98,6 +100,8 @@ export interface GodEyeEntry {
   agent_name: string;
   detail: string;
   created_at: string;
+  user_email?: string | null;
+  user_name?: string | null;
 }
 
 export interface UE5Command {
@@ -110,6 +114,8 @@ export interface UE5Command {
   created_at: string;
   executed_at: string | null;
   screenshot_url?: string | null;
+  submitted_by_email?: string | null;
+  submitted_by_name?: string | null;
 }
 
 export interface WorldStateEntity {

@@ -15,7 +15,7 @@ const DANGEROUS_PATTERNS = [
 
 export async function POST(request: NextRequest) {
   try {
-    const { projectId, code, agentName } = await request.json();
+    const { projectId, code, agentName, submittedByEmail, submittedByName } = await request.json();
 
     if (!projectId || !code) {
       return NextResponse.json(
@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
         project_id: projectId,
         code,
         status: "pending",
+        ...(submittedByEmail && { submitted_by_email: submittedByEmail }),
+        ...(submittedByName && { submitted_by_name: submittedByName }),
       })
       .select()
       .single();
@@ -64,6 +66,8 @@ export async function POST(request: NextRequest) {
       event_type: "execution",
       agent_name: agentName ?? "System",
       detail: `Code queued for UE5 execution (${code.length} chars)`,
+      ...(submittedByEmail && { user_email: submittedByEmail }),
+      ...(submittedByName && { user_name: submittedByName }),
     });
 
     return NextResponse.json({

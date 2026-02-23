@@ -53,6 +53,9 @@ export function LogEntry({ entry }: LogEntryProps) {
       <span className={`shrink-0 uppercase text-[10px] tracking-wider w-16 ${color}`}>
         {entry.event_type}
       </span>
+      {entry.user_name && (
+        <span className="text-gold shrink-0">👤 {entry.user_name}</span>
+      )}
       {entry.agent_name && (
         <span className="text-text-secondary shrink-0">[{entry.agent_name}]</span>
       )}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Gamepad2 } from "lucide-react";
+import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Gamepad2, Users, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +13,7 @@ import Link from "next/link";
 import { TEAM } from "@/lib/agents/identity";
 import { gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
 import { PixelStreamingSetup } from "@/components/tools/PixelStreamingSetup";
+import { getCurrentUser } from "@/lib/collaboration/user";
 
 const GENRES = ["Action", "RPG", "FPS", "Open World", "Platformer", "Puzzle", "Strategy", "Other"];
 const PLATFORMS = ["PC", "Console", "Mobile", "Multi-platform"];
@@ -57,6 +58,10 @@ export default function ProjectSettingsPage() {
   const [gameStyleApplying, setGameStyleApplying] = useState(false);
   const [pixelStreamingSetupOpen, setPixelStreamingSetupOpen] = useState(false);
   const [testingPixelStreaming, setTestingPixelStreaming] = useState(false);
+  const [collaborators, setCollaborators] = useState<{ id: string; user_email: string; display_name: string | null; permission: string; status: string }[]>([]);
+  const [shareEmail, setShareEmail] = useState("");
+  const [sharePermission, setSharePermission] = useState<"editor" | "viewer">("editor");
+  const [sendingInvite, setSendingInvite] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -64,6 +69,17 @@ export default function ProjectSettingsPage() {
       setSummary(project.summary ?? "");
     }
   }, [project?.id, project?.name, project?.summary]);
+
+  const fetchCollaborators = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/collaborators`);
+      const data = await res.json();
+      if (res.ok && data.collaborators) setCollaborators(data.collaborators);
+      else setCollaborators([]);
+    } catch {
+      setCollaborators([]);
+    }
+  }, [projectId]);
 
   useEffect(() => {
     const load = async () => {
@@ -90,6 +106,10 @@ export default function ProjectSettingsPage() {
     };
     load();
   }, [projectId]);
+
+  useEffect(() => {
+    fetchCollaborators();
+  }, [fetchCollaborators]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -405,6 +425,100 @@ export default function ProjectSettingsPage() {
         </section>
 
         <PixelStreamingSetup open={pixelStreamingSetupOpen} onOpenChange={setPixelStreamingSetupOpen} />
+
+        {/* Share */}
+        <section>
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Share
+          </h3>
+          <p className="text-xs text-text-muted mb-3">
+            Invite people by email. Owner: full control. Editor: chat, UE5, playtest. Viewer: read-only.
+          </p>
+          <div className="space-y-3 mb-3">
+            {collaborators.map((c) => (
+              <div key={c.id} className="flex items-center justify-between py-2 border-b border-boss-border/50">
+                <div>
+                  <span className="text-sm text-text-primary">{c.display_name || c.user_email}</span>
+                  <span className="text-xs text-text-muted ml-2">({c.permission})</span>
+                  {c.status === "pending" && <span className="text-xs text-amber-500 ml-2">Pending</span>}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-text-muted hover:text-agent-rose h-7 text-xs"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/projects/${projectId}/collaborators/${encodeURIComponent(c.user_email)}`, { method: "DELETE" });
+                      if (res.ok) {
+                        fetchCollaborators();
+                        toast.success("Removed");
+                      } else toast.error("Failed");
+                    } catch {
+                      toast.error("Failed");
+                    }
+                  }}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2 items-end">
+            <Input
+              type="email"
+              value={shareEmail}
+              onChange={(e) => setShareEmail(e.target.value)}
+              placeholder="Email to invite"
+              className="w-56 bg-boss-card border-boss-border text-text-primary"
+            />
+            <select
+              value={sharePermission}
+              onChange={(e) => setSharePermission(e.target.value as "editor" | "viewer")}
+              className="h-9 px-3 rounded-lg bg-boss-card border border-boss-border text-text-primary text-sm"
+            >
+              <option value="editor">Editor</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <Button
+              size="sm"
+              disabled={sendingInvite || !shareEmail.trim()}
+              onClick={async () => {
+                const { userEmail } = getCurrentUser();
+                if (!userEmail.trim()) {
+                  toast.error("Set your email in Team page first");
+                  return;
+                }
+                setSendingInvite(true);
+                try {
+                  const res = await fetch(`/api/projects/${projectId}/collaborators`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      userEmail: shareEmail.trim(),
+                      permission: sharePermission,
+                      invitedBy: userEmail.trim(),
+                    }),
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    setShareEmail("");
+                    fetchCollaborators();
+                    toast.success("Invite sent");
+                  } else toast.error(data.error ?? "Failed");
+                } catch {
+                  toast.error("Failed");
+                } finally {
+                  setSendingInvite(false);
+                }
+              }}
+              className="gap-2"
+            >
+              {sendingInvite ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+              Invite
+            </Button>
+          </div>
+        </section>
 
         {/* API */}
         <section>

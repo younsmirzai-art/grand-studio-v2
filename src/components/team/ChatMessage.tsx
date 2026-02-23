@@ -146,6 +146,9 @@ function ChatMessageInner({ turn, onExecuteCode, onRecreateImage, onFixCritical,
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            {turn.user_name && (turn.turn_type === "boss_command" || turn.turn_type === "direct_command") && (
+              <span className="text-gold text-xs font-medium">{turn.user_name}:</span>
+            )}
             <AgentNameBadge name={isBoss ? "Boss" : turn.agent_name} />
             {agent && !isBoss && (
               <span className="text-text-muted text-xs">{agent.title}</span>

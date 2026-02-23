@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store, Rocket, Key, Cloud, Monitor } from "lucide-react";
+import { Crown, Wifi, WifiOff, Database, Home, Settings, BookOpen, Globe, Mic, Gamepad2, TestTube2, ChevronDown, Loader2, Music, Film, ImageIcon, Store, Rocket, Key, Cloud, Monitor, Users } from "lucide-react";
 import Link from "next/link";
 import { CLOUD_SESSION_KEY } from "@/lib/cloud/constants";
 import { useParams } from "next/navigation";
@@ -160,6 +160,21 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
             </Link>
           </TooltipTrigger>
           <TooltipContent side="right">Back to all projects</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href="/team">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
+              >
+                <Users className="w-4 h-4" />
+                Team
+              </Button>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right">Team &amp; collaboration</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>

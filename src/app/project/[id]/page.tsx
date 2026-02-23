@@ -18,6 +18,8 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
 import { TEAM } from "@/lib/agents/identity";
+import { getCurrentUser } from "@/lib/collaboration/user";
+import { subscribeToPresence, presenceStateToUsers, type PresenceUser } from "@/lib/collaboration/presence";
 import type { ChatTurn } from "@/lib/agents/types";
 import { detectGamePresetInPrompt, gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
 import {
@@ -59,7 +61,8 @@ export default function ProjectPage() {
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
   const { taskBoardVisible, setLiveViewVisible, liveViewVisible, pipViewportVisible, setPipViewportVisible, imageTo3DModalOpen, setImageTo3DModalOpen } = useUIStore();
-  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected } = useProjectStore();
+  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected, ue5Commands } = useProjectStore();
+  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const [pixelStreamingUrl, setPixelStreamingUrl] = useState<string | null>(null);
   const [pixelStreamingConnected, setPixelStreamingConnected] = useState(false);
   const [isRunningTurn, setIsRunningTurn] = useState(false);
@@ -72,6 +75,19 @@ export default function ProjectPage() {
   const autonomousRef = useRef(false);
   const autoBuildStartedRef = useRef(false);
   const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
+
+  useEffect(() => {
+    const { userEmail, userName } = getCurrentUser();
+    if (!projectId || (!userEmail && !userName)) return;
+    const channel = subscribeToPresence(projectId, userEmail || "anonymous", userName || "Boss", {
+      onSync: (state) => setOnlineUsers(presenceStateToUsers(state)),
+      onJoin: (user) => toast.info(`${user.user_name || user.user_email} joined the project`),
+      onLeave: (user) => toast.info(`${user.user_name || user.user_email} left`),
+    });
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [projectId]);
 
   useEffect(() => {
     const supabase = getClient();
@@ -149,6 +165,7 @@ export default function ProjectPage() {
     async (agentName: string, message: string) => {
       console.log("[DirectChat] Sending direct message to:", agentName, "message:", message.slice(0, 50));
       const supabase = getClient();
+      const { userEmail, userName } = getCurrentUser();
 
       await supabase.from("chat_turns").insert({
         project_id: projectId,
@@ -156,6 +173,8 @@ export default function ProjectPage() {
         agent_title: "Boss",
         content: `@${agentName} ${message}`,
         turn_type: "direct_command",
+        ...(userEmail && { user_email: userEmail }),
+        ...(userName && { user_name: userName }),
       });
 
       setTypingAgents([agentName]);
@@ -188,6 +207,7 @@ export default function ProjectPage() {
 
   const handleExecuteCode = useCallback(
     async (code: string, agentName?: string) => {
+      const { userEmail, userName } = getCurrentUser();
       try {
         const res = await fetch("/api/ue5/execute", {
           method: "POST",
@@ -196,6 +216,8 @@ export default function ProjectPage() {
             projectId,
             code,
             agentName: agentName ?? "Thomas",
+            ...(userEmail && { submittedByEmail: userEmail }),
+            ...(userName && { submittedByName: userName }),
           }),
         });
         const data = await res.json();
@@ -244,6 +266,7 @@ export default function ProjectPage() {
           attachmentUrl = urlData.publicUrl;
         }
       }
+      const { userEmail, userName } = getCurrentUser();
       await supabase.from("chat_turns").insert({
         project_id: projectId,
         agent_name: "Boss",
@@ -251,6 +274,8 @@ export default function ProjectPage() {
         content: message,
         turn_type: "boss_command",
         ...(attachmentUrl && { attachment_url: attachmentUrl }),
+        ...(userEmail && { user_email: userEmail }),
+        ...(userName && { user_name: userName }),
       });
 
       await supabase.from("god_eye_log").insert({
@@ -258,6 +283,8 @@ export default function ProjectPage() {
         event_type: "boss",
         agent_name: "Boss",
         detail: `Boss command: ${message.slice(0, 100)}`,
+        ...(userEmail && { user_email: userEmail }),
+        ...(userName && { user_name: userName }),
       });
 
       setTypingAgents(TEAM.map((a) => a.name));
@@ -556,7 +583,11 @@ export default function ProjectPage() {
 
   return (
     <>
-      <Header projectName={project?.name ?? "Loading..."} />
+      <Header
+        projectName={project?.name ?? "Loading..."}
+        onlineUsers={onlineUsers}
+        executingCommand={ue5Commands.find((c) => c.status === "executing")}
+      />
       <div className="flex flex-1 overflow-hidden flex-col">
         {showBuildingView && (
           <div className="px-4 py-2 border-b border-boss-border bg-boss-surface/80 shrink-0">
