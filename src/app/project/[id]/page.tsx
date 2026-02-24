@@ -19,7 +19,6 @@ import Link from "next/link";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
-import { TEAM } from "@/lib/agents/identity";
 import { getCurrentUser } from "@/lib/collaboration/user";
 import { subscribeToPresence, presenceStateToUsers, type PresenceUser } from "@/lib/collaboration/presence";
 import type { ChatTurn } from "@/lib/agents/types";
@@ -34,17 +33,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-
-const AGENT_NAMES = TEAM.map((a) => a.name.toLowerCase());
-
-function parseDirectMention(message: string): { agentName: string; cleanMessage: string } | null {
-  const match = message.match(/^@(\w+)\s+([\s\S]+)/);
-  if (!match) return null;
-  const name = match[1].toLowerCase();
-  const found = TEAM.find((a) => a.name.toLowerCase() === name);
-  if (!found) return null;
-  return { agentName: found.name, cleanMessage: match[2].trim() };
-}
 
 interface FullProjectStatus {
   running: boolean;
@@ -69,8 +57,6 @@ export default function ProjectPage() {
   const [pixelStreamingConnected, setPixelStreamingConnected] = useState(false);
   const [isRunningTurn, setIsRunningTurn] = useState(false);
   const [typingAgents, setTypingAgents] = useState<string[]>([]);
-  const [fullProjectDialogOpen, setFullProjectDialogOpen] = useState(false);
-  const [fullProjectPrompt, setFullProjectPrompt] = useState("");
   const [buildStatus, setBuildStatus] = useState<FullProjectStatus | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -127,27 +113,13 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!project?.id || !project?.initial_prompt || !autoBuild || autoBuildStartedRef.current) return;
     autoBuildStartedRef.current = true;
-    const prompt = (project.initial_prompt as string).trim();
-    setFullProjectRunning(true);
+    setSmartBuildFinished(false);
     setLiveViewVisible?.(true);
     const params = new URLSearchParams(searchParams.toString());
     params.delete("autoBuild");
-    router.replace(`/project/${projectId}${params.toString() ? `?${params}` : ""}`, { scroll: false });
-    fetch("/api/agents/full-project", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, prompt }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) toast.error(data.error ?? "Full project failed");
-      })
-      .finally(() => {
-        setFullProjectRunning(false);
-        setFullProjectPaused(false);
-        refetchChat();
-      });
-  }, [project?.id, project?.initial_prompt, autoBuild, projectId, searchParams, router, setFullProjectRunning, setFullProjectPaused, refetchChat, setLiveViewVisible]);
+    params.set("build", "1");
+    router.replace(`/project/${projectId}?${params.toString()}`, { scroll: false });
+  }, [project?.id, project?.initial_prompt, autoBuild, projectId, searchParams, router, setLiveViewVisible]);
 
   useEffect(() => {
     if (!isFullProjectRunning && !buildStatus?.running) return;
@@ -167,83 +139,6 @@ export default function ProjectPage() {
     }, 2000);
     return () => clearInterval(t);
   }, [projectId, isFullProjectRunning, buildStatus?.running, setFullProjectRunning, setFullProjectPaused, refetchChat]);
-
-  const sendDirectMessage = useCallback(
-    async (agentName: string, message: string) => {
-      console.log("[DirectChat] Sending direct message to:", agentName, "message:", message.slice(0, 50));
-      const supabase = getClient();
-      const { userEmail, userName } = getCurrentUser();
-
-      await supabase.from("chat_turns").insert({
-        project_id: projectId,
-        agent_name: "Boss",
-        agent_title: "Boss",
-        content: `@${agentName} ${message}`,
-        turn_type: "direct_command",
-        ...(userEmail && { user_email: userEmail }),
-        ...(userName && { user_name: userName }),
-      });
-
-      setTypingAgents([agentName]);
-      setStreamingAgent(agentName);
-      setStreamingContent("");
-
-      try {
-        const res = await fetch("/api/agents/direct/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, agentName, message }),
-        });
-
-        if (!res.ok) {
-          const err = await res.text();
-          toast.error(`${agentName} error: ${err}`);
-          setStreamingAgent(null);
-          setStreamingContent("");
-          setTypingAgents([]);
-          await refetchChat();
-          return;
-        }
-
-        const reader = res.body?.getReader();
-        const decoder = new TextDecoder();
-        if (!reader) {
-          setStreamingAgent(null);
-          setTypingAgents([]);
-          await refetchChat();
-          return;
-        }
-
-        let content = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
-          for (const line of lines) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.content) content += data.content;
-              if (data.done && data.fullContent != null) content = data.fullContent;
-              if (data.done) break;
-            } catch {
-              /* ignore */
-            }
-          }
-          setStreamingContent(content);
-        }
-      } catch (err) {
-        toast.error(`Network error reaching ${agentName}`);
-        console.error("[DirectChat] Network error:", err);
-      } finally {
-        setStreamingAgent(null);
-        setStreamingContent("");
-        setTypingAgents([]);
-        await refetchChat();
-      }
-    },
-    [projectId, refetchChat]
-  );
 
   const handleExecuteCode = useCallback(
     async (code: string, agentName?: string) => {
@@ -276,26 +171,17 @@ export default function ProjectPage() {
 
   const sendBossCommand = useCallback(
     async (message: string, file?: File) => {
-      console.log("[SendCommand] Raw message:", message);
-      const direct = parseDirectMention(message);
-
-      if (direct) {
-        console.log("[SendCommand] Detected direct message to:", direct.agentName);
-        await sendDirectMessage(direct.agentName, direct.cleanMessage);
-        return;
-      }
-
       const presetKey = detectGamePresetInPrompt(message);
       if (presetKey && gamePresets[presetKey]) {
         try {
           await handleExecuteCode(generatePresetCode(gamePresets[presetKey]), "Boss");
-          toast.success(`Applied ${gamePresets[presetKey].name} style, then building.`);
+          toast.success(`Applied ${gamePresets[presetKey].name} style.`);
         } catch {
           // toast already shown
         }
+        return;
       }
 
-      console.log("[SendCommand] Broadcasting to ALL agents");
       const supabase = getClient();
       let attachmentUrl: string | undefined;
       if (file) {
@@ -327,28 +213,98 @@ export default function ProjectPage() {
         ...(userName && { user_name: userName }),
       });
 
-      setTypingAgents(TEAM.map((a) => a.name));
+      setStreamingAgent("Grand Studio");
+      setStreamingContent("");
 
       try {
-        const res = await fetch("/api/agents/run", {
+        const streamRes = await fetch("/api/build/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, bossMessage: message }),
+          body: JSON.stringify({ prompt: message.trim() }),
         });
 
-        if (!res.ok) {
-          const err = await res.text();
-          toast.error("Agent error: " + err);
+        if (!streamRes.ok) {
+          const err = await streamRes.json().catch(() => ({}));
+          setStreamingAgent(null);
+          setStreamingContent("");
+          toast.error((err as { error?: string }).error ?? "Build request failed");
+          await refetchChat();
+          return;
         }
+
+        const reader = streamRes.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) {
+          setStreamingAgent(null);
+          await refetchChat();
+          return;
+        }
+
+        let content = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6);
+            if (data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (typeof delta === "string") {
+                content += delta;
+                setStreamingContent(content);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+
+        setStreamingAgent(null);
+        setStreamingContent("");
+
+        const execRes = await fetch("/api/build/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, rawResponse: content }),
+        });
+        const execData = await execRes.json();
+
+        if (!execRes.ok || !execData.commandId) {
+          toast.error((execData as { error?: string }).error ?? "Failed to execute code");
+          await refetchChat();
+          return;
+        }
+
+        const commandId = execData.commandId as string;
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const statusRes = await fetch(`/api/build/status?commandId=${encodeURIComponent(commandId)}`);
+          const cmd = statusRes.ok ? await statusRes.json() : null;
+          if (cmd?.status === "success") {
+            toast.success("Built successfully!");
+            await refetchChat();
+            return;
+          }
+          if (cmd?.status === "error") {
+            toast.error(cmd.error_log ?? "Execution failed");
+            await refetchChat();
+            return;
+          }
+        }
+        toast.error("Execution timeout");
+        await refetchChat();
       } catch (err) {
-        toast.error("Network error communicating with agents");
-        console.error(err);
-      } finally {
-        setTypingAgents([]);
+        setStreamingAgent(null);
+        setStreamingContent("");
+        toast.error(err instanceof Error ? err.message : "Build failed");
         await refetchChat();
       }
     },
-    [projectId, refetchChat, sendDirectMessage, handleExecuteCode]
+    [projectId, refetchChat, handleExecuteCode]
   );
 
   const handleRecreateImage = useCallback(
@@ -369,8 +325,8 @@ export default function ProjectPage() {
         const supabase = getClient();
         await supabase.from("chat_turns").insert({
           project_id: projectId,
-          agent_name: "Thomas",
-          agent_title: "Programmer",
+          agent_name: "Grand Studio",
+          agent_title: "Grand Studio",
           content,
           turn_type: "execution",
         });
@@ -385,11 +341,9 @@ export default function ProjectPage() {
 
   const handleFixCritical = useCallback(
     async (issues: string[]) => {
-      await sendDirectMessage("Thomas", "Fix these critical issues from the playtest:\n\n" + issues.join("\n"));
-      await refetchChat();
-      toast.success("Sent to Thomas");
+      await sendBossCommand("Fix these critical issues from the playtest:\n\n" + issues.join("\n"));
     },
-    [sendDirectMessage, refetchChat]
+    [sendBossCommand]
   );
 
   const handleRunPlaytest = useCallback(async () => {
@@ -441,78 +395,6 @@ export default function ProjectPage() {
     }
   }, [runPlaytestTrigger, setRunPlaytestTrigger, handleRunPlaytest]);
 
-  const sendToSpecificAgent = useCallback(
-    (agentName: string) => {
-      return async (message: string) => {
-        await sendDirectMessage(agentName, message);
-      };
-    },
-    [sendDirectMessage]
-  );
-
-  const runOneTurn = useCallback(async () => {
-    setIsRunningTurn(true);
-    setTypingAgents(TEAM.map((a) => a.name));
-    try {
-      const res = await fetch("/api/agents/route-decision", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
-      if (!res.ok) {
-        toast.error("Failed to run turn");
-      }
-      await refetchChat();
-    } catch {
-      toast.error("Network error");
-    } finally {
-      setTypingAgents([]);
-      setIsRunningTurn(false);
-    }
-  }, [projectId, refetchChat]);
-
-  const startAutonomous = useCallback(() => {
-    autonomousRef.current = true;
-    setAutonomousRunning(true);
-    toast.success("Autonomous mode started");
-
-    const run = async () => {
-      while (autonomousRef.current) {
-        setTypingAgents(TEAM.map((a) => a.name));
-        try {
-          const res = await fetch("/api/agents/autonomous", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId }),
-          });
-          if (!res.ok) break;
-
-          const data = await res.json();
-          await refetchChat();
-          if (data.done) {
-            toast.info("All tasks completed");
-            break;
-          }
-        } catch {
-          break;
-        }
-        setTypingAgents([]);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-      setTypingAgents([]);
-      autonomousRef.current = false;
-      setAutonomousRunning(false);
-    };
-
-    run();
-  }, [projectId, setAutonomousRunning, refetchChat]);
-
-  const stopAutonomous = useCallback(() => {
-    autonomousRef.current = false;
-    setAutonomousRunning(false);
-    setTypingAgents([]);
-    toast.info("Autonomous mode stopped");
-  }, [setAutonomousRunning]);
 
   const handleCaptureNow = useCallback(async () => {
     try {
@@ -531,38 +413,6 @@ export default function ProjectPage() {
       toast.error("Capture failed");
     }
   }, [projectId]);
-
-  const handleFullProjectStart = useCallback(async () => {
-    if (!fullProjectPrompt.trim()) {
-      toast.error("Enter a project prompt");
-      return;
-    }
-    setFullProjectDialogOpen(false);
-    setFullProjectRunning(true);
-    setPipViewportVisible(true);
-    const prompt = fullProjectPrompt.trim();
-    setFullProjectPrompt("");
-    try {
-      const res = await fetch("/api/agents/full-project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, prompt }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? "Full Project failed");
-        return;
-      }
-      toast.success(data.summary ?? "Full Project complete");
-    } catch (e) {
-      toast.error("Full Project request failed");
-      console.error(e);
-    } finally {
-      setFullProjectRunning(false);
-      setFullProjectPaused(false);
-      await refetchChat();
-    }
-  }, [projectId, fullProjectPrompt, setFullProjectRunning, setFullProjectPaused, setPipViewportVisible, refetchChat]);
 
   const handleFullProjectPause = useCallback(async () => {
     try {
@@ -726,16 +576,8 @@ export default function ProjectPage() {
             <div className="flex-1 flex flex-col min-w-0">
               <div className="px-4 py-2 border-b border-boss-border flex items-center justify-between shrink-0">
                 <ControlPanel
-                  onRunOneTurn={runOneTurn}
-                  onStartAutonomous={startAutonomous}
-                  onStopAutonomous={stopAutonomous}
-                  isRunningTurn={isRunningTurn}
                   onCaptureNow={handleCaptureNow}
                   onRunPlaytest={handleRunPlaytest}
-                  onFullProjectClick={() => setFullProjectDialogOpen(true)}
-                  onFullProjectPause={handleFullProjectPause}
-                  onFullProjectResume={handleFullProjectResume}
-                  onFullProjectStop={handleFullProjectStop}
                 />
               </div>
               <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} streamingAgent={streamingAgent} streamingContent={streamingContent} />
@@ -743,9 +585,7 @@ export default function ProjectPage() {
               <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
                 <CommandInput
                   onSend={sendBossCommand}
-                  onSendDirect={sendToSpecificAgent}
                   disabled={isAutonomousRunning || isFullProjectRunning}
-                  agentNames={AGENT_NAMES}
                 />
               </div>
             </div>
@@ -795,76 +635,7 @@ export default function ProjectPage() {
           )}
         </div>
 
-        {showBuildingView && (
-          <div className="px-4 py-3 border-t border-boss-border bg-boss-surface/80 flex items-center gap-2 shrink-0">
-            {isFullProjectPaused ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleFullProjectResume}
-                className="border-agent-green/30 text-agent-green hover:bg-agent-green/10 gap-1.5"
-              >
-                ▶️ Resume
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleFullProjectPause}
-                className="border-agent-amber/30 text-agent-amber hover:bg-agent-amber/10 gap-1.5"
-              >
-                ⏸️ Pause
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleFullProjectStop}
-              className="border-agent-rose/30 text-agent-rose hover:bg-agent-rose/10 gap-1.5"
-            >
-              ⏹️ Stop
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setFeedbackOpen(true)}
-              className="border-boss-border text-text-secondary hover:text-text-primary gap-1.5"
-            >
-              💬 Give Feedback
-            </Button>
-          </div>
-        )}
       </div>
-
-      <Dialog open={fullProjectDialogOpen} onOpenChange={setFullProjectDialogOpen}>
-        <DialogContent className="bg-boss-surface border-boss-border max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-text-primary">🚀 Full Project</DialogTitle>
-            <DialogDescription className="text-text-muted">
-              Describe the full project. Nima will break it into tasks; each task will be executed in UE5 automatically. You can Pause or Stop at any time.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            placeholder="e.g. Build me a medieval castle with landscape, trees, lighting, and a dragon"
-            value={fullProjectPrompt}
-            onChange={(e) => setFullProjectPrompt(e.target.value)}
-            className="min-h-24 bg-boss-elevated border-boss-border text-text-primary placeholder:text-text-muted"
-            disabled={isFullProjectRunning}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setFullProjectDialogOpen(false)} className="border-boss-border">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleFullProjectStart}
-              disabled={!fullProjectPrompt.trim() || isFullProjectRunning}
-              className="bg-gold hover:bg-gold/90 text-black gap-1.5"
-            >
-              🚀 Start Full Project
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
         <DialogContent className="bg-boss-surface border-boss-border max-w-lg">

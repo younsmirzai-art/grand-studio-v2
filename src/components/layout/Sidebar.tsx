@@ -7,8 +7,6 @@ import { CLOUD_SESSION_KEY } from "@/lib/cloud/constants";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import { TEAM } from "@/lib/agents/identity";
-import { AgentCard } from "@/components/team/AgentCard";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,7 +27,6 @@ interface SidebarProps {
 }
 
 export function Sidebar({ projectName, projectStatus, ue5Connected = false }: SidebarProps) {
-  const agentStatuses = useProjectStore((s) => s.agentStatuses);
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const setSketchfabModalOpen = useUIStore((s) => s.setSketchfabModalOpen);
@@ -241,24 +238,6 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
       </div>
 
       <Separator className="bg-boss-border" />
-
-      {/* Agent roster */}
-      <div className="px-3 pt-3 pb-1">
-        <p className="text-[10px] uppercase tracking-wider text-text-muted px-1 mb-2">
-          Team
-        </p>
-        <div className="space-y-0.5">
-          {TEAM.map((agent) => (
-            <AgentCard
-              key={agent.name}
-              agent={agent}
-              status={agentStatuses[agent.name]}
-            />
-          ))}
-        </div>
-      </div>
-
-      <Separator className="bg-boss-border my-2" />
 
       {/* Quick tools */}
       <div className="px-3 pt-1 pb-2">

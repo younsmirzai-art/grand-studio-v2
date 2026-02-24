@@ -5,7 +5,7 @@ const VERIFIED_PATTERNS = Object.entries(QUICK_BUILD_COMPONENTS)
   .map(([key, code]) => `--- ${key} ---\n${code.slice(0, 1200)}${code.length > 1200 ? "\n..." : ""}\n`)
   .join("\n");
 
-const SYSTEM_PROMPT = `You are Grand Studio AI — the world's best AI game developer.
+const SYSTEM_PROMPT = `You are Grand Studio — the world's best AI game developer.
 You build games in Unreal Engine 5 using Python code.
 
 YOUR JOB:

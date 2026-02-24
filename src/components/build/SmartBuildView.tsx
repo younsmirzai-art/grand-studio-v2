@@ -214,7 +214,7 @@ export default function SmartBuildView({
 
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         <div className="px-4 py-2 border-b border-boss-border text-xs font-medium text-text-muted">
-          💻 Grand Studio AI
+          💻 Grand Studio
         </div>
         <pre className="flex-1 overflow-auto p-4 text-xs font-mono text-text-secondary whitespace-pre-wrap break-words bg-boss-elevated/30">
           <code>{streamingContent || "…"}</code>

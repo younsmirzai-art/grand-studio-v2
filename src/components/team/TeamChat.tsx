@@ -57,7 +57,7 @@ export function TeamChat({ loading, onExecuteCode, onRecreateImage, onFixCritica
             Send a command to start the conversation
           </p>
           <p className="text-text-muted text-xs mt-2">
-            Use <span className="text-gold font-mono">@name</span> to chat with a specific agent
+            Describe what you want to build — Grand Studio will write the code and run it in UE5
           </p>
         </motion.div>
       </div>
@@ -111,17 +111,13 @@ export function TeamChat({ loading, onExecuteCode, onRecreateImage, onFixCritica
           className="px-4 py-3 flex items-center gap-3"
         >
           <div className="flex -space-x-2">
-            {typingAgents.slice(0, 5).map((name) => (
-              <div key={name} className="relative">
-                <AgentAvatar name={name} size="sm" showStatus status="thinking" />
-              </div>
-            ))}
+            <div className="relative">
+              <AgentAvatar name="Grand Studio" size="sm" showStatus status="thinking" />
+            </div>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-text-muted text-xs">
-              {typingAgents.length === 1
-                ? `${typingAgents[0]} is thinking`
-                : `${typingAgents.length} agents are thinking`}
+              🔧 Building…
             </span>
             <span className="flex gap-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-gold animate-bounce" style={{ animationDelay: "0ms" }} />

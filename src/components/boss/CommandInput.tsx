@@ -1,19 +1,16 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { Crown, Send, Loader2, AtSign, Mic, ImagePlus, X } from "lucide-react";
+import { Crown, Send, Loader2, Mic, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { motion, AnimatePresence } from "framer-motion";
-import { TEAM } from "@/lib/agents/identity";
+import { motion } from "framer-motion";
 import { startListening, normalizeAtMention } from "@/lib/voice/speechRecognition";
 import { useUIStore } from "@/lib/stores/uiStore";
 
 interface CommandInputProps {
   onSend: (message: string, file?: File) => Promise<void>;
-  onSendDirect?: (agentName: string) => (message: string) => Promise<void>;
   disabled?: boolean;
   placeholder?: string;
-  agentNames?: string[];
 }
 
 const MAX_LISTEN_SEC = 10;
@@ -21,7 +18,6 @@ const MAX_LISTEN_SEC = 10;
 export function CommandInput({ onSend, disabled, placeholder }: CommandInputProps) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
@@ -92,13 +88,6 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
     }
   }, [isListening, disabled, sending, stopListening]);
 
-  const detectedAgent = useMemo(() => {
-    const match = value.match(/^@(\w+)/);
-    if (!match) return null;
-    const name = match[1].toLowerCase();
-    return TEAM.find((a) => a.name.toLowerCase() === name) ?? null;
-  }, [value]);
-
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
     if (!trimmed || sending || disabled) return;
@@ -154,57 +143,13 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
     }
   };
 
-  const selectAgent = (name: string) => {
-    setValue(`@${name.toLowerCase()} `);
-    setShowAgentPicker(false);
-    textareaRef.current?.focus();
-  };
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="relative"
     >
-      <AnimatePresence>
-        {showAgentPicker && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="absolute bottom-full mb-2 left-0 right-0 bg-boss-card border border-boss-border rounded-lg p-2 flex gap-1.5 flex-wrap z-10"
-          >
-            <span className="text-[11px] text-text-muted w-full mb-1">Direct message an agent:</span>
-            {TEAM.map((agent) => (
-              <Button
-                key={agent.name}
-                size="sm"
-                variant="ghost"
-                onClick={() => selectAgent(agent.name)}
-                className="h-7 px-2.5 text-xs gap-1.5 border border-boss-border hover:border-current"
-                style={{ color: agent.colorHex }}
-              >
-                <span className="text-sm">{agent.icon}</span>
-                {agent.name}
-              </Button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className={`relative rounded-xl border ${detectedAgent ? "border-current" : "border-gold/30"} bg-boss-card gold-glow overflow-hidden`}
-        style={detectedAgent ? { borderColor: detectedAgent.colorHex + "60" } : undefined}
-      >
-        {detectedAgent && (
-          <div className="px-4 pt-2 flex items-center gap-1.5">
-            <span className="text-sm">{detectedAgent.icon}</span>
-            <span className="text-xs font-medium" style={{ color: detectedAgent.colorHex }}>
-              Direct to {detectedAgent.name}
-            </span>
-            <span className="text-[10px] text-text-muted">({detectedAgent.title})</span>
-          </div>
-        )}
-
+      <div className="relative rounded-xl border border-gold/30 bg-boss-card gold-glow overflow-hidden">
         {attachmentPreview && (
           <div className="px-4 pt-2 flex items-center gap-2">
             <img src={attachmentPreview} alt="Attach" className="h-12 w-12 rounded border border-boss-border object-cover" />
@@ -231,7 +176,7 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
-            placeholder={placeholder ?? "Give your team an order... (use @name for direct chat)"}
+            placeholder={placeholder ?? "Describe what you want to build…"}
             disabled={disabled || sending}
             rows={1}
             className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted resize-none outline-none text-sm min-h-[36px] py-1.5"
@@ -262,15 +207,6 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
             </Button>
             <Button
               size="sm"
-              variant="ghost"
-              onClick={() => setShowAgentPicker(!showAgentPicker)}
-              className="text-text-muted hover:text-gold h-8 w-8 p-0"
-              title="Pick agent for direct chat"
-            >
-              <AtSign className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
               onClick={handleSend}
               disabled={!value.trim() || sending || disabled}
               className="bg-gold hover:bg-gold/90 text-boss-bg font-semibold"
@@ -288,7 +224,7 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
             {isListening ? (
               <span className="text-red-500 font-medium">🔴 Listening… (click mic to stop, or speak)</span>
             ) : (
-              <>Ctrl+Enter to send {detectedAgent ? `to ${detectedAgent.name}` : "to all"}</>
+              <>Ctrl+Enter to send to Grand Studio</>
             )}
           </span>
           <span className="text-[11px] text-text-muted">

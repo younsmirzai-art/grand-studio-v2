@@ -55,8 +55,8 @@ export async function POST(request: NextRequest) {
 
     await supabase.from("chat_turns").insert({
       project_id: projectId,
-      agent_name: "Grand Studio AI",
-      agent_title: "Grand Studio AI",
+      agent_name: "Grand Studio",
+      agent_title: "Grand Studio",
       content: aiResponse.rawResponse,
       turn_type: "discussion",
     });
