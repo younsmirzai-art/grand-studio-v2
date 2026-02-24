@@ -8,6 +8,7 @@ import { Header } from "@/components/layout/Header";
 import { CommandInput } from "@/components/boss/CommandInput";
 import { ControlPanel } from "@/components/boss/ControlPanel";
 import { TeamChat } from "@/components/team/TeamChat";
+import BuildProgressPanel, { type BuildTask } from "@/components/build/BuildProgressPanel";
 import { GodEyePanel } from "@/components/god-eye/GodEyePanel";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import LiveViewport from "@/components/tools/LiveViewport";
@@ -72,6 +73,8 @@ export default function ProjectPage() {
   const [buildStatus, setBuildStatus] = useState<FullProjectStatus | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
+  const [streamingContent, setStreamingContent] = useState("");
   const autonomousRef = useRef(false);
   const autoBuildStartedRef = useRef(false);
   const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
@@ -178,10 +181,11 @@ export default function ProjectPage() {
       });
 
       setTypingAgents([agentName]);
+      setStreamingAgent(agentName);
+      setStreamingContent("");
 
       try {
-        console.log("[DirectChat] Calling /api/agents/direct for:", agentName);
-        const res = await fetch("/api/agents/direct", {
+        const res = await fetch("/api/agents/direct/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, agentName, message }),
@@ -189,15 +193,47 @@ export default function ProjectPage() {
 
         if (!res.ok) {
           const err = await res.text();
-          console.error("[DirectChat] Error response:", err);
           toast.error(`${agentName} error: ${err}`);
-        } else {
-          console.log("[DirectChat] Success from", agentName);
+          setStreamingAgent(null);
+          setStreamingContent("");
+          setTypingAgents([]);
+          await refetchChat();
+          return;
+        }
+
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) {
+          setStreamingAgent(null);
+          setTypingAgents([]);
+          await refetchChat();
+          return;
+        }
+
+        let content = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.content) content += data.content;
+              if (data.done && data.fullContent != null) content = data.fullContent;
+              if (data.done) break;
+            } catch {
+              /* ignore */
+            }
+          }
+          setStreamingContent(content);
         }
       } catch (err) {
         toast.error(`Network error reaching ${agentName}`);
         console.error("[DirectChat] Network error:", err);
       } finally {
+        setStreamingAgent(null);
+        setStreamingContent("");
         setTypingAgents([]);
         await refetchChat();
       }
@@ -590,25 +626,28 @@ export default function ProjectPage() {
       />
       <div className="flex flex-1 overflow-hidden flex-col">
         {showBuildingView && (
-          <div className="px-4 py-2 border-b border-boss-border bg-boss-surface/80 shrink-0">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary truncate">
-                  Building your game… {buildStatus?.totalTasks ? `Task ${(buildStatus.currentTaskIndex ?? 0) + 1}/${buildStatus.totalTasks}` : "Starting…"}
-                </p>
-                {buildStatus?.currentTaskTitle && (
-                  <p className="text-xs text-text-muted truncate">{buildStatus.currentTaskTitle}</p>
-                )}
-                {(buildStatus?.totalTasks ?? 0) > 0 && (
-                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-boss-elevated overflow-hidden">
-                    <div
-                      className="h-full bg-agent-green rounded-full transition-all duration-500"
-                      style={{ width: `${(((buildStatus?.currentTaskIndex ?? 0) + 1) / (buildStatus?.totalTasks || 1)) * 100}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="shrink-0 h-[280px] border-b border-boss-border flex">
+            <BuildProgressPanel
+              projectId={projectId}
+              tasks={(() => {
+                const plan = buildStatus?.plan ?? [];
+                const currentIndex = buildStatus?.currentTaskIndex ?? 0;
+                return plan.map((t: { id?: string; title: string; status: string; assignedTo?: string; startedAt?: number; completedAt?: number }, i: number) => ({
+                  id: t.id ?? `task-${i}`,
+                  title: t.title,
+                  assignedTo: t.assignedTo,
+                  status: (t.status === "in_progress" && i === currentIndex ? "running" : t.status === "failed" ? "error" : t.status) as BuildTask["status"],
+                  startedAt: t.startedAt,
+                  completedAt: t.completedAt,
+                }));
+              })()}
+              isBuilding={buildStatus?.running ?? false}
+              currentCode=""
+              currentTaskTitle={buildStatus?.currentTaskTitle ?? null}
+              onPause={handleFullProjectPause}
+              onStop={handleFullProjectStop}
+              onFeedback={() => setFeedbackOpen(true)}
+            />
           </div>
         )}
 
@@ -617,7 +656,7 @@ export default function ProjectPage() {
             <>
               <div className="flex-[0.6] flex flex-col min-w-0 border-r border-boss-border">
                 <div className="flex-1 overflow-hidden flex flex-col">
-                  <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} />
+                  <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} streamingAgent={streamingAgent} streamingContent={streamingContent} />
                 </div>
               </div>
               <div className="flex-[0.4] flex flex-col min-w-0 bg-boss-bg">
@@ -654,7 +693,7 @@ export default function ProjectPage() {
                   onFullProjectStop={handleFullProjectStop}
                 />
               </div>
-              <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} />
+              <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} streamingAgent={streamingAgent} streamingContent={streamingContent} />
               <GodEyePanel />
               <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
                 <CommandInput

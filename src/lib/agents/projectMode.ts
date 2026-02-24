@@ -135,7 +135,7 @@ TASK|Create terrain|Use Landmass to create base terrain and heightmap|Thomas
 TASK|Add lighting|Set up directional light and sky atmosphere|Thomas
 
 Rules:
-- Use 4 to 8 tasks.
+- Use 4 to 5 tasks (maximum FIVE — fewer is better).
 - AssignedAgent must be exactly one of: Nima, Alex, Thomas, Elena, Morgan, Sana.
 - Order tasks logically (e.g. terrain before trees).
 - End your reply with the task lines only; you can add a short intro line before them if needed.`;
@@ -461,7 +461,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
               const r = await sendToUE5AndWait(pid, c, agent);
               return { success: r.success, error: r.error };
             },
-            3
+            1
           );
           if (debugOk) {
             morganDebuggedCount++;

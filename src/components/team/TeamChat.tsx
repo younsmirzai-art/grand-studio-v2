@@ -15,9 +15,11 @@ interface TeamChatProps {
   onFixCritical?: (issues: string[]) => void | Promise<void>;
   onRunPlaytest?: () => void | Promise<void>;
   typingAgents?: string[];
+  streamingAgent?: string | null;
+  streamingContent?: string;
 }
 
-export function TeamChat({ loading, onExecuteCode, onRecreateImage, onFixCritical, onRunPlaytest, typingAgents = [] }: TeamChatProps) {
+export function TeamChat({ loading, onExecuteCode, onRecreateImage, onFixCritical, onRunPlaytest, typingAgents = [], streamingAgent, streamingContent = "" }: TeamChatProps) {
   const chatTurns = useProjectStore((s) => s.chatTurns);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +79,32 @@ export function TeamChat({ loading, onExecuteCode, onRecreateImage, onFixCritica
         ))}
       </AnimatePresence>
 
-      {typingAgents.length > 0 && (
+      {streamingAgent && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="px-4 py-3"
+        >
+          <ChatMessage
+            turn={{
+              id: 0,
+              project_id: "",
+              agent_name: streamingAgent,
+              agent_title: streamingAgent,
+              content: streamingContent || "…",
+              turn_type: "direct",
+              task_id: null,
+              created_at: new Date().toISOString(),
+            }}
+            onExecuteCode={onExecuteCode}
+            onRecreateImage={onRecreateImage}
+            onFixCritical={onFixCritical}
+            onRunPlaytest={onRunPlaytest}
+            isStreaming
+          />
+        </motion.div>
+      )}
+      {typingAgents.length > 0 && !streamingAgent && (
         <motion.div
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}

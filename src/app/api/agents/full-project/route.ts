@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startFullProject } from "@/lib/agents/projectMode";
+import { runQuickBuild, isSimplePrompt } from "@/lib/agents/buildManager";
 import { expandPrompt } from "@/lib/agents/smartPrompt";
 
 export const maxDuration = 300;
@@ -17,6 +18,12 @@ export async function POST(request: NextRequest) {
 
     const trimmed = prompt.trim();
     const expanded = await expandPrompt(trimmed, projectId);
+
+    if (isSimplePrompt(expanded)) {
+      const result = await runQuickBuild(projectId, expanded);
+      return NextResponse.json(result);
+    }
+
     const result = await startFullProject(projectId, expanded);
     return NextResponse.json(result);
   } catch (error) {

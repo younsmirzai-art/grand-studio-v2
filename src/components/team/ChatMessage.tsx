@@ -33,6 +33,7 @@ interface ChatMessageProps {
   onRecreateImage?: (imageUrl: string) => void | Promise<void>;
   onFixCritical?: (issues: string[]) => void | Promise<void>;
   onRunPlaytest?: () => void | Promise<void>;
+  isStreaming?: boolean;
 }
 
 const turnTypeConfig: Record<TurnType, { label: string; className: string }> = {
@@ -87,7 +88,7 @@ function renderTextContent(text: string): React.ReactNode {
   });
 }
 
-function ChatMessageInner({ turn, onExecuteCode, onRecreateImage, onFixCritical, onRunPlaytest }: ChatMessageProps) {
+function ChatMessageInner({ turn, onExecuteCode, onRecreateImage, onFixCritical, onRunPlaytest, isStreaming }: ChatMessageProps) {
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -301,6 +302,9 @@ function ChatMessageInner({ turn, onExecuteCode, onRecreateImage, onFixCritical,
               }
               return null;
             })}
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 ml-0.5 bg-gold animate-pulse align-middle" />
+            )}
           </div>
         </div>
       </div>
