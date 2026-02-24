@@ -14,7 +14,7 @@ export interface ProjectTask {
   title: string;
   description: string;
   assignedTo: string;
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: "pending" | "in_progress" | "completed" | "failed" | "skipped";
   code?: string;
   result?: string;
   errorLog?: string;
@@ -378,7 +378,7 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
   await insertProgressChat(projectId, `📋 Project Plan Created: ${tasks.length} tasks`);
 
   let completed = 0;
-  let failed = 0;
+  let skipped = 0;
   let morganDebuggedCount = 0;
 
   for (let i = 0; i < tasks.length; i++) {
@@ -484,15 +484,15 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
     }
 
     if (!success) {
-      task.status = "failed";
+      task.status = "skipped";
       task.errorLog = lastError;
-      failed++;
-      await insertProgressChat(projectId, `❌ Task ${i + 1}/${tasks.length}: Failed after ${MAX_RETRIES} retries. Continuing.`);
+      skipped++;
+      await insertProgressChat(projectId, `⏭️ Task ${i + 1}/${tasks.length}: Skipped after retries. Continuing.`);
     }
 
     if ((i + 1) % 2 === 0 && i + 1 < tasks.length) {
       await insertProgressChat(projectId, `🔍 Morgan reviewing tasks 1–${i + 1}…`);
-      await askMorganToReview(projectId, `Tasks 1–${i + 1} completed. ${completed} succeeded, ${failed} failed.`);
+      await askMorganToReview(projectId, `Tasks 1–${i + 1} completed. ${completed} succeeded, ${skipped} skipped.`);
     }
   }
 
@@ -579,8 +579,8 @@ export async function startFullProject(projectId: string, bossPrompt: string): P
     }
   }
 
-  const finalStatus = (await getRunStatus(projectId)) === "stopped" ? "stopped" : failed > 0 ? "completed" : "completed";
-  const summary = `🎉 Project ${finalStatus === "stopped" ? "stopped" : "complete"}! ${completed}/${tasks.length} tasks succeeded, ${failed} failed.${morganDebuggedCount > 0 ? ` ${morganDebuggedCount} task(s) auto-debugged by Morgan.` : ""}${playtestCount > 0 ? ` ${playtestCount} Amir playtest(s) run.` : ""}`;
+  const finalStatus = (await getRunStatus(projectId)) === "stopped" ? "stopped" : "completed";
+  const summary = `🎉 Project ${finalStatus === "stopped" ? "stopped" : "complete"}! Completed ${completed}/${tasks.length} tasks.${skipped > 0 ? ` ${skipped} task(s) skipped due to errors.` : ""}${morganDebuggedCount > 0 ? ` ${morganDebuggedCount} task(s) auto-debugged by Morgan.` : ""}${playtestCount > 0 ? ` ${playtestCount} Amir playtest(s) run.` : ""}`;
   await supabase
     .from("full_project_run")
     .update({ status: finalStatus, plan_json: tasks, summary, updated_at: new Date().toISOString() })

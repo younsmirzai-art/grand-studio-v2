@@ -1,6 +1,7 @@
 import type { AgentIdentity } from "./types";
 import { BOSS_ETIQUETTE } from "./identity";
 import { buildUE5CapabilitiesContext } from "../ue5/plugin-registry";
+import { UE5_API_NOTES } from "../ue5/codeLibrary";
 
 export function buildSystemPrompt(
   agent: AgentIdentity,
@@ -21,16 +22,27 @@ ${projectContext}
 ${ue5Context}
 
 === RULES FOR UE5 CODE ===
-1. All code MUST start with "import unreal"
-2. Use ONLY UE5 Python API — no pip packages, no external dependencies
-3. Before spawning anything, check world_state to avoid duplicates
-4. Use the available plugins listed above — they are ALL active and ready
-5. For large-scale content, prefer PCG rules over manual placement
-6. For terrain, use Landmass plugin APIs
-7. For weather/sky, use Ultra Dynamic Sky APIs
-8. For NPC behavior, use State Tree + EQS + Smart Objects
-9. For large battles, use Mass Entity
-10. Code is sent to UE5 via HTTP at localhost:30010
+${UE5_API_NOTES}
+
+When writing UE5 Python code, you MUST follow these rules exactly.
+Use the VERIFIED code patterns from the code library (CLEAR_LEVEL, SKY_AND_ATMOSPHERE, FOG, GROUND_PLANE, SPAWN_CUBE, SPAWN_CYLINDER, SPAWN_SPHERE, SPAWN_CONE, POINT_LIGHT, POST_PROCESS, SIMPLE_HOUSE, TREE, CASTLE_TOWER).
+NEVER guess UE5 API calls. If unsure, use the basic patterns above.
+
+For any scene, ALWAYS include:
+1. Clear the level first (unless told to add to existing)
+2. Sky and atmosphere (SkyAtmosphere + DirectionalLight + SkyLight + VolumetricCloud)
+3. Ground plane
+4. The requested objects
+5. Appropriate lighting
+6. Post-process for atmosphere
+
+Write COMPLETE code. Never write partial code or placeholders.
+Every function must be called at the bottom of the script.
+
+Additional rules:
+- All code MUST start with "import unreal"
+- Use ONLY UE5 Python API — no pip packages
+- Code is sent to UE5 via HTTP at localhost:30010
 
 === UE5 LIVE VISION ===
 After code executes in UE5, you will receive a screenshot showing the result.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
+import { validateUE5Code } from "@/lib/ue5/codeValidator";
 
 const DANGEROUS_PATTERNS = [
   "os.system",
@@ -40,13 +41,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let codeToRun = code;
+    const validation = validateUE5Code(code);
+    if (validation.errors.length > 0) {
+      console.log("[ue5/execute] Code auto-fixed:", validation.errors);
+      codeToRun = validation.fixedCode;
+    }
+
     const supabase = createServerClient();
 
     const { data, error } = await supabase
       .from("ue5_commands")
       .insert({
         project_id: projectId,
-        code,
+        code: codeToRun,
         status: "pending",
         ...(submittedByEmail && { submitted_by_email: submittedByEmail }),
         ...(submittedByName && { submitted_by_name: submittedByName }),
@@ -65,7 +73,7 @@ export async function POST(request: NextRequest) {
       project_id: projectId,
       event_type: "execution",
       agent_name: agentName ?? "System",
-      detail: `Code queued for UE5 execution (${code.length} chars)`,
+      detail: `Code queued for UE5 execution (${codeToRun.length} chars)`,
       ...(submittedByEmail && { user_email: submittedByEmail }),
       ...(submittedByName && { user_name: submittedByName }),
     });
