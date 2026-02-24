@@ -20,8 +20,11 @@ function extractPythonCode(rawResponse: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  console.log("[BUILD EXECUTE] Request received");
   try {
-    const { projectId, rawResponse } = await request.json();
+    const body = await request.json();
+    const { projectId, rawResponse } = body;
+    console.log("[BUILD EXECUTE] Body keys:", Object.keys(body), "projectId:", projectId, "rawResponse length:", typeof rawResponse === "string" ? rawResponse.length : 0);
 
     if (!projectId || typeof rawResponse !== "string") {
       return NextResponse.json(
@@ -70,9 +73,12 @@ export async function POST(request: NextRequest) {
       .select("id")
       .single();
 
+    console.log("[BUILD EXECUTE] Supabase result:", { id: cmd?.id, error: error?.message });
+
     if (error || !cmd) {
+      const errMsg = error?.message ?? "Failed to queue UE5 command";
       return NextResponse.json(
-        { error: error?.message ?? "Failed to queue UE5 command" },
+        { error: errMsg },
         { status: 500 }
       );
     }
@@ -83,7 +89,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[api/build/execute] Error:", message);
+    console.error("[BUILD EXECUTE] Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

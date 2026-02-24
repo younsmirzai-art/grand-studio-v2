@@ -1,6 +1,8 @@
 import { UE5_API_NOTES } from "@/lib/ue5/codeLibrary";
 import { QUICK_BUILD_COMPONENTS } from "@/lib/ue5/quickBuild";
 
+const DEFAULT_MODEL = "google/gemini-2.0-flash-001";
+
 const VERIFIED_PATTERNS = Object.entries(QUICK_BUILD_COMPONENTS)
   .map(([key, code]) => `--- ${key} ---\n${code.slice(0, 1200)}${code.length > 1200 ? "\n..." : ""}\n`)
   .join("\n");
@@ -70,7 +72,8 @@ export async function askGrandStudioAI(
   projectContext?: string
 ): Promise<AIResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY not set");
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set. Add it in Vercel Environment Variables.");
 
   const messages: { role: "system" | "user"; content: string }[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -94,7 +97,7 @@ export async function askGrandStudioAI(
       "X-Title": "Grand Studio",
     },
     body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model,
       max_tokens: 8000,
       messages,
       temperature: 0.3,
@@ -121,9 +124,12 @@ export async function askGrandStudioAI(
 export async function askGrandStudioAIStream(
   prompt: string,
   projectContext?: string
-): Promise<ReadableStream<Uint8Array> | null> {
+): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY not set");
+  const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+  console.log("[BUILD STREAM] API Key exists:", !!apiKey);
+  console.log("[BUILD STREAM] Model:", model);
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set. Add it in Vercel Environment Variables.");
 
   const messages: { role: "system" | "user"; content: string }[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -147,7 +153,7 @@ export async function askGrandStudioAIStream(
       "X-Title": "Grand Studio",
     },
     body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model,
       max_tokens: 8000,
       messages,
       temperature: 0.3,
@@ -155,6 +161,16 @@ export async function askGrandStudioAIStream(
     }),
   });
 
-  if (!response.ok || !response.body) return null;
+  console.log("[BUILD STREAM] OpenRouter status:", response.status);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[BUILD STREAM] OpenRouter error:", errorText.slice(0, 500));
+    throw new Error(`OpenRouter ${response.status}: ${errorText.slice(0, 300)}`);
+  }
+
+  if (!response.body) {
+    throw new Error("OpenRouter returned no response body");
+  }
   return response.body;
 }

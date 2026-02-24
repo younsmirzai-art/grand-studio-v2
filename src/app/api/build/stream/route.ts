@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { askGrandStudioAIStream } from "@/lib/ai/grandStudioAI";
 
 export async function POST(request: NextRequest) {
+  console.log("[BUILD STREAM] Request received");
   try {
     const body = await request.json();
     const { prompt, projectContext } = body;
+    console.log("[BUILD STREAM] Body keys:", Object.keys(body), "prompt length:", typeof prompt === "string" ? prompt.length : 0);
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json(
@@ -15,13 +17,6 @@ export async function POST(request: NextRequest) {
 
     const stream = await askGrandStudioAIStream(prompt.trim(), projectContext);
 
-    if (!stream) {
-      return NextResponse.json(
-        { error: "Failed to start stream" },
-        { status: 500 }
-      );
-    }
-
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
@@ -31,7 +26,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[api/build/stream] Error:", message);
+    console.error("[BUILD STREAM] Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type Phase = "writing" | "executing" | "done" | "error";
@@ -10,7 +11,7 @@ interface SmartBuildViewProps {
   projectId: string;
   prompt: string;
   projectContext?: string;
-  onDone?: (success: boolean) => void;
+  onDone?: (success: boolean, errorMessage?: string) => void;
   onStop?: () => void;
 }
 
@@ -51,19 +52,29 @@ export default function SmartBuildView({
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setErrorMessage(data.error ?? `Request failed: ${res.status}`);
+        const errText = await res.text();
+        let errMsg = `Request failed: ${res.status}`;
+        try {
+          const data = JSON.parse(errText) as { error?: string };
+          if (data?.error) errMsg = data.error;
+        } catch {
+          if (errText && errText.length < 200) errMsg = errText;
+        }
+        setErrorMessage(errMsg);
         setPhase("error");
-        onDone?.(false);
+        toast.error(errMsg);
+        onDone?.(false, errMsg);
         return;
       }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) {
+        const errMsg = "No response body";
         setPhase("error");
-        setErrorMessage("No response body");
-        onDone?.(false);
+        setErrorMessage(errMsg);
+        toast.error(errMsg);
+        onDone?.(false, errMsg);
         return;
       }
 
@@ -97,8 +108,10 @@ export default function SmartBuildView({
       }
 
       if (stoppedRef.current) {
+        const errMsg = "Stopped by user";
         setPhase("error");
-        onDone?.(false);
+        setErrorMessage(errMsg);
+        onDone?.(false, errMsg);
         return;
       }
 
@@ -113,9 +126,11 @@ export default function SmartBuildView({
       const execData = await execRes.json();
 
       if (!execRes.ok || !execData.commandId) {
-        setErrorMessage(execData.error ?? "Failed to execute code");
+        const errMsg = execData.error ?? "Failed to execute code";
+        setErrorMessage(errMsg);
         setPhase("error");
-        onDone?.(false);
+        toast.error(errMsg);
+        onDone?.(false, errMsg);
         return;
       }
 
@@ -123,8 +138,10 @@ export default function SmartBuildView({
 
       for (let i = 0; i < 30; i++) {
         if (stoppedRef.current) {
+          const errMsg = "Stopped by user";
           setPhase("error");
-          onDone?.(false);
+          setErrorMessage(errMsg);
+          onDone?.(false, errMsg);
           return;
         }
         await new Promise((r) => setTimeout(r, 2000));
@@ -139,21 +156,26 @@ export default function SmartBuildView({
           return;
         }
         if (cmd?.status === "error") {
-          setErrorMessage(cmd.error_log ?? "Execution failed");
+          const errMsg = cmd.error_log ?? "Execution failed";
+          setErrorMessage(errMsg);
           setPhase("error");
-          onDone?.(false);
+          toast.error(errMsg);
+          onDone?.(false, errMsg);
           return;
         }
       }
 
-      setErrorMessage("Execution timeout");
+      const errMsg = "Execution timeout";
+      setErrorMessage(errMsg);
       setPhase("error");
-      onDone?.(false);
+      toast.error(errMsg);
+      onDone?.(false, errMsg);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorMessage(msg);
       setPhase("error");
-      onDone?.(false);
+      toast.error(msg);
+      onDone?.(false, msg);
     }
   }, [projectId, prompt, projectContext, onDone]);
 

@@ -171,6 +171,7 @@ export default function ProjectPage() {
 
   const sendBossCommand = useCallback(
     async (message: string, file?: File) => {
+      console.log("[SEND] projectId:", projectId, "message length:", message?.length);
       const presetKey = detectGamePresetInPrompt(message);
       if (presetKey && gamePresets[presetKey]) {
         try {
@@ -224,10 +225,18 @@ export default function ProjectPage() {
         });
 
         if (!streamRes.ok) {
-          const err = await streamRes.json().catch(() => ({}));
+          const errText = await streamRes.text();
+          let errMessage = "Build request failed";
+          try {
+            const parsed = JSON.parse(errText) as { error?: string };
+            if (parsed?.error) errMessage = parsed.error;
+          } catch {
+            if (errText && errText.length < 200) errMessage = errText;
+          }
+          console.error("[SEND] Stream error:", streamRes.status, errMessage);
           setStreamingAgent(null);
           setStreamingContent("");
-          toast.error((err as { error?: string }).error ?? "Build request failed");
+          toast.error(errMessage);
           await refetchChat();
           return;
         }
@@ -236,6 +245,8 @@ export default function ProjectPage() {
         const decoder = new TextDecoder();
         if (!reader) {
           setStreamingAgent(null);
+          setStreamingContent("");
+          toast.error("No response body from build stream");
           await refetchChat();
           return;
         }
@@ -274,7 +285,9 @@ export default function ProjectPage() {
         const execData = await execRes.json();
 
         if (!execRes.ok || !execData.commandId) {
-          toast.error((execData as { error?: string }).error ?? "Failed to execute code");
+          const execErr = (execData as { error?: string }).error ?? "Failed to execute code";
+          console.error("[SEND] Execute error:", execErr);
+          toast.error(execErr);
           await refetchChat();
           return;
         }
@@ -298,9 +311,11 @@ export default function ProjectPage() {
         toast.error("Execution timeout");
         await refetchChat();
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[SEND] Build error:", msg);
         setStreamingAgent(null);
         setStreamingContent("");
-        toast.error(err instanceof Error ? err.message : "Build failed");
+        toast.error(msg || "Build failed");
         await refetchChat();
       }
     },
@@ -472,14 +487,14 @@ export default function ProjectPage() {
   }, [feedbackMessage, sendBossCommand]);
 
   const handleSmartBuildDone = useCallback(
-    (success: boolean) => {
+    (success: boolean, errorMessage?: string) => {
       setSmartBuildFinished(true);
       const params = new URLSearchParams(searchParams.toString());
       params.delete("build");
       router.replace(`/project/${projectId}${params.toString() ? `?${params}` : ""}`, { scroll: false });
       refetchChat();
       if (success) toast.success("Build complete!");
-      else toast.error("Build failed or stopped.");
+      else if (!errorMessage) toast.error("Build failed or stopped.");
     },
     [projectId, searchParams, router, refetchChat]
   );
