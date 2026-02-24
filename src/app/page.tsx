@@ -126,7 +126,7 @@ export default function HomePage() {
         return;
       }
       const project = data as Project;
-      router.push(`/project/${project.id}?autoBuild=1`);
+      router.push(`/project/${project.id}?build=1`);
     } catch {
       toast.error("Something went wrong");
     } finally {

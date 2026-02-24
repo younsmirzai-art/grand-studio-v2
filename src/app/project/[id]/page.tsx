@@ -9,6 +9,7 @@ import { CommandInput } from "@/components/boss/CommandInput";
 import { ControlPanel } from "@/components/boss/ControlPanel";
 import { TeamChat } from "@/components/team/TeamChat";
 import BuildProgressPanel, { type BuildTask } from "@/components/build/BuildProgressPanel";
+import SmartBuildView from "@/components/build/SmartBuildView";
 import { GodEyePanel } from "@/components/god-eye/GodEyePanel";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import LiveViewport from "@/components/tools/LiveViewport";
@@ -77,6 +78,9 @@ export default function ProjectPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const autonomousRef = useRef(false);
   const autoBuildStartedRef = useRef(false);
+  const [smartBuildFinished, setSmartBuildFinished] = useState(false);
+  const buildParam = searchParams.get("build") === "1";
+  const showSmartBuildView = buildParam && !!project?.initial_prompt && !smartBuildFinished;
   const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
 
   useEffect(() => {
@@ -617,6 +621,19 @@ export default function ProjectPage() {
     await sendBossCommand(msg);
   }, [feedbackMessage, sendBossCommand]);
 
+  const handleSmartBuildDone = useCallback(
+    (success: boolean) => {
+      setSmartBuildFinished(true);
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("build");
+      router.replace(`/project/${projectId}${params.toString() ? `?${params}` : ""}`, { scroll: false });
+      refetchChat();
+      if (success) toast.success("Build complete!");
+      else toast.error("Build failed or stopped.");
+    },
+    [projectId, searchParams, router, refetchChat]
+  );
+
   return (
     <>
       <Header
@@ -652,7 +669,35 @@ export default function ProjectPage() {
         )}
 
         <div className="flex flex-1 overflow-hidden">
-          {showBuildingView ? (
+          {showSmartBuildView ? (
+            <>
+              <div className="flex-[0.5] flex flex-col min-w-0 border-r border-boss-border overflow-hidden">
+                <SmartBuildView
+                  projectId={projectId}
+                  prompt={(project?.initial_prompt as string) ?? ""}
+                  onDone={handleSmartBuildDone}
+                  onStop={() => handleSmartBuildDone(false)}
+                />
+              </div>
+              <div className="flex-[0.5] flex flex-col min-w-0 bg-boss-bg">
+                {pixelStreamingConnected || isRelayConnected ? (
+                  <PixelStreamingViewer
+                    projectId={projectId}
+                    signalingUrl={pixelStreamingUrl}
+                    isConnected={pixelStreamingConnected}
+                    refreshInterval={5}
+                  />
+                ) : (
+                  <div className="flex flex-1 flex-col items-center justify-center p-6 text-center text-text-muted text-sm">
+                    <p>Connect UE5 to see the viewport</p>
+                    <Link href={`/project/${projectId}/settings`} className="text-agent-teal hover:underline text-xs mt-2">
+                      Pixel Streaming setup
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : showBuildingView ? (
             <>
               <div className="flex-[0.6] flex flex-col min-w-0 border-r border-boss-border">
                 <div className="flex-1 overflow-hidden flex flex-col">

@@ -4,6 +4,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* System font stacks so build does not require Google Fonts fetch */
+.font-sans-vars {
+  --font-inter: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-jetbrains: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+}
+
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
