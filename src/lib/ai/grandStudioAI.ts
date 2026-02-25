@@ -1,5 +1,6 @@
 import { UE5_API_NOTES } from "@/lib/ue5/codeLibrary";
 import { QUICK_BUILD_COMPONENTS } from "@/lib/ue5/quickBuild";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 
 const DEFAULT_MODEL = "google/gemini-2.0-flash-001";
 
@@ -81,9 +82,28 @@ ${VERIFIED_PATTERNS}
 
 ${UE5_API_NOTES}
 
+IMPORTANT RULES:
+1. ALWAYS respond with Python code in a \`\`\`python code block. NEVER respond with just text.
+2. Even if the user asks to "change", "modify", "update", "fix", or "add to" something — write the FULL Python code to do it.
+3. If the user asks to change colors/materials on existing objects, write code that:
+   a. Finds actors by label using unreal.EditorLevelLibrary.get_all_level_actors()
+   b. Gets StaticMeshComponent with actor.get_component_by_class(unreal.StaticMeshComponent)
+   c. Creates dynamic material instances and applies colors (e.g. set_vector_parameter_value('BaseColor', unreal.LinearColor(r,g,b,1.0)))
+4. NEVER say "I can't modify existing objects" — you CAN, by iterating get_all_level_actors() and matching get_actor_label().
+
+HOW TO CHANGE COLORS ON EXISTING OBJECTS (use this pattern):
+- Loop over unreal.EditorLevelLibrary.get_all_level_actors()
+- If actor.get_actor_label() matches the target (e.g. "Ground", "Wall"), get mesh with get_component_by_class(unreal.StaticMeshComponent)
+- Load a base material with EditorAssetLibrary.load_asset (e.g. /Engine/EngineMaterials/DefaultMaterial)
+- Create a dynamic material instance and set_vector_parameter_value('BaseColor', unreal.LinearColor(r, g, b, 1.0))
+- mesh_comp.set_material(0, dyn_mat)
+- Example labels to color: 'Ground', 'Wall', 'Roof', 'Floor' — use partial match if needed (e.g. "wall" in label.lower())
+
+CRITICAL REMINDER: You MUST always output a \`\`\`python code block. If you can't do exactly what the user asks, write a script that does the closest thing possible. NEVER respond with only text. ALWAYS include executable Python code.
+
 RESPONSE FORMAT:
 Always respond with:
-1. A brief description of what you're building (2-3 sentences max)
+1. A brief description of what you're building or modifying (2-3 sentences max)
 2. The complete Python code in a \`\`\`python code block
 3. Nothing else. No explanations. No alternatives. No questions.
 
@@ -147,10 +167,9 @@ export async function askGrandStudioAI(
   const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
   const rawResponse = data.choices?.[0]?.message?.content ?? "";
 
-  const codeMatch = rawResponse.match(/```python\n([\s\S]*?)```/);
-  const code = codeMatch ? codeMatch[1].trim() : "";
+  const code = extractPythonCode(rawResponse) ?? "";
 
-  const description = rawResponse.split("```python")[0].trim();
+  const description = rawResponse.split("```")[0].trim();
 
   return { description, code, rawResponse };
 }

@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 
 type Phase = "writing" | "executing" | "done" | "error";
 
@@ -115,12 +116,57 @@ export default function SmartBuildView({
         return;
       }
 
+      let finalContent = content;
+      if (!extractPythonCode(content)) {
+        toast.info("No code in response, retrying…");
+        setStreamingContent("");
+        const retryRes = await fetch("/api/build/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: `You MUST write Python code for this request. Output ONLY a \`\`\`python code block, nothing else:\n\n${prompt.trim()}`,
+          }),
+        });
+        if (retryRes.ok && retryRes.body) {
+          const retryReader = retryRes.body.getReader();
+          let retryContent = "";
+          while (true) {
+            const { done, value } = await retryReader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n");
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (typeof delta === "string") retryContent += delta;
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+          if (extractPythonCode(retryContent)) finalContent = retryContent;
+        }
+      }
+
+      if (!extractPythonCode(finalContent)) {
+        const errMsg = "No valid Python code in response.";
+        setErrorMessage(errMsg);
+        setPhase("error");
+        toast.error(errMsg);
+        onDone?.(false, errMsg);
+        return;
+      }
+
       setPhase("executing");
 
       const execRes = await fetch("/api/build/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, rawResponse: content }),
+        body: JSON.stringify({ projectId, rawResponse: finalContent }),
       });
 
       const execData = await execRes.json();

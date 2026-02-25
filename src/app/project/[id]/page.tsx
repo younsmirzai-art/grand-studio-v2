@@ -23,6 +23,7 @@ import { getCurrentUser } from "@/lib/collaboration/user";
 import { subscribeToPresence, presenceStateToUsers, type PresenceUser } from "@/lib/collaboration/presence";
 import type { ChatTurn } from "@/lib/agents/types";
 import { detectGamePresetInPrompt, gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import {
   Dialog,
   DialogContent,
@@ -277,10 +278,56 @@ export default function ProjectPage() {
         setStreamingAgent(null);
         setStreamingContent("");
 
+        let finalContent = content;
+        if (!extractPythonCode(content)) {
+          toast.info("No code in response, retrying with stronger prompt…");
+          setStreamingAgent("Grand Studio");
+          setStreamingContent("");
+          const retryRes = await fetch("/api/build/stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: `You MUST write Python code for this request. Output ONLY a \`\`\`python code block, nothing else:\n\n${message.trim()}`,
+            }),
+          });
+          if (retryRes.ok && retryRes.body) {
+            const reader = retryRes.body.getReader();
+            const decoder = new TextDecoder();
+            let retryContent = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split("\n");
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const data = line.slice(6);
+                if (data === "[DONE]") continue;
+                try {
+                  const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
+                  const delta = parsed.choices?.[0]?.delta?.content;
+                  if (typeof delta === "string") retryContent += delta;
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+            setStreamingAgent(null);
+            setStreamingContent("");
+            if (extractPythonCode(retryContent)) finalContent = retryContent;
+          }
+        }
+
+        if (!extractPythonCode(finalContent)) {
+          toast.error("No valid Python code in response. Try asking to \"write code\" or \"build\" something.");
+          await refetchChat();
+          return;
+        }
+
         const execRes = await fetch("/api/build/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, rawResponse: content }),
+          body: JSON.stringify({ projectId, rawResponse: finalContent }),
         });
         const execData = await execRes.json();
 

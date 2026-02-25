@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateUE5Code } from "@/lib/ue5/codeValidator";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { createServerClient } from "@/lib/supabase/server";
 
 const DANGEROUS_PATTERNS = [
@@ -12,12 +13,6 @@ const DANGEROUS_PATTERNS = [
   "os.remove",
   "os.rmdir",
 ];
-
-function extractPythonCode(rawResponse: string): string {
-  const match = rawResponse.match(/```python\n([\s\S]*?)```/);
-  const code = match ? match[1].trim() : "";
-  return code;
-}
 
 export async function POST(request: NextRequest) {
   console.log("[BUILD EXECUTE] Request received");
@@ -35,6 +30,7 @@ export async function POST(request: NextRequest) {
 
     const code = extractPythonCode(rawResponse);
     if (!code || !code.includes("import unreal")) {
+      console.log("[BUILD EXECUTE] No valid code extracted, raw length:", rawResponse?.length);
       return NextResponse.json(
         { error: "No valid Python code in response" },
         { status: 400 }
