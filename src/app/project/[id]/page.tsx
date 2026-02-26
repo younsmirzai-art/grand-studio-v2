@@ -24,6 +24,7 @@ import { subscribeToPresence, presenceStateToUsers, type PresenceUser } from "@/
 import type { ChatTurn } from "@/lib/agents/types";
 import { detectGamePresetInPrompt, gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
+import { getTemplateForPrompt } from "@/lib/ue5/sceneTemplates";
 import {
   Dialog,
   DialogContent,
@@ -170,6 +171,87 @@ export default function ProjectPage() {
     [projectId]
   );
 
+  const runVisionLoop = useCallback(
+    async (projId: string, originalPrompt: string) => {
+      const MAX_ITERATIONS = 2;
+      for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        toast.info(`📸 Capturing scene (${iter + 1}/${MAX_ITERATIONS})…`);
+        const ssRes = await fetch("/api/build/screenshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: projId }),
+        });
+        const ssData = await ssRes.json();
+        if (!ssRes.ok || !ssData.commandId) continue;
+        const ssCommandId = ssData.commandId as string;
+        await new Promise((r) => setTimeout(r, 5000));
+        let screenshotUrl: string | null = null;
+        for (let p = 0; p < 8; p++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const statusRes = await fetch(
+            `/api/build/status?commandId=${encodeURIComponent(ssCommandId)}`
+          );
+          const statusData = statusRes.ok ? await statusRes.json() : null;
+          if (statusData?.status === "success" && statusData?.screenshot_url) {
+            screenshotUrl = statusData.screenshot_url;
+            break;
+          }
+          if (statusData?.status === "error") break;
+        }
+        if (!screenshotUrl) {
+          toast.warning("Could not capture screenshot");
+          break;
+        }
+        let screenshotBase64: string;
+        try {
+          const imgRes = await fetch(screenshotUrl);
+          const blob = await imgRes.blob();
+          const buf = await blob.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          screenshotBase64 = btoa(binary);
+        } catch {
+          toast.warning("Could not load screenshot");
+          break;
+        }
+        toast.info("🔍 AI evaluating scene…");
+        const evalRes = await fetch("/api/build/evaluate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            screenshotBase64,
+            originalPrompt,
+            projectId: projId,
+          }),
+        });
+        const evalData = await evalRes.json();
+        if (!evalRes.ok || !evalData.evaluation) break;
+        const evaluation = evalData.evaluation as string;
+        if (
+          /APPROVED|SCORE:\s*(8|9|10)/i.test(evaluation) ||
+          /score.*[89]|10/i.test(evaluation)
+        ) {
+          toast.success("✅ Scene approved by AI");
+          return;
+        }
+        const fixCode = extractPythonCode(evaluation);
+        if (!fixCode) break;
+        toast.info("🔧 Applying fixes…");
+        const fixExecRes = await fetch("/api/build/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: projId, rawResponse: evaluation }),
+        });
+        const fixExecData = await fixExecRes.json();
+        if (!fixExecRes.ok || !fixExecData.commandId) break;
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    },
+    []
+  );
+
   const sendBossCommand = useCallback(
     async (message: string, file?: File) => {
       console.log("[SEND] projectId:", projectId, "message length:", message?.length);
@@ -217,6 +299,55 @@ export default function ProjectPage() {
 
       setStreamingAgent("Grand Studio");
       setStreamingContent("");
+
+      const template = getTemplateForPrompt(message);
+      if (template) {
+        try {
+          setStreamingContent(`Using ${template.name} template…`);
+          const templateRaw = `Using ${template.name} template.\n\n\`\`\`python\n${template.code}\n\`\`\``;
+          const execRes = await fetch("/api/build/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, rawResponse: templateRaw }),
+          });
+          const execData = await execRes.json();
+          if (!execRes.ok || !execData.commandId) {
+            toast.error((execData as { error?: string }).error ?? "Template execute failed");
+            setStreamingAgent(null);
+            setStreamingContent("");
+            await refetchChat();
+            return;
+          }
+          const commandId = execData.commandId as string;
+          for (let i = 0; i < 30; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            const statusRes = await fetch(`/api/build/status?commandId=${encodeURIComponent(commandId)}`);
+            const cmd = statusRes.ok ? await statusRes.json() : null;
+            if (cmd?.status === "success") {
+              toast.success(`Built with ${template.name} template!`);
+              await runVisionLoop(projectId, message);
+              setStreamingAgent(null);
+              setStreamingContent("");
+              await refetchChat();
+              return;
+            }
+            if (cmd?.status === "error") {
+              toast.error(cmd.error_log ?? "Execution failed");
+              setStreamingAgent(null);
+              setStreamingContent("");
+              await refetchChat();
+              return;
+            }
+          }
+          toast.error("Execution timeout");
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Template build failed");
+        }
+        setStreamingAgent(null);
+        setStreamingContent("");
+        await refetchChat();
+        return;
+      }
 
       try {
         const streamRes = await fetch("/api/build/stream", {
@@ -346,6 +477,7 @@ export default function ProjectPage() {
           const cmd = statusRes.ok ? await statusRes.json() : null;
           if (cmd?.status === "success") {
             toast.success("Built successfully!");
+            await runVisionLoop(projectId, message);
             await refetchChat();
             return;
           }
@@ -366,7 +498,7 @@ export default function ProjectPage() {
         await refetchChat();
       }
     },
-    [projectId, refetchChat, handleExecuteCode]
+    [projectId, refetchChat, handleExecuteCode, runVisionLoop]
   );
 
   const handleRecreateImage = useCallback(

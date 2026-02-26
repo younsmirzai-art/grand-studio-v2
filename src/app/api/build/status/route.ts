@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
     const { data, error } = await supabase
       .from("ue5_commands")
-      .select("status, result, error_log")
+      .select("status, result, error_log, screenshot_url")
       .eq("id", commandId)
       .single();
 
@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       status: data.status,
       result: data.result,
       error_log: data.error_log,
+      screenshot_url: data.screenshot_url ?? null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

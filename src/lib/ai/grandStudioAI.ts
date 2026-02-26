@@ -1,6 +1,7 @@
 import { UE5_API_NOTES } from "@/lib/ue5/codeLibrary";
 import { QUICK_BUILD_COMPONENTS } from "@/lib/ue5/quickBuild";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
+import { getAssetPromptText } from "@/lib/ue5/assetLibrary";
 
 const DEFAULT_MODEL = "google/gemini-2.0-flash-001";
 
@@ -26,7 +27,7 @@ RULES FOR UE5 PYTHON CODE:
 3. Use unreal.EditorLevelLibrary (NOT EditorLevelLibrary())
 4. Use actor.get_component_by_class(unreal.StaticMeshComponent)
 5. Use unreal.EditorAssetLibrary.load_asset() to load meshes
-6. NEVER use external assets or /Game/ paths that don't exist
+6. You MAY use /Game/StarterContent/ paths for materials and meshes (see AVAILABLE UE5 ASSETS below). If load_asset returns None, fall back to BasicShapes.
 7. NEVER import requests, os, subprocess, or any non-unreal module
 8. Always end with unreal.log('Description of what was built')
 9. Wrap everything in try/except for safety
@@ -79,6 +80,31 @@ SCENE BUILDING ORDER (always follow this):
 
 VERIFIED CODE PATTERNS (use these patterns exactly):
 ${VERIFIED_PATTERNS}
+
+${getAssetPromptText()}
+
+ASSET USAGE RULES:
+1. ALWAYS try to use Starter Content assets first (walls, floors, props, materials) when the user's request fits.
+2. If load_asset returns None for a Starter Content path, fall back to BasicShapes and apply a dynamic material or color.
+3. ALWAYS apply materials or colors to objects — never leave meshes as default white when you can add M_Brick_Clay_Beveled, M_Ground_Grass, or make_color(r,g,b).
+4. For buildings: prefer Wall_400x200, Floor_400x400, Pillar_50x500 when available.
+5. For nature: use SM_Rock, SM_Bush when available; use M_Ground_Grass for ground.
+6. For interiors: SM_Chair, SM_Couch, SM_TableRound, SM_Lamp_Ceiling when available.
+7. For water: use M_Water_Lake material on a flat Plane.
+
+MATERIAL APPLICATION: After spawning a mesh, apply a material. Example:
+  mesh_comp = actor.get_component_by_class(unreal.StaticMeshComponent)
+  mat = unreal.EditorAssetLibrary.load_asset('/Game/StarterContent/Materials/M_Brick_Clay_Beveled')
+  if mat:
+      mesh_comp.set_material(0, mat)
+
+DYNAMIC COLOR (when no preset material fits):
+  base = unreal.EditorAssetLibrary.load_asset('/Engine/BasicShapes/BasicShapeMaterial')
+  if base:
+      world = unreal.EditorLevelLibrary.get_editor_world()
+      dmi = unreal.KismetMaterialLibrary.create_dynamic_material_instance(world, base)
+      dmi.set_vector_parameter_value('Color', unreal.LinearColor(r, g, b, 1.0))
+      mesh_comp.set_material(0, dmi)
 
 ${UE5_API_NOTES}
 

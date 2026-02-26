@@ -14,6 +14,23 @@ const DANGEROUS_PATTERNS = [
   "os.rmdir",
 ];
 
+const CLEANUP_SCRIPT = `
+import unreal
+el = unreal.EditorLevelLibrary
+actors = el.get_all_level_actors()
+prefixes = ('Sky', 'Sun', 'SkyLight', 'Clouds', 'Fog', 'Ground', 'House_', 'Wall_', 'Roof', 'Door', 'Tree_', 'Light_', 'Torch_', 'PostProcess', 'PathStone_', 'Pool', 'Fence_', 'Column_', 'Driveway', 'Tower_', 'Gate')
+for actor in actors:
+    try:
+        label = actor.get_actor_label()
+        for p in prefixes:
+            if label.startswith(p) or label == p:
+                actor.destroy_actor()
+                break
+    except Exception:
+        pass
+unreal.log('Scene cleared')
+`;
+
 export async function POST(request: NextRequest) {
   console.log("[BUILD EXECUTE] Request received");
   try {
@@ -47,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const validation = validateUE5Code(code);
-    const finalCode = validation.fixedCode;
+    const finalCode = CLEANUP_SCRIPT.trim() + "\n\n" + validation.fixedCode;
 
     const supabase = createServerClient();
 
