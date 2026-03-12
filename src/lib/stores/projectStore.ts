@@ -1,14 +1,5 @@
 import { create } from "zustand";
-import type {
-  Project,
-  Task,
-  ChatTurn,
-  GodEyeEntry,
-  UE5Command,
-  WorldStateEntity,
-  AgentStatus,
-  AgentName,
-} from "@/lib/agents/types";
+import type { Project, Task, ChatTurn, GodEyeEntry, UE5Command } from "@/lib/types";
 
 interface ProjectState {
   project: Project | null;
@@ -16,9 +7,6 @@ interface ProjectState {
   chatTurns: ChatTurn[];
   godEyeLog: GodEyeEntry[];
   ue5Commands: UE5Command[];
-  worldState: WorldStateEntity[];
-  agentStatuses: Record<AgentName, AgentStatus>;
-  isAutonomousRunning: boolean;
   isFullProjectRunning: boolean;
   isFullProjectPaused: boolean;
   isRelayConnected: boolean;
@@ -34,24 +22,11 @@ interface ProjectState {
   setUE5Commands: (commands: UE5Command[]) => void;
   addUE5Command: (command: UE5Command) => void;
   updateUE5Command: (id: string, updates: Partial<UE5Command>) => void;
-  setWorldState: (entities: WorldStateEntity[]) => void;
-  setAgentStatus: (name: AgentName, state: AgentStatus["state"]) => void;
-  setAutonomousRunning: (running: boolean) => void;
   setFullProjectRunning: (running: boolean) => void;
   setFullProjectPaused: (paused: boolean) => void;
   setRelayConnected: (connected: boolean) => void;
   reset: () => void;
 }
-
-const defaultAgentStatuses: Record<AgentName, AgentStatus> = {
-  Nima: { name: "Nima", state: "idle" },
-  Alex: { name: "Alex", state: "idle" },
-  Thomas: { name: "Thomas", state: "idle" },
-  Elena: { name: "Elena", state: "idle" },
-  Morgan: { name: "Morgan", state: "idle" },
-  Sana: { name: "Sana", state: "idle" },
-  Amir: { name: "Amir", state: "idle" },
-};
 
 export const useProjectStore = create<ProjectState>((set) => ({
   project: null,
@@ -59,9 +34,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
   chatTurns: [],
   godEyeLog: [],
   ue5Commands: [],
-  worldState: [],
-  agentStatuses: { ...defaultAgentStatuses },
-  isAutonomousRunning: false,
   isFullProjectRunning: false,
   isFullProjectPaused: false,
   isRelayConnected: false,
@@ -93,15 +65,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
         c.id === id ? { ...c, ...updates } : c
       ),
     })),
-  setWorldState: (worldState) => set({ worldState }),
-  setAgentStatus: (name, state) =>
-    set((s) => ({
-      agentStatuses: {
-        ...s.agentStatuses,
-        [name]: { ...s.agentStatuses[name], state, lastActive: new Date().toISOString() },
-      },
-    })),
-  setAutonomousRunning: (isAutonomousRunning) => set({ isAutonomousRunning }),
   setFullProjectRunning: (isFullProjectRunning) => set({ isFullProjectRunning, isFullProjectPaused: false }),
   setFullProjectPaused: (isFullProjectPaused) => set({ isFullProjectPaused }),
   setRelayConnected: (isRelayConnected) => set({ isRelayConnected }),
@@ -112,9 +75,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
       chatTurns: [],
       godEyeLog: [],
       ue5Commands: [],
-      worldState: [],
-      agentStatuses: { ...defaultAgentStatuses },
-      isAutonomousRunning: false,
       isFullProjectRunning: false,
       isFullProjectPaused: false,
       isRelayConnected: false,

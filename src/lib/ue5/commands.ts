@@ -1,4 +1,8 @@
 import { createServerClient } from "@/lib/supabase/server";
+import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
+import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
+import { validateUE5Code } from "@/lib/ue5/validation";
 
 export async function queueUE5Command(
   projectId: string,
@@ -23,11 +27,13 @@ export async function queueUE5Command(
 export async function runAutoDebugLoop(
   projectId: string,
   commandId: string,
-  maxRetries: number = 3
+  maxRetries: number = 2
 ): Promise<boolean> {
   const supabase = createServerClient();
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    await new Promise(r => setTimeout(r, 3000));
+
     const { data: cmd } = await supabase
       .from("ue5_commands")
       .select("*")
@@ -38,38 +44,60 @@ export async function runAutoDebugLoop(
 
     await supabase.from("god_eye_log").insert({
       project_id: projectId,
-      event_type: "error",
-      agent_name: "System",
-      detail: `Auto-debug attempt ${attempt + 1}/${maxRetries}: ${cmd.error_log?.slice(0, 200)}`,
+      event_type: "debug",
+      agent_name: "Auto-Fix",
+      detail: `Retry ${attempt + 1}/${maxRetries}: ${cmd.error_log?.slice(0, 200)}`,
     });
 
-    const fixResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/api/agents/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId,
-        bossMessage: `Fix this UE5 code. Error: ${cmd.error_log}\n\nOriginal code:\n\`\`\`python\n${cmd.code}\n\`\`\``,
-      }),
-    });
+    try {
+      const { rawResponse } = await askGrandStudioAI(
+        `This UE5 Python code failed with an error. Fix it.\n\nError: ${cmd.error_log}\n\nOriginal code:\n\`\`\`python\n${cmd.code}\n\`\`\`\n\nWrite the COMPLETE corrected Python code.`,
+        `Project ${projectId} — auto-fix attempt ${attempt + 1}`
+      );
 
-    if (!fixResponse.ok) continue;
+      const fixedPython = extractPythonCode(rawResponse);
+      if (!fixedPython) continue;
 
-    await new Promise((r) => setTimeout(r, 5000));
+      const { fixedCode } = autoFixUE5Code(fixedPython);
+      const validation = validateUE5Code(fixedCode);
+      if (!validation.valid) continue;
+
+      commandId = await queueUE5Command(projectId, fixedCode);
+
+      await supabase.from("god_eye_log").insert({
+        project_id: projectId,
+        event_type: "debug_success",
+        agent_name: "Auto-Fix",
+        detail: `Fix queued as new command ${commandId}`,
+      });
+
+      await new Promise(r => setTimeout(r, 5000));
+    } catch (e) {
+      console.error("[autoDebugLoop] Error:", e);
+    }
   }
+
+  const { data: finalCmd } = await supabase
+    .from("ue5_commands")
+    .select("status")
+    .eq("id", commandId)
+    .single();
+
+  if (finalCmd?.status === "success") return true;
 
   await supabase.from("god_eye_log").insert({
     project_id: projectId,
     event_type: "error",
-    agent_name: "System",
-    detail: "Auto-debug exhausted all retries. Boss notification required.",
+    agent_name: "Auto-Fix",
+    detail: "Auto-fix exhausted all retries.",
   });
 
   await supabase.from("chat_turns").insert({
     project_id: projectId,
-    agent_name: "System",
-    agent_title: "Auto-Debug",
-    content: "Auto-debug failed after 3 attempts. Please check the God-Eye log for details.",
-    turn_type: "discussion",
+    agent_name: "Grand Studio",
+    agent_title: "AI Co-Pilot",
+    content: "Auto-fix could not resolve the UE5 error after multiple attempts. Check the God-Eye log for details and try a different approach.",
+    turn_type: "execution",
   });
 
   return false;

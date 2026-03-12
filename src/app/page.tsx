@@ -7,7 +7,7 @@ import { Plus, Folder, Clock, Crown, Sparkles, ChevronRight, Users, Monitor, Arr
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getClient } from "@/lib/supabase/client";
-import type { Project } from "@/lib/agents/types";
+import type { Project } from "@/lib/types";
 import { ProjectStarter } from "@/components/boss/ProjectStarter";
 import { toast } from "sonner";
 

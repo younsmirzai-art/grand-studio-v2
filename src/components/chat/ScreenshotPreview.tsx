@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ExternalLink, Camera, Eye } from "lucide-react";
+import { ExternalLink, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ScreenshotPreviewProps {
@@ -26,30 +26,6 @@ export function ScreenshotPreview({
 }: ScreenshotPreviewProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
-
-  const handleReview = async (agentName: string) => {
-    if (!projectId) return;
-    setReviewing(true);
-    try {
-      const res = await fetch("/api/agents/visual-review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          agentName,
-          screenshotUrl: url,
-          originalCode,
-          executionResult,
-        }),
-      });
-      if (!res.ok) throw new Error("Review failed");
-      // New chat turn will appear via realtime subscription
-    } catch {
-      setReviewing(false);
-    }
-  };
-
   const borderGlow = success
     ? "ring-2 ring-agent-green/40 shadow-lg shadow-agent-green/10"
     : "ring-2 ring-red-500/40 shadow-lg shadow-red-500/10";
@@ -79,18 +55,6 @@ export function ScreenshotPreview({
           <ExternalLink className="w-3 h-3" />
           View Full Size
         </Button>
-        {projectId && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-[11px] gap-1 text-agent-rose hover:text-agent-rose"
-            onClick={() => handleReview("Morgan")}
-            disabled={reviewing}
-          >
-            <Eye className="w-3 h-3" />
-            {reviewing ? "Reviewing…" : "Ask Morgan"}
-          </Button>
-        )}
       </div>
 
       <div className="relative aspect-video bg-boss-surface">

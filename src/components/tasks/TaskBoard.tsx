@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { TaskCard } from "./TaskCard";
-import type { TaskStatus } from "@/lib/agents/types";
+import type { TaskStatus } from "@/lib/types";
 
 const columns: { key: TaskStatus; label: string; color: string }[] = [
   { key: "pending", label: "Pending", color: "text-text-secondary" },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
-import { validateUE5Code } from "@/lib/ue5/codeValidator";
+import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { createServerClient } from "@/lib/supabase/server";
 
 const DANGEROUS_PATTERNS = [
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const validation = validateUE5Code(aiResponse.code);
+    const validation = autoFixUE5Code(aiResponse.code);
     const finalCode = validation.fixedCode;
 
     const supabase = createServerClient();

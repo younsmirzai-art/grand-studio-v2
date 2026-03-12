@@ -1,103 +1,82 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { callAgent } from "@/lib/agents/runner";
-import { getAgent } from "@/lib/agents/identity";
-import type { ChatMessage, ChatTurn, AgentName } from "@/lib/agents/types";
-import { getMemories, extractAndSaveMemories, buildMemoryContext } from "@/lib/memory/agentMemory";
-import { shouldAutoConsult, startConsultation } from "@/lib/agents/consultation";
-import { buildUE5CapabilitiesContext } from "@/lib/ue5/plugin-registry";
-import { triggerSketchfabFromResponse } from "@/lib/tools/sketchfab-trigger";
+import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
+import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
+import { validateUE5Code } from "@/lib/ue5/validation";
+import { queueUE5Command } from "@/lib/ue5/commands";
+import type { ChatTurn } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
   try {
-    const { projectId, agentName, message } = await request.json();
+    const { projectId, message } = await request.json();
 
-    if (!projectId || !agentName || !message) {
+    if (!projectId || !message) {
       return NextResponse.json(
-        { error: "Missing projectId, agentName, or message" },
-        { status: 400 }
-      );
-    }
-
-    const agent = getAgent(agentName as AgentName);
-    if (!agent) {
-      return NextResponse.json(
-        { error: `Unknown agent: ${agentName}` },
+        { error: "Missing projectId or message" },
         { status: 400 }
       );
     }
 
     const supabase = createServerClient();
 
-    await supabase.from("god_eye_log").insert({
-      project_id: projectId,
-      event_type: "api_call",
-      agent_name: agent.name,
-      detail: `Direct message from Boss to ${agent.name}`,
-    });
-
-    const [projectRes, loreRes, recentChat, memories] = await Promise.all([
-      supabase.from("projects").select("*").eq("id", projectId).single(),
-      supabase.from("game_lore").select("*").eq("project_id", projectId),
-      supabase.from("chat_turns").select("*").eq("project_id", projectId)
-        .order("created_at", { ascending: false }).limit(15),
-      getMemories(projectId, agent.name, 10),
+    const [projectRes, recentChat] = await Promise.all([
+      supabase.from("projects").select("name, initial_prompt").eq("id", projectId).single(),
+      supabase
+        .from("chat_turns")
+        .select("agent_name, turn_type, content")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(10),
     ]);
 
     const project = projectRes.data;
-    const lore = loreRes.data ?? [];
-    const chat = (recentChat.data ?? []).reverse();
-    const memoryCtx = buildMemoryContext(memories);
+    const chat = (recentChat.data ?? []).reverse() as Pick<ChatTurn, "agent_name" | "turn_type" | "content">[];
 
-    let context = `Project: ${project?.name ?? "Unknown"}\nBrief: ${project?.initial_prompt ?? ""}\n`;
-    if (lore.length > 0) {
-      context += "\n--- GAME LORE ---\n";
-      for (const l of lore) context += `[${l.category}] ${l.key}: ${l.value}\n`;
-    }
+    let projectContext = `Project: ${project?.name ?? "Unknown"}\nBrief: ${project?.initial_prompt ?? ""}`;
     if (chat.length > 0) {
-      context += "\n--- RECENT CONVERSATION ---\n";
-      for (const c of chat as ChatTurn[]) {
-        context += `[${c.agent_name}] (${c.turn_type}): ${c.content.slice(0, 200)}\n`;
+      projectContext += "\n\n--- RECENT CONVERSATION ---\n";
+      for (const c of chat) {
+        projectContext += `[${c.agent_name}] (${c.turn_type}): ${c.content.slice(0, 200)}\n`;
       }
     }
-    context += memoryCtx;
-    context += "\n" + buildUE5CapabilitiesContext();
 
-    const directPrompt = `The Boss is speaking DIRECTLY to you in a private conversation.
-This is a direct message — only you are responding. Give your full attention and expertise.
+    await supabase.from("god_eye_log").insert({
+      project_id: projectId,
+      event_type: "api_call",
+      agent_name: "Grand Studio",
+      detail: `Direct message from Boss`,
+    });
 
-Boss says: "${message}"`;
-
-    const messages: ChatMessage[] = [
-      { role: "user", content: directPrompt },
-    ];
-
-    const response = await callAgent(agent, messages, context);
+    const { rawResponse } = await askGrandStudioAI(message, projectContext);
 
     await supabase.from("chat_turns").insert({
       project_id: projectId,
-      agent_name: agent.name,
-      agent_title: agent.title,
-      content: response,
+      agent_name: "Grand Studio",
+      agent_title: "AI Co-Pilot",
+      content: rawResponse,
       turn_type: "direct",
     });
+
+    const pythonCode = extractPythonCode(rawResponse);
+    if (pythonCode) {
+      const { fixedCode } = autoFixUE5Code(pythonCode);
+      const validation = validateUE5Code(fixedCode);
+      if (validation.valid) {
+        await queueUE5Command(projectId, fixedCode);
+      } else {
+        console.warn("[/api/agents/direct] Code validation failed:", validation.errors);
+      }
+    }
 
     await supabase.from("god_eye_log").insert({
       project_id: projectId,
       event_type: "api_ok",
-      agent_name: agent.name,
-      detail: `Direct response (${response.length} chars)`,
+      agent_name: "Grand Studio",
+      detail: `Direct response (${rawResponse.length} chars)`,
     });
 
-    await extractAndSaveMemories(projectId, agent.name, response, message);
-
-    const { should, topic } = shouldAutoConsult(agent.name as AgentName, response);
-    if (should) {
-      await startConsultation(projectId, agent.name as AgentName, topic, response.slice(0, 1000), context);
-    }
-    await triggerSketchfabFromResponse(projectId, response);
-
-    return NextResponse.json({ success: true, response });
+    return NextResponse.json({ success: true, response: rawResponse });
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
     console.error("[/api/agents/direct] Error:", err.message);

@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { Crown, Send, Loader2, Mic, ImagePlus, X } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Crown, Send, Loader2, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { startListening, normalizeAtMention } from "@/lib/voice/speechRecognition";
 import { useUIStore } from "@/lib/stores/uiStore";
 
 interface CommandInputProps {
@@ -13,18 +12,13 @@ interface CommandInputProps {
   placeholder?: string;
 }
 
-const MAX_LISTEN_SEC = 10;
-
 export function CommandInput({ onSend, disabled, placeholder }: CommandInputProps) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const recognitionRef = useRef<ReturnType<typeof startListening> | null>(null);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatPresetMessage = useUIStore((s) => s.chatPresetMessage);
   const setChatPresetMessage = useUIStore((s) => s.setChatPresetMessage);
 
@@ -35,58 +29,6 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
       textareaRef.current?.focus();
     }
   }, [chatPresetMessage, setChatPresetMessage]);
-
-  const stopListening = useCallback(() => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    }
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    setIsListening(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopListening();
-    };
-  }, [stopListening]);
-
-  const toggleVoice = useCallback(() => {
-    if (isListening) {
-      stopListening();
-      return;
-    }
-    if (disabled || sending) return;
-
-    recognitionRef.current = startListening(
-      (text) => {
-        stopListening();
-        setValue((prev) => {
-          const next = normalizeAtMention(text);
-          return prev ? `${prev} ${next}` : next;
-        });
-        textareaRef.current?.focus();
-      },
-      (err) => {
-        stopListening();
-        console.error("Speech recognition error:", err);
-      }
-    );
-
-    if (recognitionRef.current) {
-      setIsListening(true);
-      silenceTimerRef.current = setTimeout(() => {
-        stopListening();
-      }, MAX_LISTEN_SEC * 1000);
-    }
-  }, [isListening, disabled, sending, stopListening]);
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
@@ -185,20 +127,6 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
             <Button
               size="sm"
               variant="ghost"
-              onClick={toggleVoice}
-              disabled={disabled || sending}
-              className={`h-8 w-8 p-0 rounded-full ${
-                isListening
-                  ? "bg-red-500/20 text-red-500 hover:bg-red-500/30 animate-pulse"
-                  : "text-text-muted hover:text-text-primary"
-              }`}
-              title={isListening ? "Stop listening" : "Voice command (speak to type)"}
-            >
-              <Mic className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               className="text-text-muted hover:text-text-primary h-8 w-8 p-0"
               title="Attach image (e.g. for Image to 3D)"
@@ -221,11 +149,7 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
         </div>
         <div className="px-4 pb-2 flex items-center justify-between">
           <span className="text-[11px] text-text-muted">
-            {isListening ? (
-              <span className="text-red-500 font-medium">🔴 Listening… (click mic to stop, or speak)</span>
-            ) : (
-              <>Ctrl+Enter to send to Grand Studio</>
-            )}
+            Ctrl+Enter to send to Grand Studio
           </span>
           <span className="text-[11px] text-text-muted">
             {value.length > 0 && `${value.length} chars`}

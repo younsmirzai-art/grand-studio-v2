@@ -11,12 +11,9 @@ import { useRealtimeChat } from "@/hooks/useRealtimeChat";
 import { useRealtimeGodEye } from "@/hooks/useRealtimeGodEye";
 import { useRealtimeTasks } from "@/hooks/useRealtimeTasks";
 import { useUE5Status } from "@/hooks/useUE5Status";
-import type { Project } from "@/lib/agents/types";
+import type { Project } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SketchfabSearchModal } from "@/components/tools/SketchfabSearch";
-import { VoiceGeneratorModal } from "@/components/tools/VoiceGenerator";
-import { MusicStudioModal } from "@/components/tools/MusicStudioModal";
-import { TrailerMakerModal } from "@/components/tools/TrailerMakerModal";
 
 export default function ProjectLayout({
   children,
@@ -90,9 +87,6 @@ export default function ProjectLayout({
         {children}
       </main>
       <SketchfabSearchModal projectId={projectId} />
-      <VoiceGeneratorModal projectId={projectId} />
-      <MusicStudioModal projectId={projectId} />
-      <TrailerMakerModal projectId={projectId} />
     </div>
   );
 }

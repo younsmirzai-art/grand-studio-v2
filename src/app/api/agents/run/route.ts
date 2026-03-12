@@ -1,39 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleBossCommand } from "@/lib/agents/orchestrator";
+import { createServerClient } from "@/lib/supabase/server";
+import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
+import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
+import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
+import { validateUE5Code } from "@/lib/ue5/validation";
+import { queueUE5Command } from "@/lib/ue5/commands";
+import type { ChatTurn } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
-  console.log("=== /api/agents/run called ===");
-  console.log("OPENROUTER_API_KEY exists:", !!process.env.OPENROUTER_API_KEY);
-  console.log("NEXT_PUBLIC_SUPABASE_URL exists:", !!process.env.NEXT_PUBLIC_SUPABASE_URL);
-  console.log("SUPABASE_SERVICE_ROLE_KEY exists:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-
   try {
-    const body = await request.json();
-    console.log("Request body:", JSON.stringify(body));
-
-    const { projectId, bossMessage } = body;
+    const { projectId, bossMessage } = await request.json();
 
     if (!projectId || !bossMessage) {
-      console.log("Missing fields - projectId:", !!projectId, "bossMessage:", !!bossMessage);
       return NextResponse.json(
         { error: "Missing projectId or bossMessage" },
         { status: 400 }
       );
     }
 
-    console.log("Calling handleBossCommand for project:", projectId);
-    await handleBossCommand(projectId, bossMessage);
-    console.log("handleBossCommand completed successfully");
+    const supabase = createServerClient();
 
-    return NextResponse.json({ success: true });
+    const [projectRes, recentChat] = await Promise.all([
+      supabase.from("projects").select("name, initial_prompt").eq("id", projectId).single(),
+      supabase
+        .from("chat_turns")
+        .select("agent_name, turn_type, content")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ]);
+
+    const project = projectRes.data;
+    const chat = (recentChat.data ?? []).reverse() as Pick<ChatTurn, "agent_name" | "turn_type" | "content">[];
+
+    let projectContext = `Project: ${project?.name ?? "Unknown"}\nBrief: ${project?.initial_prompt ?? ""}`;
+    if (chat.length > 0) {
+      projectContext += "\n\n--- RECENT CONVERSATION ---\n";
+      for (const c of chat) {
+        projectContext += `[${c.agent_name}] (${c.turn_type}): ${c.content.slice(0, 200)}\n`;
+      }
+    }
+
+    const { rawResponse } = await askGrandStudioAI(bossMessage, projectContext);
+
+    await supabase.from("chat_turns").insert({
+      project_id: projectId,
+      agent_name: "Grand Studio",
+      agent_title: "AI Co-Pilot",
+      content: rawResponse,
+      turn_type: "boss_command",
+    });
+
+    const pythonCode = extractPythonCode(rawResponse);
+    if (pythonCode) {
+      const { fixedCode } = autoFixUE5Code(pythonCode);
+      const validation = validateUE5Code(fixedCode);
+      if (validation.valid) {
+        await queueUE5Command(projectId, fixedCode);
+      } else {
+        console.warn("[/api/agents/run] Code validation failed:", validation.errors);
+      }
+    }
+
+    await supabase.from("god_eye_log").insert({
+      project_id: projectId,
+      event_type: "api_ok",
+      agent_name: "Grand Studio",
+      detail: `Boss command processed (${rawResponse.length} chars)`,
+    });
+
+    return NextResponse.json({ success: true, response: rawResponse });
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
-    console.error("=== /api/agents/run ERROR ===");
-    console.error("Error message:", err.message);
-    console.error("Error stack:", err.stack);
-    console.error("Full error:", error);
+    console.error("[/api/agents/run] Error:", err.message);
     return NextResponse.json(
-      { error: err.message, stack: err.stack },
+      { error: err.message },
       { status: 500 }
     );
   }

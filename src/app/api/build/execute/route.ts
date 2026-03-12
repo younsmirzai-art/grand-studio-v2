@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateUE5Code } from "@/lib/ue5/codeValidator";
+import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { createServerClient } from "@/lib/supabase/server";
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const validation = validateUE5Code(code);
+    const validation = autoFixUE5Code(code);
     const finalCode = CLEANUP_SCRIPT.trim() + "\n\n" + validation.fixedCode;
 
     const supabase = createServerClient();

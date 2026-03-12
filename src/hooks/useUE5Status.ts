@@ -3,7 +3,7 @@
 import { useEffect, useCallback } from "react";
 import { getClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import type { UE5Command } from "@/lib/agents/types";
+import type { UE5Command } from "@/lib/types";
 
 export function useUE5Status(projectId: string | null) {
   const { setUE5Commands, addUE5Command, updateUE5Command, setRelayConnected } =

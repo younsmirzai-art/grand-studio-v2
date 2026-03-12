@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { validateUE5Code } from "@/lib/ue5/codeValidator";
+import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 
 const DANGEROUS_PATTERNS = [
   "os.system",
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     let codeToRun = code;
-    const validation = validateUE5Code(code);
+    const validation = autoFixUE5Code(code);
     if (validation.errors.length > 0) {
       console.log("[ue5/execute] Code auto-fixed:", validation.errors);
       codeToRun = validation.fixedCode;

@@ -1,6 +1,6 @@
 "use client";
 
-import type { GodEyeEntry, GodEyeEventType } from "@/lib/agents/types";
+import type { GodEyeEntry, GodEyeEventType } from "@/lib/types";
 
 const eventColors: Record<GodEyeEventType, string> = {
   thinking: "text-text-muted",

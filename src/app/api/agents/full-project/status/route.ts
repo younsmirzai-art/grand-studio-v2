@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import type { ProjectTask } from "@/lib/agents/projectMode";
+
+interface ProjectTask {
+  title: string;
+  status: string;
+  assignedTo: string;
+}
 
 export async function GET(request: NextRequest) {
   try {

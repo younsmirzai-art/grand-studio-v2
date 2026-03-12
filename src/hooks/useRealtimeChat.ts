@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { getClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import type { ChatTurn } from "@/lib/agents/types";
+import type { ChatTurn } from "@/lib/types";
 
 export function useRealtimeChat(projectId: string | null) {
   const { setChatTurns, addChatTurn } = useProjectStore();
+  const seenIdsRef = useRef<Set<number>>(new Set());
 
   const refetchChat = useCallback(async () => {
     if (!projectId) return;
@@ -22,8 +23,8 @@ export function useRealtimeChat(projectId: string | null) {
       return;
     }
     if (data) {
-      console.log("[RealtimeChat] refetched", data.length, "chat turns");
       setChatTurns(data as ChatTurn[]);
+      seenIdsRef.current = new Set(data.map((d) => (d as ChatTurn).id));
     }
   }, [projectId, setChatTurns]);
 
@@ -42,8 +43,8 @@ export function useRealtimeChat(projectId: string | null) {
           console.error("[RealtimeChat] initial fetch error:", error);
         }
         if (data) {
-          console.log("[RealtimeChat] initial load:", data.length, "chat turns");
           setChatTurns(data as ChatTurn[]);
+          seenIdsRef.current = new Set(data.map((d) => (d as ChatTurn).id));
         }
       });
 
@@ -58,19 +59,13 @@ export function useRealtimeChat(projectId: string | null) {
           filter: `project_id=eq.${projectId}`,
         },
         (payload) => {
-          console.log("[RealtimeChat] realtime INSERT received:", payload.new);
-          addChatTurn(payload.new as ChatTurn);
+          const turn = payload.new as ChatTurn;
+          if (seenIdsRef.current.has(turn.id)) return;
+          seenIdsRef.current.add(turn.id);
+          addChatTurn(turn);
         }
       )
-      .subscribe((status, err) => {
-        console.log("[RealtimeChat] subscription status:", status);
-        if (err) {
-          console.error("[RealtimeChat] subscription error:", err);
-        }
-        if (status === "CHANNEL_ERROR") {
-          console.error("[RealtimeChat] channel error — falling back to polling");
-        }
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);

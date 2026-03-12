@@ -1,8 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { AgentAvatar } from "@/components/team/AgentAvatar";
-import type { Task } from "@/lib/agents/types";
+import type { Task } from "@/lib/types";
 
 interface TaskCardProps {
   task: Task;
@@ -26,7 +25,9 @@ export function TaskCard({ task }: TaskCardProps) {
       className={`bg-boss-card border ${statusColors[task.status] ?? "border-boss-border"} rounded-lg p-3`}
     >
       <div className="flex items-start gap-2">
-        <AgentAvatar name={task.assigned_to} size="sm" />
+        <div className="w-6 h-6 rounded-full bg-boss-elevated border border-boss-border flex items-center justify-center text-[10px] font-medium text-text-primary shrink-0">
+          {(task.assigned_to ?? "?").slice(0, 1).toUpperCase()}
+        </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium text-text-primary truncate">
             {task.title}

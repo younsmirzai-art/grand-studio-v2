@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import { Globe, ChevronRight } from "lucide-react";
 import { getClient } from "@/lib/supabase/client";
-import type { WorldStateEntity } from "@/lib/agents/types";
+interface WorldStateEntity {
+  id: number;
+  project_id: string;
+  entity_type: string;
+  entity_id: string;
+  attributes: Record<string, unknown>;
+  updated_at: string;
+}
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface WorldStateViewProps {

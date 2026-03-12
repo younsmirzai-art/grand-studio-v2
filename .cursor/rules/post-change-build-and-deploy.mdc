@@ -1,0 +1,27 @@
+---
+description: After any code/config changes, run build then git commit/push and Vercel production deploy
+alwaysApply: true
+---
+
+# Post-Change: Build and Deploy
+
+After completing ALL changes for the user's request, run these steps in order:
+
+1. **Build** (from project root; user's path: `c:\building_games\grand-studio-v2`):
+   ```bash
+   cd c:\building_games\grand-studio-v2
+   npm run build
+   ```
+
+2. **If build succeeds**, run:
+   ```bash
+   git add .
+   git commit -m "<short descriptive message of what changed>"
+   git push
+   npx vercel --prod
+   ```
+
+3. **If build fails**: fix errors, then re-run from step 1. Do not commit or deploy until build passes.
+
+- Use a clear, concise commit message (e.g. "Add UE5 bridge env var to env.example and .env").
+- Run these steps in the same order every time after making changes.

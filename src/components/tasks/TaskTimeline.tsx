@@ -1,7 +1,6 @@
 "use client";
 
 import { useProjectStore } from "@/lib/stores/projectStore";
-import { AgentAvatar } from "@/components/team/AgentAvatar";
 import { Check, Clock, AlertCircle, Loader2, Ban } from "lucide-react";
 
 const statusIcons: Record<string, React.ReactNode> = {
@@ -50,7 +49,9 @@ export function TaskTimeline() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <AgentAvatar name={task.assigned_to} size="sm" />
+                <div className="w-5 h-5 rounded-full bg-boss-elevated border border-boss-border flex items-center justify-center text-[9px] font-medium text-text-primary shrink-0">
+                  {(task.assigned_to ?? "?").slice(0, 1).toUpperCase()}
+                </div>
                 <span className="text-[11px] text-text-muted">
                   {task.assigned_to}
                 </span>

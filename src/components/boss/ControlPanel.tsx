@@ -1,18 +1,16 @@
 "use client";
 
-import { Camera, Monitor, PictureInPicture2, Gamepad2 } from "lucide-react";
+import { Camera, Monitor, PictureInPicture2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUIStore } from "@/lib/stores/uiStore";
 
 interface ControlPanelProps {
   onCaptureNow?: () => void;
-  onRunPlaytest?: () => void | Promise<void>;
 }
 
 export function ControlPanel({
   onCaptureNow,
-  onRunPlaytest,
 }: ControlPanelProps) {
   const { liveViewVisible, setLiveViewVisible, pipViewportVisible, setPipViewportVisible } = useUIStore();
 
@@ -34,23 +32,6 @@ export function ControlPanel({
           <TooltipContent>Take UE5 viewport screenshot</TooltipContent>
         </Tooltip>
       )}
-      {onRunPlaytest && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onRunPlaytest}
-              className="border-cyan-500/30 hover:border-cyan-500/50 text-cyan-500 hover:bg-cyan-500/10 gap-1.5"
-            >
-              <Gamepad2 className="w-3.5 h-3.5" />
-              Playtest
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Run playtest (screenshot + analysis)</TooltipContent>
-        </Tooltip>
-      )}
-
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

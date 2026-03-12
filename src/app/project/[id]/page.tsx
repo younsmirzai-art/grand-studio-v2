@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { Header } from "@/components/layout/Header";
 import { CommandInput } from "@/components/boss/CommandInput";
 import { ControlPanel } from "@/components/boss/ControlPanel";
-import { TeamChat } from "@/components/team/TeamChat";
 import BuildProgressPanel, { type BuildTask } from "@/components/build/BuildProgressPanel";
 import SmartBuildView from "@/components/build/SmartBuildView";
 import { GodEyePanel } from "@/components/god-eye/GodEyePanel";
@@ -19,10 +18,7 @@ import Link from "next/link";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { getClient } from "@/lib/supabase/client";
-import { getCurrentUser } from "@/lib/collaboration/user";
-import { subscribeToPresence, presenceStateToUsers, type PresenceUser } from "@/lib/collaboration/presence";
-import type { ChatTurn } from "@/lib/agents/types";
-import { detectGamePresetInPrompt, gamePresets, generatePresetCode } from "@/lib/gameDNA/presets";
+import type { ChatTurn } from "@/lib/types";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { getTemplateForPrompt } from "@/lib/ue5/sceneTemplates";
 import {
@@ -53,36 +49,20 @@ export default function ProjectPage() {
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
   const { taskBoardVisible, setLiveViewVisible, liveViewVisible, pipViewportVisible, setPipViewportVisible, imageTo3DModalOpen, setImageTo3DModalOpen } = useUIStore();
-  const { setAutonomousRunning, isAutonomousRunning, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected, ue5Commands } = useProjectStore();
-  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
+  const { setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected, ue5Commands } = useProjectStore();
   const [pixelStreamingUrl, setPixelStreamingUrl] = useState<string | null>(null);
   const [pixelStreamingConnected, setPixelStreamingConnected] = useState(false);
   const [isRunningTurn, setIsRunningTurn] = useState(false);
-  const [typingAgents, setTypingAgents] = useState<string[]>([]);
   const [buildStatus, setBuildStatus] = useState<FullProjectStatus | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
-  const autonomousRef = useRef(false);
   const autoBuildStartedRef = useRef(false);
   const [smartBuildFinished, setSmartBuildFinished] = useState(false);
   const buildParam = searchParams.get("build") === "1";
   const showSmartBuildView = buildParam && !!project?.initial_prompt && !smartBuildFinished;
   const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
-
-  useEffect(() => {
-    const { userEmail, userName } = getCurrentUser();
-    if (!projectId || (!userEmail && !userName)) return;
-    const channel = subscribeToPresence(projectId, userEmail || "anonymous", userName || "Boss", {
-      onSync: (state) => setOnlineUsers(presenceStateToUsers(state)),
-      onJoin: (user) => toast.info(`${user.user_name || user.user_email} joined the project`),
-      onLeave: (user) => toast.info(`${user.user_name || user.user_email} left`),
-    });
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [projectId]);
 
   useEffect(() => {
     const supabase = getClient();
@@ -144,7 +124,6 @@ export default function ProjectPage() {
 
   const handleExecuteCode = useCallback(
     async (code: string, agentName?: string) => {
-      const { userEmail, userName } = getCurrentUser();
       try {
         const res = await fetch("/api/ue5/execute", {
           method: "POST",
@@ -152,9 +131,7 @@ export default function ProjectPage() {
           body: JSON.stringify({
             projectId,
             code,
-            agentName: agentName ?? "Thomas",
-            ...(userEmail && { submittedByEmail: userEmail }),
-            ...(userName && { submittedByName: userName }),
+            agentName: agentName ?? "Grand Studio",
           }),
         });
         const data = await res.json();
@@ -176,7 +153,7 @@ export default function ProjectPage() {
       const MAX_ITERATIONS = 2;
       for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
         await new Promise((r) => setTimeout(r, 3000));
-        toast.info(`📸 Capturing scene (${iter + 1}/${MAX_ITERATIONS})…`);
+        toast.info(`Capturing scene (${iter + 1}/${MAX_ITERATIONS})…`);
         const ssRes = await fetch("/api/build/screenshot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -216,7 +193,7 @@ export default function ProjectPage() {
           toast.warning("Could not load screenshot");
           break;
         }
-        toast.info("🔍 AI evaluating scene…");
+        toast.info("AI evaluating scene…");
         const evalRes = await fetch("/api/build/evaluate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -233,12 +210,12 @@ export default function ProjectPage() {
           /APPROVED|SCORE:\s*(8|9|10)/i.test(evaluation) ||
           /score.*[89]|10/i.test(evaluation)
         ) {
-          toast.success("✅ Scene approved by AI");
+          toast.success("Scene approved by AI");
           return;
         }
         const fixCode = extractPythonCode(evaluation);
         if (!fixCode) break;
-        toast.info("🔧 Applying fixes…");
+        toast.info("Applying fixes…");
         const fixExecRes = await fetch("/api/build/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -255,16 +232,6 @@ export default function ProjectPage() {
   const sendBossCommand = useCallback(
     async (message: string, file?: File) => {
       console.log("[SEND] projectId:", projectId, "message length:", message?.length);
-      const presetKey = detectGamePresetInPrompt(message);
-      if (presetKey && gamePresets[presetKey]) {
-        try {
-          await handleExecuteCode(generatePresetCode(gamePresets[presetKey]), "Boss");
-          toast.success(`Applied ${gamePresets[presetKey].name} style.`);
-        } catch {
-          // toast already shown
-        }
-        return;
-      }
 
       const supabase = getClient();
       let attachmentUrl: string | undefined;
@@ -276,7 +243,6 @@ export default function ProjectPage() {
           attachmentUrl = urlData.publicUrl;
         }
       }
-      const { userEmail, userName } = getCurrentUser();
       await supabase.from("chat_turns").insert({
         project_id: projectId,
         agent_name: "Boss",
@@ -284,8 +250,6 @@ export default function ProjectPage() {
         content: message,
         turn_type: "boss_command",
         ...(attachmentUrl && { attachment_url: attachmentUrl }),
-        ...(userEmail && { user_email: userEmail }),
-        ...(userName && { user_name: userName }),
       });
 
       await supabase.from("god_eye_log").insert({
@@ -293,8 +257,6 @@ export default function ProjectPage() {
         event_type: "boss",
         agent_name: "Boss",
         detail: `Boss command: ${message.slice(0, 100)}`,
-        ...(userEmail && { user_email: userEmail }),
-        ...(userName && { user_name: userName }),
       });
 
       setStreamingAgent("Grand Studio");
@@ -533,63 +495,6 @@ export default function ProjectPage() {
     [projectId, refetchChat]
   );
 
-  const handleFixCritical = useCallback(
-    async (issues: string[]) => {
-      await sendBossCommand("Fix these critical issues from the playtest:\n\n" + issues.join("\n"));
-    },
-    [sendBossCommand]
-  );
-
-  const handleRunPlaytest = useCallback(async () => {
-    try {
-      await fetch("/api/ue5/capture", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
-      toast.info("Capturing screenshot…");
-      const supabase = getClient();
-      const deadline = Date.now() + 30000;
-      let screenshotUrl: string | null = null;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const { data } = await supabase
-          .from("ue5_commands")
-          .select("screenshot_url")
-          .eq("project_id", projectId)
-          .not("screenshot_url", "is", null)
-          .order("executed_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (data?.screenshot_url) {
-          screenshotUrl = data.screenshot_url as string;
-          break;
-        }
-      }
-      const res = await fetch("/api/agents/playtest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, screenshotUrl: screenshotUrl ?? undefined, focusArea: "all" }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Playtest failed");
-      await refetchChat();
-      toast.success("Playtest complete. See Amir's report above.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Playtest failed");
-    }
-  }, [projectId, refetchChat]);
-
-  const runPlaytestTrigger = useUIStore((s) => s.runPlaytestTrigger);
-  const setRunPlaytestTrigger = useUIStore((s) => s.setRunPlaytestTrigger);
-  useEffect(() => {
-    if (runPlaytestTrigger > 0) {
-      setRunPlaytestTrigger(0);
-      handleRunPlaytest();
-    }
-  }, [runPlaytestTrigger, setRunPlaytestTrigger, handleRunPlaytest]);
-
-
   const handleCaptureNow = useCallback(async () => {
     try {
       const res = await fetch("/api/ue5/capture", {
@@ -682,7 +587,6 @@ export default function ProjectPage() {
     <>
       <Header
         projectName={project?.name ?? "Loading..."}
-        onlineUsers={onlineUsers}
         executingCommand={ue5Commands.find((c) => c.status === "executing")}
       />
       <div className="flex flex-1 overflow-hidden flex-col">
@@ -744,8 +648,14 @@ export default function ProjectPage() {
           ) : showBuildingView ? (
             <>
               <div className="flex-[0.6] flex flex-col min-w-0 border-r border-boss-border">
-                <div className="flex-1 overflow-hidden flex flex-col">
-                  <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} streamingAgent={streamingAgent} streamingContent={streamingContent} />
+                <div className="flex-1 overflow-auto p-4">
+                  {streamingAgent && (
+                    <div className="mb-2 text-sm text-text-secondary">
+                      <span className="font-medium text-gold">{streamingAgent}</span>
+                      {streamingContent && <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap">{streamingContent.slice(0, 500)}</pre>}
+                    </div>
+                  )}
+                  <p className="text-sm text-text-muted">Building in progress…</p>
                 </div>
               </div>
               <div className="flex-[0.4] flex flex-col min-w-0 bg-boss-bg">
@@ -771,15 +681,21 @@ export default function ProjectPage() {
               <div className="px-4 py-2 border-b border-boss-border flex items-center justify-between shrink-0">
                 <ControlPanel
                   onCaptureNow={handleCaptureNow}
-                  onRunPlaytest={handleRunPlaytest}
                 />
               </div>
-              <TeamChat onExecuteCode={handleExecuteCode} onRecreateImage={handleRecreateImage} onFixCritical={handleFixCritical} onRunPlaytest={handleRunPlaytest} typingAgents={typingAgents} streamingAgent={streamingAgent} streamingContent={streamingContent} />
+              <div className="flex-1 overflow-auto p-4">
+                {streamingAgent && (
+                  <div className="mb-2 text-sm text-text-secondary">
+                    <span className="font-medium text-gold">{streamingAgent}</span>
+                    {streamingContent && <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap">{streamingContent.slice(0, 500)}</pre>}
+                  </div>
+                )}
+              </div>
               <GodEyePanel />
               <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
                 <CommandInput
                   onSend={sendBossCommand}
-                  disabled={isAutonomousRunning || isFullProjectRunning}
+                  disabled={isFullProjectRunning}
                 />
               </div>
             </div>
@@ -834,9 +750,9 @@ export default function ProjectPage() {
       <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
         <DialogContent className="bg-boss-surface border-boss-border max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-text-primary">💬 Give Feedback</DialogTitle>
+            <DialogTitle className="text-text-primary">Give Feedback</DialogTitle>
             <DialogDescription className="text-text-muted">
-              Send a message to the team while they build. They can adjust based on your feedback.
+              Send a message while building. The system can adjust based on your feedback.
             </DialogDescription>
           </DialogHeader>
           <Textarea

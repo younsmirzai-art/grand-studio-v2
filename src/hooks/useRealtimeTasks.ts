@@ -1,58 +1,42 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import type { Task } from "@/lib/agents/types";
+import type { Task } from "@/lib/types";
+
+const POLL_INTERVAL_MS = 5000;
 
 export function useRealtimeTasks(projectId: string | null) {
-  const { setTasks, addTask, updateTask } = useProjectStore();
+  const { setTasks } = useProjectStore();
+  const hashRef = useRef<string>("");
 
   useEffect(() => {
     if (!projectId) return;
 
     const supabase = getClient();
 
-    supabase
-      .from("tasks")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("order_index", { ascending: true })
-      .then(({ data }) => {
-        if (data) setTasks(data as Task[]);
-      });
+    const fetchTasks = async () => {
+      const { data } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("order_index", { ascending: true });
 
-    const channel = supabase
-      .channel(`tasks:${projectId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "tasks",
-          filter: `project_id=eq.${projectId}`,
-        },
-        (payload) => {
-          addTask(payload.new as Task);
+      if (data) {
+        const hash = JSON.stringify(data.map((t) => `${(t as Task).id}:${(t as Task).status}`));
+        if (hash !== hashRef.current) {
+          hashRef.current = hash;
+          setTasks(data as Task[]);
         }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "tasks",
-          filter: `project_id=eq.${projectId}`,
-        },
-        (payload) => {
-          const updated = payload.new as Task;
-          updateTask(updated.id, updated);
-        }
-      )
-      .subscribe();
+      }
+    };
+
+    fetchTasks();
+    const timer = setInterval(fetchTasks, POLL_INTERVAL_MS);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(timer);
     };
-  }, [projectId, setTasks, addTask, updateTask]);
+  }, [projectId, setTasks]);
 }

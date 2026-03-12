@@ -3,17 +3,21 @@ import sys
 import json
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-# Load env from multiple possible locations
+# Load env from multiple possible locations (first wins unless override=True)
+# 1) Project root .env (where you usually put Supabase keys)
+root_env = os.path.join(os.path.dirname(__file__), "..", ".env")
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 env_local_path = os.path.join(os.path.dirname(__file__), "..", ".env.local")
 
+if os.path.exists(root_env):
+    load_dotenv(root_env)
 if os.path.exists(env_path):
-    load_dotenv(env_path)
+    load_dotenv(env_path, override=True)
 if os.path.exists(env_local_path):
-    load_dotenv(env_local_path, override=False)
+    load_dotenv(env_local_path, override=True)
 
 from supabase import create_client
 
@@ -30,6 +34,7 @@ def init_supabase():
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("ERROR: Missing Supabase credentials!")
         print("   Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
+        print(f"   Checked: {root_env}")
         print(f"   Checked: {env_path}")
         print(f"   Checked: {env_local_path}")
         sys.exit(1)
@@ -65,7 +70,7 @@ def send_heartbeat():
         supabase.table("relay_heartbeat").upsert(
             {
                 "id": "local-relay",
-                "last_ping": datetime.utcnow().isoformat(),
+                "last_ping": datetime.now(timezone.utc).isoformat(),
                 "ue5_connected": check_ue5_connection_silent(),
                 "relay_version": "1.0.0",
             },
@@ -180,7 +185,7 @@ def poll_commands():
                 else:
                     ue5_result = execute_in_ue5(code)
 
-                completed_at = datetime.utcnow().isoformat()
+                completed_at = datetime.now(timezone.utc).isoformat()
                 if ue5_result["success"]:
                     ue5_connected = True
                     print("         Success!")
