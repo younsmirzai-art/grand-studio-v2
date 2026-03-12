@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Crown, Loader2, Mail, Lock, CheckCircle } from "lucide-react";
+import { Loader2, Mail, Lock, CheckCircle } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 
 export default function SignupPage() {
@@ -46,39 +46,37 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-boss-bg flex items-center justify-center px-4">
-      <div className="absolute inset-0 hero-grid pointer-events-none" />
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-gold/5 animate-glow-pulse pointer-events-none" />
+    <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center px-4 relative">
+      <div className="absolute inset-0 epic-dot-grid pointer-events-none opacity-40" />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-[#2196F3]/5 blur-3xl pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gold/10 border border-gold/20 flex items-center justify-center mx-auto mb-4 gold-glow">
-            <Crown className="w-7 h-7 text-gold" />
+          <div className="flex items-center justify-center gap-2.5 mb-4">
+            <div className="w-3 h-3 rounded-sm bg-[#2196F3]" />
+            <span className="text-sm font-bold tracking-[0.2em] uppercase text-white">
+              Grand Studio
+            </span>
           </div>
-          <h1 className="text-2xl font-black text-text-primary tracking-tight">
-            Grand <span className="text-gradient-gold">Studio</span>
+          <h1 className="text-2xl font-black text-white tracking-tight">
+            Create Account
           </h1>
-          <p className="text-text-muted text-sm mt-1">
-            Create your account to get started
+          <p className="text-[#606068] text-sm mt-1">
+            Start building UE5 scenes with AI
           </p>
         </div>
 
-        <div className="rounded-2xl border border-boss-border bg-boss-card/80 p-8 card-glow">
+        <div className="rounded-2xl border border-white/5 bg-[#111114]/80 backdrop-blur-xl p-8">
           {success ? (
             <div className="text-center py-4">
-              <CheckCircle className="w-12 h-12 text-agent-green mx-auto mb-4" />
-              <h2 className="text-lg font-bold text-text-primary mb-2">
-                Check your email
-              </h2>
-              <p className="text-text-secondary text-sm mb-6">
+              <CheckCircle className="w-12 h-12 text-[#4CAF50] mx-auto mb-4" />
+              <h2 className="text-lg font-bold text-white mb-2">Check your email</h2>
+              <p className="text-[#A0A0A8] text-sm mb-6">
                 We sent a confirmation link to{" "}
-                <span className="text-text-primary font-medium">{email}</span>.
+                <span className="text-white font-medium">{email}</span>.
                 Click it to activate your account.
               </p>
-              <Link
-                href="/auth/login"
-                className="text-gold hover:underline text-sm font-medium"
-              >
+              <Link href="/auth/login" className="text-[#2196F3] hover:underline text-sm font-medium">
                 Back to sign in
               </Link>
             </div>
@@ -86,20 +84,17 @@ export default function SignupPage() {
             <>
               <form onSubmit={handleSignup} className="space-y-5">
                 {error && (
-                  <div className="px-4 py-3 rounded-xl bg-agent-rose/10 border border-agent-rose/20 text-agent-rose text-sm">
+                  <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                     {error}
                   </div>
                 )}
 
                 <div>
-                  <label
-                    htmlFor="email"
-                    className="block text-sm font-medium text-text-secondary mb-1.5"
-                  >
+                  <label htmlFor="email" className="block text-sm font-medium text-[#A0A0A8] mb-1.5">
                     Email
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#606068]" />
                     <input
                       id="email"
                       type="email"
@@ -107,20 +102,17 @@ export default function SignupPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@email.com"
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-boss-elevated border border-boss-border text-text-primary placeholder:text-text-muted text-sm outline-none focus:border-gold/40 focus:ring-2 focus:ring-gold/20 transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#1A1A1F] border border-[#2A2A30] text-white placeholder:text-[#606068] text-sm outline-none focus:border-[#2196F3]/40 focus:ring-2 focus:ring-[#2196F3]/20 transition-all"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="password"
-                    className="block text-sm font-medium text-text-secondary mb-1.5"
-                  >
+                  <label htmlFor="password" className="block text-sm font-medium text-[#A0A0A8] mb-1.5">
                     Password
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#606068]" />
                     <input
                       id="password"
                       type="password"
@@ -129,20 +121,17 @@ export default function SignupPage() {
                       placeholder="••••••••"
                       required
                       minLength={6}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-boss-elevated border border-boss-border text-text-primary placeholder:text-text-muted text-sm outline-none focus:border-gold/40 focus:ring-2 focus:ring-gold/20 transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#1A1A1F] border border-[#2A2A30] text-white placeholder:text-[#606068] text-sm outline-none focus:border-[#2196F3]/40 focus:ring-2 focus:ring-[#2196F3]/20 transition-all"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="confirmPassword"
-                    className="block text-sm font-medium text-text-secondary mb-1.5"
-                  >
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#A0A0A8] mb-1.5">
                     Confirm Password
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#606068]" />
                     <input
                       id="confirmPassword"
                       type="password"
@@ -151,7 +140,7 @@ export default function SignupPage() {
                       placeholder="••••••••"
                       required
                       minLength={6}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-boss-elevated border border-boss-border text-text-primary placeholder:text-text-muted text-sm outline-none focus:border-gold/40 focus:ring-2 focus:ring-gold/20 transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#1A1A1F] border border-[#2A2A30] text-white placeholder:text-[#606068] text-sm outline-none focus:border-[#2196F3]/40 focus:ring-2 focus:ring-[#2196F3]/20 transition-all"
                     />
                   </div>
                 </div>
@@ -159,22 +148,15 @@ export default function SignupPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 rounded-xl bg-gold hover:bg-gold/90 text-boss-bg font-semibold text-sm transition-all disabled:opacity-50 cta-glow flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white font-semibold text-sm transition-all disabled:opacity-50 epic-cta-glow flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98]"
                 >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    "Create Account"
-                  )}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "CREATE ACCOUNT"}
                 </button>
               </form>
 
-              <p className="text-center text-text-muted text-sm mt-6">
+              <p className="text-center text-[#606068] text-sm mt-6">
                 Already have an account?{" "}
-                <Link
-                  href="/auth/login"
-                  className="text-gold hover:underline font-medium"
-                >
+                <Link href="/auth/login" className="text-[#2196F3] hover:underline font-medium">
                   Sign in
                 </Link>
               </p>

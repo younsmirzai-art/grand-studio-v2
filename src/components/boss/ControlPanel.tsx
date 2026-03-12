@@ -23,7 +23,7 @@ export function ControlPanel({
               size="sm"
               variant="outline"
               onClick={onCaptureNow}
-              className="border-boss-border hover:border-agent-teal/50 text-text-secondary hover:text-agent-teal gap-1.5"
+              className="border-[#2A2A30] hover:border-[#2196F3]/50 text-[#A0A0A8] hover:text-[#2196F3] gap-1.5"
             >
               <Camera className="w-3.5 h-3.5" />
               Capture
