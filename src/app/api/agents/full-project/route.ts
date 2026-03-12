@@ -5,12 +5,17 @@ import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
 import { queueUE5Command } from "@/lib/ue5/commands";
+import { rateLimitBuild } from "@/lib/api/rateLimit";
 import type { ChatTurn } from "@/lib/types";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+    const rl = await rateLimitBuild(ip);
+    if (rl.limited) return rl.response!;
+
     const { projectId, prompt } = await request.json();
 
     if (!projectId || !prompt || typeof prompt !== "string") {

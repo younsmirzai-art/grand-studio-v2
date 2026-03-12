@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
+import { rateLimitExecute } from "@/lib/api/rateLimit";
 
 const DANGEROUS_PATTERNS = [
   "os.system",
@@ -16,6 +17,10 @@ const DANGEROUS_PATTERNS = [
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+    const rl = await rateLimitExecute(ip);
+    if (rl.limited) return rl.response!;
+
     const { projectId, code, agentName, submittedByEmail, submittedByName } = await request.json();
 
     if (!projectId || !code) {

@@ -4,9 +4,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Grand Studio v2 — AI Game Development Command Center",
+  title: "Grand Studio — UE5 AI Co-Pilot",
   description:
-    "Multi-agent AI platform for Unreal Engine 5 game development. Command your team of AI agents to build games.",
+    "Build Unreal Engine 5 scenes 10x faster with AI. Describe your scene, AI generates code, UE5 executes it live.",
 };
 
 export default function RootLayout({
