@@ -2,6 +2,7 @@ import { UE5_API_NOTES } from "@/lib/ue5/codeLibrary";
 import { QUICK_BUILD_COMPONENTS } from "@/lib/ue5/quickBuild";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { getAssetPromptText } from "@/lib/ue5/assetLibrary";
+import { findMatchingTemplate } from "@/lib/ue5/sceneTemplates";
 
 const DEFAULT_MODEL = "google/gemini-2.0-flash-001";
 
@@ -167,6 +168,14 @@ export async function askGrandStudioAI(
     });
   }
 
+  const matchedTemplate = findMatchingTemplate(prompt);
+  if (matchedTemplate && !matchedTemplate.code.includes("use AI")) {
+    messages.push({
+      role: "system",
+      content: `A verified scene template matches this request ("${matchedTemplate.name}"). Use it as a high-quality starting point. You may modify it to better match the user's specific request, but keep the proven structure and patterns.\n\nTemplate code:\n\`\`\`python\n${matchedTemplate.code}\n\`\`\``,
+    });
+  }
+
   messages.push({ role: "user", content: prompt });
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -219,6 +228,14 @@ export async function askGrandStudioAIStream(
     messages.push({
       role: "system",
       content: `Current project context: ${projectContext}`,
+    });
+  }
+
+  const matchedTemplate = findMatchingTemplate(prompt);
+  if (matchedTemplate && !matchedTemplate.code.includes("use AI")) {
+    messages.push({
+      role: "system",
+      content: `A verified scene template matches this request ("${matchedTemplate.name}"). Use it as a high-quality starting point. You may modify it to better match the user's specific request, but keep the proven structure and patterns.\n\nTemplate code:\n\`\`\`python\n${matchedTemplate.code}\n\`\`\``,
     });
   }
 

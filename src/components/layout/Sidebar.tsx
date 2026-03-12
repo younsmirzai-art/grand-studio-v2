@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Crown, WifiOff, Database, Home, Settings, Globe, ImageIcon, Monitor } from "lucide-react";
+import { Crown, WifiOff, Database, Home, Settings, Globe, ImageIcon, Monitor, Box } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -89,21 +89,38 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
           <TooltipContent side="right">Back to all projects</TooltipContent>
         </Tooltip>
         {projectId && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link href={`/project/${projectId}/settings`}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
-                >
-                  <Settings className="w-4 h-4" />
-                  Settings
-                </Button>
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right">Project settings</TooltipContent>
-          </Tooltip>
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href={`/project/${projectId}/assets`}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
+                  >
+                    <Box className="w-4 h-4" />
+                    Asset Browser
+                  </Button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">Browse UE5 assets</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href={`/project/${projectId}/settings`}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-text-secondary hover:text-text-primary"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Settings
+                  </Button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">Project settings</TooltipContent>
+            </Tooltip>
+          </>
         )}
       </div>
 
