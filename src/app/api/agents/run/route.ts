@@ -24,20 +24,20 @@ export async function POST(request: NextRequest) {
       supabase.from("projects").select("name, initial_prompt").eq("id", projectId).single(),
       supabase
         .from("chat_turns")
-        .select("agent_name, turn_type, content")
+        .select("agent_name, turn_type, content, screenshot_url")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(10),
     ]);
 
     const project = projectRes.data;
-    const chat = (recentChat.data ?? []).reverse() as Pick<ChatTurn, "agent_name" | "turn_type" | "content">[];
+    const chat = (recentChat.data ?? []).reverse() as Pick<ChatTurn, "agent_name" | "turn_type" | "content" | "screenshot_url">[];
 
     let projectContext = `Project: ${project?.name ?? "Unknown"}\nBrief: ${project?.initial_prompt ?? ""}`;
     if (chat.length > 0) {
       projectContext += "\n\n--- RECENT CONVERSATION ---\n";
       for (const c of chat) {
-        projectContext += `[${c.agent_name}] (${c.turn_type}): ${c.content.slice(0, 200)}\n`;
+        projectContext += `[${c.agent_name}] (${c.turn_type}): ${c.content.slice(0, 200)}${c.screenshot_url ? ` [Screenshot: ${c.screenshot_url}]` : ""}\n`;
       }
     }
 

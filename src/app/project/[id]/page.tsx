@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ScreenshotPreview } from "@/components/chat/ScreenshotPreview";
+import { Camera, Maximize2 } from "lucide-react";
 
 interface FullProjectStatus {
   running: boolean;
@@ -49,7 +51,7 @@ export default function ProjectPage() {
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
   const { taskBoardVisible, setLiveViewVisible, liveViewVisible, pipViewportVisible, setPipViewportVisible, imageTo3DModalOpen, setImageTo3DModalOpen } = useUIStore();
-  const { setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected, ue5Commands } = useProjectStore();
+  const { chatTurns, setChatTurns, setFullProjectRunning, isFullProjectRunning, isFullProjectPaused, setFullProjectPaused, isRelayConnected, ue5Commands } = useProjectStore();
   const [pixelStreamingUrl, setPixelStreamingUrl] = useState<string | null>(null);
   const [pixelStreamingConnected, setPixelStreamingConnected] = useState(false);
   const [isRunningTurn, setIsRunningTurn] = useState(false);
@@ -63,6 +65,11 @@ export default function ProjectPage() {
   const buildParam = searchParams.get("build") === "1";
   const showSmartBuildView = buildParam && !!project?.initial_prompt && !smartBuildFinished;
   const showBuildingView = isFullProjectRunning || (buildStatus?.running ?? false);
+
+  const seenSuccessIdsRef = useRef<Set<string>>(new Set());
+  const isFirstCommandLoadRef = useRef(true);
+  const autoCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const supabase = getClient();
@@ -121,6 +128,63 @@ export default function ProjectPage() {
     }, 2000);
     return () => clearInterval(t);
   }, [projectId, isFullProjectRunning, buildStatus?.running, setFullProjectRunning, setFullProjectPaused, refetchChat]);
+
+  useEffect(() => {
+    if (isFirstCommandLoadRef.current) {
+      if (ue5Commands.length > 0) {
+        for (const c of ue5Commands) {
+          if (c.status === "success") seenSuccessIdsRef.current.add(c.id);
+        }
+        isFirstCommandLoadRef.current = false;
+      }
+      return;
+    }
+
+    const newSuccesses = ue5Commands.filter(
+      (c) => c.status === "success" && !seenSuccessIdsRef.current.has(c.id)
+    );
+    if (newSuccesses.length === 0) return;
+
+    for (const c of newSuccesses) seenSuccessIdsRef.current.add(c.id);
+
+    if (autoCaptureTimerRef.current) clearTimeout(autoCaptureTimerRef.current);
+    autoCaptureTimerRef.current = setTimeout(async () => {
+      toast.info("Capturing scene screenshot...");
+      try {
+        await fetch("/api/ue5/capture", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+      } catch { /* ignore */ }
+    }, 3000);
+
+    return () => {
+      if (autoCaptureTimerRef.current) clearTimeout(autoCaptureTimerRef.current);
+    };
+  }, [ue5Commands, projectId]);
+
+  const latestScreenshot = useMemo(() => {
+    let latest: string | null = null;
+    let latestTime = 0;
+    for (const cmd of ue5Commands) {
+      if (cmd.screenshot_url) {
+        const t = new Date(cmd.executed_at ?? cmd.created_at).getTime();
+        if (t > latestTime) { latestTime = t; latest = cmd.screenshot_url; }
+      }
+    }
+    for (const turn of chatTurns) {
+      if (turn.screenshot_url) {
+        const t = new Date(turn.created_at).getTime();
+        if (t > latestTime) { latestTime = t; latest = turn.screenshot_url; }
+      }
+    }
+    return latest;
+  }, [ue5Commands, chatTurns]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatTurns, streamingContent]);
 
   const handleExecuteCode = useCallback(
     async (code: string, agentName?: string) => {
@@ -684,12 +748,39 @@ export default function ProjectPage() {
                 />
               </div>
               <div className="flex-1 overflow-auto p-4">
-                {streamingAgent && (
-                  <div className="mb-2 text-sm text-text-secondary">
-                    <span className="font-medium text-gold">{streamingAgent}</span>
-                    {streamingContent && <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap">{streamingContent.slice(0, 500)}</pre>}
-                  </div>
-                )}
+                <div className="space-y-3">
+                  {chatTurns.map((turn) => (
+                    <div key={turn.id} className="text-sm">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`font-medium ${turn.turn_type === "boss_command" ? "text-gold" : "text-agent-teal"}`}>
+                          {turn.agent_name}
+                        </span>
+                        <span className="text-[10px] text-text-muted">
+                          {new Date(turn.created_at).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="text-text-secondary whitespace-pre-wrap text-xs leading-relaxed">
+                        {turn.content.length > 600 ? `${turn.content.slice(0, 600)}…` : turn.content}
+                      </div>
+                      {turn.screenshot_url && (
+                        <div className="mt-2">
+                          <ScreenshotPreview url={turn.screenshot_url} timestamp={turn.created_at} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {streamingAgent && (
+                    <div className="text-sm">
+                      <span className="font-medium text-gold">{streamingAgent}</span>
+                      {streamingContent && (
+                        <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap">
+                          {streamingContent.slice(0, 500)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
               </div>
               <GodEyePanel />
               <div className="p-4 border-t border-boss-border bg-boss-surface/50 shrink-0">
@@ -708,25 +799,49 @@ export default function ProjectPage() {
             <AnimatePresence>
               {liveViewVisible && (
                 <div className="shrink-0 border-l border-boss-border w-[360px] flex flex-col overflow-hidden">
-                  {pixelStreamingConnected || isRelayConnected ? (
-                    <PixelStreamingViewer
-                      projectId={projectId}
-                      signalingUrl={pixelStreamingUrl}
-                      isConnected={pixelStreamingConnected}
-                      refreshInterval={5}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-text-muted text-sm">
-                      <p className="mb-2">Connect UE5 to see the viewport</p>
-                      <p className="text-xs mb-3">Run the relay and open this project in UE5, or set up Pixel Streaming.</p>
-                      <Link
-                        href={`/project/${projectId}/settings`}
-                        className="text-agent-teal hover:underline text-xs"
-                      >
-                        Connect UE5 / Pixel Streaming setup
-                      </Link>
+                  <div className="flex-1 min-h-0">
+                    {pixelStreamingConnected || isRelayConnected ? (
+                      <PixelStreamingViewer
+                        projectId={projectId}
+                        signalingUrl={pixelStreamingUrl}
+                        isConnected={pixelStreamingConnected}
+                        refreshInterval={5}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-6 text-center text-text-muted text-sm">
+                        <p className="mb-2">Connect UE5 to see the viewport</p>
+                        <p className="text-xs mb-3">Run the relay and open this project in UE5, or set up Pixel Streaming.</p>
+                        <Link
+                          href={`/project/${projectId}/settings`}
+                          className="text-agent-teal hover:underline text-xs"
+                        >
+                          Connect UE5 / Pixel Streaming setup
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 border-t border-boss-border">
+                    <div className="flex items-center justify-between px-3 py-2 bg-boss-elevated">
+                      <span className="text-xs font-medium text-text-muted">Latest Screenshot</span>
+                      <div className="flex items-center gap-1">
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1" onClick={handleCaptureNow}>
+                          <Camera className="w-3 h-3" /> Capture Now
+                        </Button>
+                        {latestScreenshot && (
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1" onClick={() => window.open(latestScreenshot, "_blank")}>
+                            <Maximize2 className="w-3 h-3" /> Full Screen
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  )}
+                    {latestScreenshot ? (
+                      <div className="aspect-video bg-boss-surface">
+                        <img src={latestScreenshot} alt="Latest screenshot" className="w-full h-full object-contain" />
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center text-text-muted text-xs">No screenshots yet</div>
+                    )}
+                  </div>
                 </div>
               )}
             </AnimatePresence>
