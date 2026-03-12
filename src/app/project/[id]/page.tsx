@@ -715,7 +715,7 @@ export default function ProjectPage() {
                 <div className="flex-1 overflow-auto p-4">
                   {streamingAgent && (
                     <div className="mb-2 text-sm text-text-secondary">
-                      <span className="font-medium text-gold">{streamingAgent}</span>
+                      <span className="font-medium text-[#2196F3]">{streamingAgent}</span>
                       {streamingContent && <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap">{streamingContent.slice(0, 500)}</pre>}
                     </div>
                   )}
@@ -752,7 +752,7 @@ export default function ProjectPage() {
                   {chatTurns.map((turn) => (
                     <div key={turn.id} className="text-sm">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`font-medium ${turn.turn_type === "boss_command" ? "text-gold" : "text-agent-teal"}`}>
+                        <span className={`font-medium ${turn.turn_type === "boss_command" ? "text-[#2196F3]" : "text-agent-teal"}`}>
                           {turn.agent_name}
                         </span>
                         <span className="text-[10px] text-text-muted">
@@ -771,7 +771,7 @@ export default function ProjectPage() {
                   ))}
                   {streamingAgent && (
                     <div className="text-sm">
-                      <span className="font-medium text-gold">{streamingAgent}</span>
+                      <span className="font-medium text-[#2196F3]">{streamingAgent}</span>
                       {streamingContent && (
                         <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap">
                           {streamingContent.slice(0, 500)}
@@ -862,6 +862,22 @@ export default function ProjectPage() {
 
       </div>
 
+      {/* Bottom status bar */}
+      <div className="h-8 shrink-0 bg-[#0A0A0B] border-t border-white/5 flex items-center px-4 text-xs text-[#606068]">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${isRelayConnected ? "bg-emerald-500" : "bg-red-500"}`} />
+          {isRelayConnected ? "Connected" : "Disconnected"}
+        </div>
+        <div className="flex-1 text-center">
+          {ue5Commands.some((c) => c.status === "executing")
+            ? "Executing…"
+            : isFullProjectRunning
+              ? "Generating…"
+              : "Idle"}
+        </div>
+        <div>{ue5Commands.length} build{ue5Commands.length !== 1 ? "s" : ""}</div>
+      </div>
+
       <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
         <DialogContent className="bg-boss-surface border-boss-border max-w-lg">
           <DialogHeader>
@@ -880,7 +896,7 @@ export default function ProjectPage() {
             <Button variant="outline" onClick={() => setFeedbackOpen(false)} className="border-boss-border">
               Cancel
             </Button>
-            <Button onClick={handleFeedbackSubmit} disabled={!feedbackMessage.trim()} className="bg-gold hover:bg-gold/90 text-boss-bg gap-1.5">
+            <Button onClick={handleFeedbackSubmit} disabled={!feedbackMessage.trim()} className="bg-[#2196F3] hover:bg-[#2196F3]/90 text-white gap-1.5">
               Send
             </Button>
           </DialogFooter>

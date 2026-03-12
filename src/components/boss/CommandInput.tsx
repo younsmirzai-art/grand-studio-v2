@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Crown, Send, Loader2, ImagePlus, X } from "lucide-react";
+import { Send, Loader2, ImagePlus, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useUIStore } from "@/lib/stores/uiStore";
@@ -91,7 +91,7 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
       animate={{ opacity: 1, y: 0 }}
       className="relative"
     >
-      <div className="relative rounded-xl border border-gold/30 bg-boss-card gold-glow overflow-hidden">
+      <div className="relative rounded-xl border border-[#2196F3]/30 bg-boss-card overflow-hidden">
         {attachmentPreview && (
           <div className="px-4 pt-2 flex items-center gap-2">
             <img src={attachmentPreview} alt="Attach" className="h-12 w-12 rounded border border-boss-border object-cover" />
@@ -102,8 +102,8 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
           </div>
         )}
         <div className="flex items-start gap-3 p-4 pt-3">
-          <div className="mt-1 w-8 h-8 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
-            <Crown className="w-4 h-4 text-gold" />
+          <div className="mt-1 w-8 h-8 rounded-lg bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center shrink-0">
+            <Zap className="w-4 h-4 text-[#2196F3]" />
           </div>
           <input
             ref={fileInputRef}
@@ -137,7 +137,7 @@ export function CommandInput({ onSend, disabled, placeholder }: CommandInputProp
               size="sm"
               onClick={handleSend}
               disabled={!value.trim() || sending || disabled}
-              className="bg-gold hover:bg-gold/90 text-boss-bg font-semibold"
+              className="bg-[#2196F3] hover:bg-[#2196F3]/90 text-white font-semibold"
             >
               {sending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
