@@ -1,563 +1,611 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion, useInView } from "framer-motion";
 import {
-  Plus, Folder, Clock, Crown, Sparkles, Loader2, Check,
-  Cpu, Package, Eye, MessageSquare, Cog, Rocket,
+  Zap,
+  CheckCircle,
+  MessageSquare,
+  Package,
+  Eye,
+  Download,
+  Code,
+  Play,
+  Menu,
+  X,
+  Check,
+  ArrowRight,
+  Github,
+  Twitter,
+  MapPin,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { getClient } from "@/lib/supabase/client";
-import type { Project } from "@/lib/types";
-import { ProjectStarter } from "@/components/boss/ProjectStarter";
-import { toast } from "sonner";
+import { createAuthClient } from "@/lib/supabase/auth-client";
 
-const FEATURES = [
+/* ------------------------------------------------------------------ */
+/*  Animated section wrapper                                          */
+/* ------------------------------------------------------------------ */
+function Section({
+  children,
+  className = "",
+  id,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  id?: string;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-80px" });
+  return (
+    <motion.section
+      ref={ref}
+      id={id}
+      initial={{ opacity: 0, y: 48 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Data                                                               */
+/* ------------------------------------------------------------------ */
+const PILLARS = [
   {
-    icon: Cpu,
+    icon: MessageSquare,
     title: "AI Co-Pilot",
-    desc: "Describe your scene in natural language. AI generates production-ready UE5 Python code and executes it automatically.",
-    color: "#d4a017",
+    desc: "Chat with AI in plain English. It generates complete UE5 Python scripts and executes them directly in your editor.",
+    features: [
+      "Natural language to code",
+      "Auto-execute in UE5",
+      "Smart error recovery",
+      "Live code streaming",
+    ],
   },
   {
     icon: Package,
-    title: "Asset Library",
-    desc: "40+ Starter Content assets organized by category. Materials, meshes, architecture — all integrated into AI responses.",
-    color: "#22c55e",
+    title: "Smart Asset Library",
+    desc: "AI selects from hundreds of professional meshes and materials. Real architecture, real vegetation, real textures.",
+    features: [
+      "Starter Content + Megascans",
+      "5 scene templates",
+      "AI auto-selects assets",
+      "Category browsing",
+    ],
   },
   {
     icon: Eye,
-    title: "Visual Preview",
-    desc: "See screenshots of your scene after every build. AI evaluates quality and auto-fixes issues.",
-    color: "#a78bfa",
+    title: "Visual Feedback Loop",
+    desc: "See what AI built via automatic screenshots. AI scores the result and fixes issues. You refine with natural language.",
+    features: [
+      "Auto-screenshot capture",
+      "AI vision scoring 1-10",
+      "Natural language refinement",
+      "Up to 3 auto-fix rounds",
+    ],
   },
 ];
 
 const STEPS = [
-  {
-    icon: MessageSquare,
-    title: "Describe",
-    desc: "Tell the AI what you want to build. \"Build a medieval castle with towers and a moat.\"",
-    color: "#d4a017",
-  },
-  {
-    icon: Cog,
-    title: "Generate",
-    desc: "AI writes 100+ lines of UE5 Python code using real Starter Content assets and materials.",
-    color: "#a78bfa",
-  },
-  {
-    icon: Rocket,
-    title: "Execute",
-    desc: "Code auto-executes in UE5 via the relay. Watch your scene come to life in real-time.",
-    color: "#22c55e",
-  },
+  { num: "01", icon: Download, title: "CONNECT", desc: "Download the relay bridge and connect your UE5 editor in one click." },
+  { num: "02", icon: MessageSquare, title: "DESCRIBE", desc: "Tell the AI what you want to build — a castle, a forest, a city block." },
+  { num: "03", icon: Code, title: "GENERATE", desc: "AI writes production-ready UE5 Python code with real assets and materials." },
+  { num: "04", icon: Play, title: "EXECUTE", desc: "Code auto-executes in Unreal Engine. Watch your scene come to life." },
 ];
 
-const EXAMPLE_PROMPTS = [
-  "Medieval castle with towers and a moat",
-  "Sci-fi space station interior",
-  "Tropical island with palm trees",
-  "Modern city block with skyscrapers",
-  "Horror mansion at night",
+const SHOWCASE = [
+  { name: "Medieval Castle", time: "45 seconds" },
+  { name: "Dense Forest", time: "38 seconds" },
+  { name: "City Block at Night", time: "52 seconds" },
+  { name: "Tropical Island", time: "41 seconds" },
 ];
 
+const FREE_FEATURES = [
+  "5 builds per day",
+  "Basic asset library",
+  "Community support",
+  "Relay bridge included",
+];
+
+const PRO_FEATURES = [
+  "Unlimited builds",
+  "Full asset library + Megascans",
+  "AI Vision feedback loop",
+  "Priority AI models",
+  "Email support",
+  "Scene templates",
+];
+
+/* ------------------------------------------------------------------ */
+/*  Page                                                               */
+/* ------------------------------------------------------------------ */
 export default function HomePage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showNewProject, setShowNewProject] = useState(false);
-  const [quickPrompt, setQuickPrompt] = useState("");
-  const [quickBuilding, setQuickBuilding] = useState(false);
   const router = useRouter();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const supabase = getClient();
-    supabase
-      .from("projects")
-      .select("*")
-      .order("updated_at", { ascending: false })
+    createAuthClient()
+      .auth.getUser()
       .then(({ data }) => {
-        if (data) setProjects(data as Project[]);
-        setLoading(false);
+        if (data?.user) router.push("/dashboard");
       });
-  }, []);
-
-  const handleProjectCreated = (project: Project) => {
-    setShowNewProject(false);
-    router.push(`/project/${project.id}`);
-  };
-
-  const handleBuildMyScene = useCallback(async () => {
-    const prompt = quickPrompt.trim();
-    if (!prompt || quickBuilding) return;
-    setQuickBuilding(true);
-    try {
-      const supabase = getClient();
-      const name = prompt.length > 50 ? prompt.slice(0, 47) + "…" : prompt;
-      const { data, error } = await supabase
-        .from("projects")
-        .insert({
-          name,
-          initial_prompt: prompt,
-          status: "active",
-        })
-        .select()
-        .single();
-      if (error) {
-        toast.error("Failed to create project");
-        return;
-      }
-      const project = data as Project;
-      router.push(`/project/${project.id}?build=1`);
-    } catch {
-      toast.error("Something went wrong");
-    } finally {
-      setQuickBuilding(false);
-    }
-  }, [quickPrompt, quickBuilding, router]);
+  }, [router]);
 
   return (
-    <div className="min-h-screen bg-boss-bg overflow-x-hidden">
-      {/* ────────── NAV ────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 glass-strong border-b border-boss-border/50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center gold-glow">
-              <Crown className="w-4 h-4 text-gold" />
-            </div>
-            <span className="text-lg font-bold text-text-primary tracking-tight">
-              Grand <span className="text-gradient-gold">Studio</span>
+    <div className="min-h-screen bg-[#0A0A0B] text-white overflow-x-hidden">
+      {/* ============================================================ */}
+      {/*  SECTION 1 — NAVBAR                                         */}
+      {/* ============================================================ */}
+      <nav className="fixed top-0 left-0 right-0 h-16 bg-[#0A0A0B]/80 backdrop-blur-xl border-b border-white/5 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="w-3 h-3 rounded-sm bg-[#2196F3]" />
+            <span className="text-sm font-bold tracking-[0.2em] uppercase text-white">
+              Grand Studio
             </span>
+          </Link>
+
+          {/* Center links — desktop */}
+          <div className="hidden md:flex items-center gap-8 text-sm text-[#A0A0A8]">
+            <a href="#features" className="hover:text-white transition-colors">Features</a>
+            <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
+            <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
           </div>
-          <div className="hidden md:flex items-center gap-8 text-sm text-text-muted">
-            <a href="#features" className="hover:text-text-primary transition-colors">Features</a>
-            <a href="#how-it-works" className="hover:text-text-primary transition-colors">How It Works</a>
-            <a href="#pricing" className="hover:text-text-primary transition-colors">Pricing</a>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/auth/login"
-              className="text-sm text-text-muted hover:text-text-primary transition-colors"
-            >
+
+          {/* Right — desktop */}
+          <div className="hidden md:flex items-center gap-4">
+            <Link href="/auth/login" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">
               Login
             </Link>
-            <Link href="/auth/signup">
-              <Button className="bg-gold hover:bg-gold/90 text-boss-bg font-semibold text-sm">
-                Sign Up
-              </Button>
+            <Link
+              href="/auth/signup"
+              className="px-5 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition epic-cta-glow"
+            >
+              GET STARTED
             </Link>
           </div>
+
+          {/* Hamburger — mobile */}
+          <button
+            className="md:hidden text-[#A0A0A8] hover:text-white"
+            onClick={() => setMobileOpen(!mobileOpen)}
+          >
+            {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </div>
+
+        {/* Mobile menu */}
+        {mobileOpen && (
+          <div className="md:hidden bg-[#0A0A0B]/95 backdrop-blur-xl border-b border-white/5 px-6 pb-6 pt-2 space-y-4">
+            <a href="#features" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">Features</a>
+            <a href="#how-it-works" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">How It Works</a>
+            <a href="#pricing" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">Pricing</a>
+            <hr className="border-white/5" />
+            <Link href="/auth/login" className="block text-sm text-[#A0A0A8]">Login</Link>
+            <Link href="/auth/signup" className="block text-center px-5 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white">
+              GET STARTED
+            </Link>
+          </div>
+        )}
       </nav>
 
-      {/* ────────── HERO ────────── */}
-      <section className="relative min-h-[85vh] flex items-center justify-center pt-20 pb-16 px-4">
-        <div className="absolute inset-0 hero-grid" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-gold/5 animate-glow-pulse" />
+      {/* ============================================================ */}
+      {/*  SECTION 2 — HERO                                           */}
+      {/* ============================================================ */}
+      <section className="relative min-h-screen flex items-center justify-center pt-20 px-4">
+        {/* Backgrounds */}
+        <div className="absolute inset-0 epic-dot-grid" />
+        <div className="absolute inset-0 epic-spotlight" />
+        <div className="absolute inset-0 epic-bottom-fade" />
 
-        <div className="relative z-10 w-full max-w-2xl mx-auto">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-text-primary mb-3">
-              Grand Studio — UE5 AI Co-Pilot
-            </h1>
-            <p className="text-text-muted text-sm md:text-base max-w-lg mx-auto">
-              Build UE5 scenes 10x faster with AI. Describe what you want, AI writes the code, Unreal Engine builds it live.
-            </p>
-          </div>
+        <div className="relative z-10 w-full max-w-6xl mx-auto text-center">
+          {/* Badge */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.6 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2196F3]/10 border border-[#2196F3]/20 mb-8"
+          >
+            <Zap className="w-4 h-4 text-[#2196F3]" />
+            <span className="text-xs font-medium text-[#2196F3] tracking-wide">
+              Powered by Unreal Engine 5
+            </span>
+          </motion.div>
 
-          <div className="relative">
-            <textarea
-              value={quickPrompt}
-              onChange={(e) => setQuickPrompt(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleBuildMyScene()}
-              placeholder="e.g. Build me a medieval castle with towers and a moat"
-              rows={4}
-              className="w-full px-5 py-4 rounded-2xl bg-boss-card border-2 border-boss-border text-text-primary placeholder:text-text-muted resize-none text-base focus:outline-none focus:border-gold/60 focus:ring-2 focus:ring-gold/20 transition-all shadow-lg"
-              disabled={quickBuilding}
-            />
-            <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-[calc(100%+8px)] h-1 rounded-full bg-gradient-to-r from-transparent via-gold/40 to-transparent blur-sm pointer-events-none" />
-          </div>
+          {/* Headline */}
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.6 }}
+            className="text-5xl md:text-7xl font-black tracking-tighter bg-gradient-to-r from-white via-white to-[#2196F3] bg-clip-text text-transparent leading-[1.1] mb-6"
+          >
+            THE AI CO-PILOT
+            <br />
+            FOR UNREAL ENGINE
+          </motion.h1>
 
-          <div className="mt-6 flex flex-col items-center gap-4">
-            <Button
-              onClick={handleBuildMyScene}
-              disabled={!quickPrompt.trim() || quickBuilding}
-              size="lg"
-              className="w-full max-w-sm bg-agent-green hover:bg-agent-green/90 text-white font-bold text-lg py-6 rounded-xl shadow-lg shadow-agent-green/25 gap-2 transition-all disabled:opacity-50"
+          {/* Subtitle */}
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.6 }}
+            className="text-xl text-[#A0A0A8] max-w-2xl mx-auto mt-6 leading-relaxed"
+          >
+            Build professional UE5 scenes 10x faster. Describe what you want,
+            AI writes the code, Unreal Engine builds it live.
+          </motion.p>
+
+          {/* Buttons */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4, duration: 0.6 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10"
+          >
+            <Link
+              href="/auth/signup"
+              className="px-8 py-3.5 rounded-lg text-sm font-bold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition epic-cta-glow flex items-center gap-2"
             >
-              {quickBuilding ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Rocket className="w-5 h-5" />
-              )}
-              Build My Scene
-            </Button>
+              START BUILDING
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <button className="px-8 py-3.5 rounded-lg text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition">
+              WATCH DEMO
+            </button>
+          </motion.div>
 
-            <p className="text-text-muted text-xs">Try an example:</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {EXAMPLE_PROMPTS.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => setQuickPrompt(example)}
-                  className="px-4 py-2 rounded-full border border-boss-border bg-boss-elevated/80 text-text-secondary text-sm hover:border-gold/40 hover:text-text-primary transition-colors"
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Trust badges */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6, duration: 0.6 }}
+            className="flex items-center justify-center gap-6 mt-8"
+          >
+            {["Free to Start", "No Credit Card", "UE5 Compatible"].map((t) => (
+              <span key={t} className="flex items-center gap-1.5 text-xs text-[#606068]">
+                <CheckCircle className="w-3.5 h-3.5 text-[#606068]" />
+                {t}
+              </span>
+            ))}
+          </motion.div>
 
-          <p className="text-center text-text-muted text-xs mt-6">
-            Or{" "}
-            <button
-              type="button"
-              onClick={() => setShowNewProject(true)}
-              className="text-gold hover:underline"
+          {/* Product mockup */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-16 max-w-5xl mx-auto"
+          >
+            <div
+              className="rounded-2xl border border-white/10 overflow-hidden shadow-2xl"
+              style={{ transform: "perspective(1200px) rotateX(5deg)" }}
             >
-              create a project with name + prompt
-            </button>{" "}
-            for more control.
-          </p>
-
-          {!loading && projects.length > 0 && (
-            <div className="mt-10 w-full max-w-xl mx-auto">
-              <p className="text-xs text-text-muted mb-3 text-center">Recent projects</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {projects.slice(0, 5).map((proj) => (
-                  <button
-                    key={proj.id}
-                    type="button"
-                    onClick={() => router.push(`/project/${proj.id}`)}
-                    className="px-4 py-2 rounded-xl border border-boss-border bg-boss-card/60 text-text-secondary text-sm hover:border-gold/40 hover:text-text-primary transition-colors text-left max-w-[200px] truncate"
-                  >
-                    {proj.name}
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-[340px_1fr]">
+                {/* Chat panel */}
+                <div className="bg-[#111114] p-6 border-r border-white/5 hidden md:block">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-2 h-2 rounded-full bg-[#2196F3]" />
+                    <span className="text-xs font-semibold text-[#A0A0A8] uppercase tracking-wider">AI Chat</span>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="bg-[#1A1A1F] rounded-xl p-3">
+                      <p className="text-xs text-[#A0A0A8]">Build a medieval castle with stone walls, towers, and a moat around it</p>
+                    </div>
+                    <div className="bg-[#2196F3]/10 border border-[#2196F3]/20 rounded-xl p-3">
+                      <p className="text-xs text-[#2196F3]">Generating UE5 scene... 3 actors placed</p>
+                    </div>
+                    <div className="bg-[#1A1A1F] rounded-xl p-3">
+                      <p className="text-xs text-[#A0A0A8]">Add torches on the walls and fog</p>
+                    </div>
+                    <div className="bg-[#2196F3]/10 border border-[#2196F3]/20 rounded-xl p-3">
+                      <p className="text-xs text-[#2196F3]">Adding 8 torches and volumetric fog...</p>
+                    </div>
+                  </div>
+                  <div className="mt-6 h-10 rounded-lg bg-[#1A1A1F] border border-white/5 flex items-center px-3">
+                    <span className="text-xs text-[#606068]">Describe your scene...</span>
+                  </div>
+                </div>
+                {/* Viewport panel */}
+                <div className="bg-[#0A0A0B] p-6 min-h-[280px] md:min-h-[360px] flex flex-col items-center justify-center relative">
+                  <div className="absolute top-4 right-4 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-[10px] text-[#606068] uppercase tracking-wider">UE5 Connected</span>
+                  </div>
+                  <div className="w-full max-w-md">
+                    <div className="aspect-video rounded-lg bg-gradient-to-br from-[#111114] to-[#1A1A1F] border border-white/5 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-12 h-12 mx-auto rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center mb-3">
+                          <Play className="w-5 h-5 text-[#2196F3]" />
+                        </div>
+                        <p className="text-xs text-[#606068]">3D Viewport Preview</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          )}
+          </motion.div>
         </div>
       </section>
 
-      {/* ────────── FEATURES ────────── */}
-      <section id="features" className="py-32 px-6 relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-boss-surface/50 to-transparent" />
-        <div className="max-w-5xl mx-auto relative z-10">
+      {/* ============================================================ */}
+      {/*  SECTION 3 — THREE PILLARS                                   */}
+      {/* ============================================================ */}
+      <Section id="features" className="py-32 px-6">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <p className="text-sm uppercase tracking-[0.25em] text-agent-green mb-3">Features</p>
-            <h2 className="text-4xl md:text-5xl font-black text-text-primary tracking-tight">
-              Everything You Need
-            </h2>
+            <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— CAPABILITIES</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white">Three Powerful Engines.</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {FEATURES.map((f) => (
+            {PILLARS.map((p) => (
               <div
-                key={f.title}
-                className="agent-card-glow group relative rounded-2xl border bg-boss-card/80 p-8 overflow-hidden"
-                style={{ borderColor: f.color + "30" }}
+                key={p.title}
+                className="group bg-[#111114]/80 backdrop-blur-xl border border-white/5 hover:border-[#2196F3]/30 rounded-2xl p-8 transition-all duration-300"
               >
-                <div
-                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                  style={{ background: `radial-gradient(circle at center, ${f.color}08 0%, transparent 70%)` }}
-                />
-                <div className="relative z-10">
-                  <div
-                    className="w-14 h-14 rounded-2xl border-2 flex items-center justify-center mb-5 transition-all duration-300 group-hover:scale-110"
-                    style={{
-                      borderColor: f.color + "50",
-                      backgroundColor: f.color + "10",
-                    }}
-                  >
-                    <f.icon className="w-7 h-7" style={{ color: f.color }} />
-                  </div>
-                  <h3 className="text-lg font-bold text-text-primary mb-2">{f.title}</h3>
-                  <p className="text-sm text-text-muted leading-relaxed">{f.desc}</p>
+                {/* Icon */}
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#2196F3]/20 to-[#00BCD4]/20 border border-[#2196F3]/20 flex items-center justify-center mb-5">
+                  <p.icon className="w-6 h-6 text-[#2196F3]" />
                 </div>
+
+                <h3 className="text-lg font-bold text-white mb-2">{p.title}</h3>
+                <p className="text-sm text-[#A0A0A8] leading-relaxed mb-6">{p.desc}</p>
+
+                {/* Feature list */}
+                <ul className="space-y-2.5 mb-6">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex items-center gap-2 text-sm text-[#A0A0A8]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#00BCD4] shrink-0" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Gradient separator */}
+                <div className="h-px bg-gradient-to-r from-transparent via-[#2196F3]/30 to-transparent" />
               </div>
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* ────────── HOW IT WORKS ────────── */}
-      <section id="how-it-works" className="py-32 px-6 relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-boss-surface/50 to-transparent" />
-        <div className="max-w-5xl mx-auto relative z-10">
+      {/* ============================================================ */}
+      {/*  SECTION 4 — HOW IT WORKS                                    */}
+      {/* ============================================================ */}
+      <Section id="how-it-works" className="py-32 px-6">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <p className="text-sm uppercase tracking-[0.25em] text-agent-amber mb-3">How It Works</p>
-            <h2 className="text-4xl md:text-5xl font-black text-text-primary tracking-tight">
-              Three Steps to Your Scene
-            </h2>
+            <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— WORKFLOW</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white">From Idea to Scene in Minutes.</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {STEPS.map((step, i) => (
-              <div key={step.title} className="text-center group">
-                <div className="relative mb-6">
-                  <div
-                    className="w-20 h-20 rounded-2xl border-2 flex items-center justify-center mx-auto transition-all duration-300 group-hover:scale-110"
-                    style={{
-                      borderColor: step.color + "40",
-                      backgroundColor: step.color + "10",
-                    }}
-                  >
-                    <step.icon className="w-8 h-8" style={{ color: step.color }} />
-                  </div>
-                  <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-boss-elevated border border-boss-border flex items-center justify-center text-xs font-bold text-gold">
-                    {i + 1}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative">
+            {/* Connector lines (desktop) */}
+            <div className="hidden lg:block absolute top-16 left-[18%] right-[18%] h-px bg-gradient-to-r from-[#2196F3]/40 via-[#00BCD4]/40 to-[#2196F3]/40" />
+
+            {STEPS.map((s) => (
+              <div key={s.num} className="text-center relative">
+                <span className="text-[#2196F3] font-mono text-sm font-bold">{s.num}</span>
+                <div className="w-16 h-16 mx-auto mt-3 mb-5 rounded-full bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center relative z-10">
+                  <s.icon className="w-7 h-7 text-[#2196F3]" />
+                </div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">{s.title}</h3>
+                <p className="text-sm text-[#A0A0A8] leading-relaxed">{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  SECTION 5 — SHOWCASE                                        */}
+      {/* ============================================================ */}
+      <Section className="py-32 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— SHOWCASE</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white">Built With Grand Studio</h2>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {SHOWCASE.map((s) => (
+              <div
+                key={s.name}
+                className="group relative rounded-2xl border border-white/5 bg-gradient-to-br from-[#111114] to-[#0A0A0B] overflow-hidden hover:scale-[1.02] transition-transform duration-300"
+              >
+                <div className="aspect-[16/10] flex items-end p-6 relative">
+                  {/* Subtle grid overlay */}
+                  <div className="absolute inset-0 epic-dot-grid opacity-30" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0B] via-transparent to-transparent" />
+
+                  <div className="relative z-10 w-full flex items-end justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{s.name}</h3>
+                      <p className="text-sm text-[#606068]">AI-generated scene</p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-[#2196F3]/10 border border-[#2196F3]/20 text-xs text-[#2196F3] font-medium">
+                      Built in {s.time}
+                    </span>
                   </div>
                 </div>
-                <h3 className="text-xl font-bold text-text-primary mb-2">{step.title}</h3>
-                <p className="text-text-muted text-sm leading-relaxed">{step.desc}</p>
               </div>
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* ────────── POWERED BY ────────── */}
-      <section className="py-24 px-6">
-        <div className="max-w-5xl mx-auto text-center">
-          <p className="text-sm uppercase tracking-[0.25em] text-text-muted mb-3">Powered By</p>
-          <h2 className="text-3xl md:text-4xl font-black text-text-primary tracking-tight mb-4">
-            The Most Powerful Stack
-          </h2>
-          <p className="text-text-secondary mb-12 max-w-2xl mx-auto">
-            Built on the most powerful game engine, powered by frontier AI models.
-          </p>
-
-          <div className="flex flex-wrap justify-center gap-6 mb-12">
-            {[
-              { label: "Unreal Engine 5", sub: "Game Engine" },
-              { label: "OpenRouter", sub: "AI Gateway" },
-              { label: "Supabase", sub: "Database & Realtime" },
-            ].map((tech) => (
-              <div
-                key={tech.label}
-                className="px-8 py-5 rounded-xl border border-boss-border bg-boss-card/50 hover:border-gold/30 transition-all duration-300"
-              >
-                <p className="font-bold text-text-primary text-sm">{tech.label}</p>
-                <p className="text-text-muted text-xs">{tech.sub}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-4">
-            {["Gemini 2.0", "Claude Sonnet", "GPT-4o", "DeepSeek v3.1"].map((model) => (
-              <span
-                key={model}
-                className="px-4 py-2 rounded-full border border-boss-border bg-boss-elevated/50 text-xs text-text-secondary font-medium"
-              >
-                {model}
-              </span>
-            ))}
-          </div>
+      {/* ============================================================ */}
+      {/*  SECTION 6 — STATS BAR                                       */}
+      {/* ============================================================ */}
+      <Section className="bg-[#111114] border-y border-white/5 py-16 px-6">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-12 text-center">
+          {[
+            { value: "10x", label: "Faster Scene Building" },
+            { value: "200+", label: "Professional Assets" },
+            { value: "30sec", label: "Average Build Time" },
+          ].map((s) => (
+            <div key={s.value}>
+              <p className="text-5xl font-black text-[#2196F3]">{s.value}</p>
+              <p className="text-sm text-[#A0A0A8] mt-2">{s.label}</p>
+            </div>
+          ))}
         </div>
-      </section>
+      </Section>
 
-      {/* ────────── PRICING ────────── */}
-      <section id="pricing" className="py-32 px-6">
+      {/* ============================================================ */}
+      {/*  SECTION 7 — PRICING                                         */}
+      {/* ============================================================ */}
+      <Section id="pricing" className="py-32 px-6">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-16">
-            <p className="text-sm uppercase tracking-[0.25em] text-agent-violet mb-3">Pricing</p>
-            <h2 className="text-4xl md:text-5xl font-black text-text-primary tracking-tight mb-4">
-              Simple Pricing
-            </h2>
+            <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— PRICING</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">Start Free. Scale When Ready.</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            {/* Free tier */}
-            <div className="rounded-2xl border border-boss-border bg-boss-card/60 p-8">
-              <h3 className="text-xl font-bold text-text-primary mb-2">Free</h3>
+            {/* Free */}
+            <div className="rounded-2xl border border-[#2A2A30] bg-[#111114] p-8">
+              <h3 className="text-xl font-bold text-white mb-1">Free</h3>
               <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-black text-text-primary">$0</span>
+                <span className="text-4xl font-black text-white">$0</span>
+                <span className="text-sm text-[#606068]">/mo</span>
               </div>
               <ul className="space-y-3 mb-8">
-                {[
-                  "Unlimited projects",
-                  "AI code generation",
-                  "UE5 execution",
-                  "Asset library",
-                ].map((f) => (
-                  <li key={f} className="flex items-center gap-2.5 text-sm text-text-secondary">
-                    <Check className="w-4 h-4 text-agent-green shrink-0" />
+                {FREE_FEATURES.map((f) => (
+                  <li key={f} className="flex items-center gap-2.5 text-sm text-[#A0A0A8]">
+                    <Check className="w-4 h-4 text-[#00BCD4] shrink-0" />
                     {f}
                   </li>
                 ))}
               </ul>
-              <Button
-                variant="outline"
-                className="w-full border-boss-border text-text-muted cursor-default"
-                disabled
+              <Link
+                href="/auth/signup"
+                className="block text-center w-full py-3 rounded-lg text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition"
               >
-                Current Plan
-              </Button>
+                GET STARTED
+              </Link>
             </div>
 
-            {/* Pro tier */}
-            <div className="relative rounded-2xl border border-gold/40 bg-boss-card pricing-popular p-8">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gold text-boss-bg text-xs font-bold">
-                Coming Soon
+            {/* Pro */}
+            <div className="relative rounded-2xl border border-[#2196F3]/40 bg-[#111114] p-8 pricing-popular">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-[#2196F3] text-white text-xs font-bold uppercase tracking-wider">
+                Popular
               </div>
-              <h3 className="text-xl font-bold text-text-primary mb-2">Pro</h3>
+              <h3 className="text-xl font-bold text-white mb-1">Pro</h3>
               <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-black text-text-primary">$29</span>
-                <span className="text-text-muted text-sm">/month</span>
+                <span className="text-4xl font-black text-white">$29</span>
+                <span className="text-sm text-[#606068]">/mo</span>
               </div>
               <ul className="space-y-3 mb-8">
-                {[
-                  "Priority AI models",
-                  "Cloud UE5 rendering",
-                  "Advanced vision loop",
-                  "Priority support",
-                ].map((f) => (
-                  <li key={f} className="flex items-center gap-2.5 text-sm text-text-secondary">
-                    <Check className="w-4 h-4 text-agent-green shrink-0" />
+                {PRO_FEATURES.map((f) => (
+                  <li key={f} className="flex items-center gap-2.5 text-sm text-[#A0A0A8]">
+                    <Check className="w-4 h-4 text-[#2196F3] shrink-0" />
                     {f}
                   </li>
                 ))}
               </ul>
-              <Button
-                className="w-full bg-gold/20 text-gold font-semibold cursor-default"
+              <button
                 disabled
+                className="w-full py-3 rounded-lg text-sm font-bold bg-[#2196F3]/20 text-[#2196F3] cursor-not-allowed"
               >
-                Coming Soon
-              </Button>
+                COMING SOON
+              </button>
             </div>
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* ────────── YOUR PROJECTS ────────── */}
-      {!loading && projects.length > 0 && (
-        <section className="py-24 px-6 border-t border-boss-border">
-          <div className="max-w-7xl mx-auto">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-bold text-text-primary flex items-center gap-3">
-                <Folder className="w-6 h-6 text-gold" />
-                Your Projects
-              </h3>
-              <Button
-                onClick={() => setShowNewProject(true)}
-                className="bg-gold hover:bg-gold/90 text-boss-bg font-semibold gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                New Project
-              </Button>
-            </div>
+      {/* ============================================================ */}
+      {/*  SECTION 8 — FINAL CTA                                       */}
+      {/* ============================================================ */}
+      <Section className="py-32 px-6 relative">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(33,150,243,0.12)_0%,_transparent_70%)]" />
+        <div className="relative z-10 text-center max-w-3xl mx-auto">
+          <h2 className="text-5xl font-black text-white mb-6">Ready to Build?</h2>
+          <p className="text-lg text-[#A0A0A8] mb-10 max-w-xl mx-auto">
+            Join hundreds of developers building UE5 scenes with AI. No credit card required.
+          </p>
+          <Link
+            href="/auth/signup"
+            className="inline-flex items-center gap-2 px-10 py-4 rounded-lg text-base font-bold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition epic-cta-glow"
+          >
+            START BUILDING FOR FREE
+            <ArrowRight className="w-5 h-5" />
+          </Link>
+          <p className="text-xs text-[#606068] mt-6">No credit card required</p>
+        </div>
+      </Section>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  onClick={() => router.push(`/project/${project.id}`)}
-                  className="rounded-2xl border border-boss-border bg-boss-card/60 p-6 cursor-pointer hover:border-gold/30 hover:bg-boss-elevated/50 transition-all duration-300 group"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h4 className="font-bold text-text-primary group-hover:text-gold transition-colors">
-                      {project.name}
-                    </h4>
-                    <StatusBadge status={project.status} />
-                  </div>
-                  <p className="text-text-muted text-sm line-clamp-2 mb-4">
-                    {project.initial_prompt}
-                  </p>
-                  <div className="flex items-center gap-2 text-text-muted text-xs">
-                    <Clock className="w-3 h-3" />
-                    {new Date(project.updated_at).toLocaleDateString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Empty state */}
-      {!loading && projects.length === 0 && (
-        <section className="py-24 px-6 border-t border-boss-border">
-          <div className="max-w-7xl mx-auto text-center">
-            <Sparkles className="w-12 h-12 text-gold/40 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-text-primary mb-2">Ready to build?</h3>
-            <p className="text-text-muted mb-6">
-              Create your first project and start building UE5 scenes with AI.
-            </p>
-            <Button
-              onClick={() => setShowNewProject(true)}
-              className="bg-gold hover:bg-gold/90 text-boss-bg font-semibold gap-2 cta-glow"
-            >
-              <Plus className="w-4 h-4" />
-              Create Your First Project
-            </Button>
-          </div>
-        </section>
-      )}
-
-      {loading && (
-        <section className="py-24 px-6 border-t border-boss-border">
-          <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-boss-card border border-boss-border rounded-2xl p-6">
-                  <Skeleton className="h-5 w-3/4 mb-3 bg-boss-elevated" />
-                  <Skeleton className="h-4 w-full mb-2 bg-boss-elevated" />
-                  <Skeleton className="h-4 w-2/3 bg-boss-elevated" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ────────── FOOTER ────────── */}
-      <footer className="border-t border-boss-border py-12 px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center">
-                <Crown className="w-4 h-4 text-gold" />
+      {/* ============================================================ */}
+      {/*  SECTION 9 — FOOTER                                          */}
+      {/* ============================================================ */}
+      <footer className="border-t border-white/5 pt-16 pb-8 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+            {/* Col 1 — Logo */}
+            <div>
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="w-3 h-3 rounded-sm bg-[#2196F3]" />
+                <span className="text-sm font-bold tracking-[0.2em] uppercase text-white">Grand Studio</span>
               </div>
-              <span className="font-bold text-text-primary">Grand Studio</span>
+              <p className="text-sm text-[#A0A0A8] leading-relaxed max-w-xs">
+                The AI co-pilot for Unreal Engine 5. Build professional scenes faster than ever with natural language.
+              </p>
             </div>
 
-            <div className="flex items-center gap-8 text-sm text-text-muted">
-              <a href="#" className="hover:text-text-primary transition-colors">About</a>
-              <a href="#" className="hover:text-text-primary transition-colors">Docs</a>
-              <a href="#" className="hover:text-text-primary transition-colors">Discord</a>
-              <a href="#" className="hover:text-text-primary transition-colors">Twitter</a>
+            {/* Col 2 — Links */}
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-4">Product</h4>
+              <ul className="space-y-2.5">
+                {[
+                  { label: "Features", href: "#features" },
+                  { label: "Pricing", href: "#pricing" },
+                  { label: "Documentation", href: "#" },
+                  { label: "GitHub", href: "#" },
+                ].map((l) => (
+                  <li key={l.label}>
+                    <a href={l.href} className="text-sm text-[#A0A0A8] hover:text-white transition-colors">
+                      {l.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            <div className="text-sm text-text-muted">
-              &copy; {new Date().getFullYear()} Grand Studio
+            {/* Col 3 — Location & Social */}
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-4">Connect</h4>
+              <div className="flex items-center gap-2 text-sm text-[#A0A0A8] mb-4">
+                <MapPin className="w-4 h-4 shrink-0" />
+                <span>Built for creators everywhere</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <a href="#" className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition">
+                  <Github className="w-4 h-4" />
+                </a>
+                <a href="#" className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition">
+                  <Twitter className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom bar */}
+          <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-xs text-[#606068]">&copy; 2026 Grand Studio. All rights reserved.</p>
+            <div className="flex items-center gap-6 text-xs text-[#606068]">
+              <a href="#" className="hover:text-[#A0A0A8] transition-colors">Privacy</a>
+              <a href="#" className="hover:text-[#A0A0A8] transition-colors">Terms</a>
             </div>
           </div>
         </div>
       </footer>
-
-      {/* New project dialog */}
-      <ProjectStarter
-        open={showNewProject}
-        onClose={() => setShowNewProject(false)}
-        onCreated={handleProjectCreated}
-      />
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; text: string; label: string }> = {
-    active: { bg: "bg-agent-green/10", text: "text-agent-green", label: "Active" },
-    paused: { bg: "bg-agent-amber/10", text: "text-agent-amber", label: "Paused" },
-    completed: { bg: "bg-agent-violet/10", text: "text-agent-violet", label: "Done" },
-  };
-  const c = config[status] ?? config.active;
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
-      {c.label}
-    </span>
   );
 }

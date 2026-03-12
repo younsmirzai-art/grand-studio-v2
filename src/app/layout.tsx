@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Grand Studio — UE5 AI Co-Pilot",
+  title: "Grand Studio — The AI Co-Pilot for Unreal Engine",
   description:
-    "Build Unreal Engine 5 scenes 10x faster with AI. Describe your scene, AI generates code, UE5 executes it live.",
+    "Build professional UE5 scenes 10x faster. Describe what you want, AI writes the code, Unreal Engine builds it live.",
 };
 
 export default function RootLayout({
@@ -15,8 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark font-sans-vars">
-      <body className="font-sans antialiased">
+    <html lang="en" className={`dark ${inter.variable}`}>
+      <body className="font-sans antialiased bg-[#0A0A0B] text-white">
         <TooltipProvider delayDuration={200}>
           {children}
         </TooltipProvider>
@@ -25,9 +32,9 @@ export default function RootLayout({
           position="bottom-right"
           toastOptions={{
             style: {
-              background: "#10131a",
-              border: "1px solid #1e2330",
-              color: "#eef0f4",
+              background: "#111114",
+              border: "1px solid #2A2A30",
+              color: "#FFFFFF",
             },
           }}
         />

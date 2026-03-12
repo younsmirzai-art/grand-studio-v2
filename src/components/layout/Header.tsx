@@ -1,9 +1,9 @@
 "use client";
 
-import { Crown, PanelLeftClose, PanelLeft, ListTodo } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useUIStore } from "@/lib/stores/uiStore";
+import { ChevronLeft, Settings } from "lucide-react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useProjectStore } from "@/lib/stores/projectStore";
 import type { UE5Command } from "@/lib/types";
 
 interface HeaderProps {
@@ -12,55 +12,49 @@ interface HeaderProps {
 }
 
 export function Header({ projectName, executingCommand }: HeaderProps) {
-  const { sidebarOpen, toggleSidebar, taskBoardVisible, setTaskBoardVisible } = useUIStore();
+  const params = useParams();
+  const projectId = params.id as string;
+  const { isRelayConnected, isFullProjectRunning } = useProjectStore();
+
+  const status: { label: string; color: string } = executingCommand
+    ? { label: "Executing…", color: "bg-amber-500" }
+    : isFullProjectRunning
+      ? { label: "Generating…", color: "bg-[#2196F3]" }
+      : { label: "Idle", color: "bg-[#606068]" };
 
   return (
-    <header className="h-12 border-b border-boss-border bg-boss-surface/80 glass-strong flex items-center px-4 gap-3 sticky top-0 z-40">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleSidebar}
-            className="text-text-muted hover:text-text-primary h-8 w-8 p-0"
-          >
-            {sidebarOpen ? (
-              <PanelLeftClose className="w-4 h-4" />
-            ) : (
-              <PanelLeft className="w-4 h-4" />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{sidebarOpen ? "Hide sidebar" : "Show sidebar"}</TooltipContent>
-      </Tooltip>
+    <header className="h-12 border-b border-white/5 bg-[#111114] flex items-center px-4 gap-3 sticky top-0 z-40">
+      {/* Left: back + project name */}
+      <Link
+        href="/dashboard"
+        className="flex items-center gap-1 text-[#606068] hover:text-white transition-colors"
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </Link>
+      <h2 className="text-sm font-semibold text-white truncate">{projectName}</h2>
 
-      <div className="flex items-center gap-2">
-        <Crown className="w-4 h-4 text-gold" />
-        <h2 className="text-sm font-semibold text-text-primary">{projectName}</h2>
+      {/* Center: build status */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-xs text-[#808088]">
+          <span className={`w-2 h-2 rounded-full ${status.color} ${status.label !== "Idle" ? "animate-pulse" : ""}`} />
+          {status.label}
+        </div>
       </div>
 
-      {executingCommand?.submitted_by_name && (
-        <span className="text-xs text-amber-500 flex items-center gap-1">
-          <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          Waiting… {executingCommand.submitted_by_name}&apos;s command is executing
-        </span>
-      )}
-
-      <div className="ml-auto flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant={taskBoardVisible ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setTaskBoardVisible(!taskBoardVisible)}
-              className="h-8 gap-1.5 text-text-secondary"
-            >
-              <ListTodo className="w-3.5 h-3.5" />
-              <span className="text-xs">Tasks</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Toggle task board</TooltipContent>
-        </Tooltip>
+      {/* Right: UE5 status + settings */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className={`w-2 h-2 rounded-full ${isRelayConnected ? "bg-emerald-500" : "bg-red-500"}`} />
+          <span className={isRelayConnected ? "text-emerald-400" : "text-red-400"}>
+            {isRelayConnected ? "UE5 Connected" : "UE5 Disconnected"}
+          </span>
+        </div>
+        <Link
+          href={`/project/${projectId}/settings`}
+          className="text-[#606068] hover:text-white transition-colors"
+        >
+          <Settings className="w-4 h-4" />
+        </Link>
       </div>
     </header>
   );

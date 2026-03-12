@@ -32,6 +32,7 @@ export type UE5CommandStatus = "pending" | "executing" | "success" | "error";
 
 export interface Project {
   id: string;
+  user_id?: string;
   name: string;
   initial_prompt: string;
   summary: string;

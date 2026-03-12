@@ -70,26 +70,29 @@
   --radius-4xl: calc(var(--radius) + 16px);
 
   /* Grand Studio custom colors */
-  --color-boss-bg: #07080b;
-  --color-boss-surface: #0b0d12;
-  --color-boss-card: #10131a;
-  --color-boss-elevated: #161a24;
-  --color-boss-border: #1e2330;
-  --color-boss-border-focus: #2f3748;
+  --color-boss-bg: #0A0A0B;
+  --color-boss-surface: #111114;
+  --color-boss-card: #111114;
+  --color-boss-elevated: #1A1A1F;
+  --color-boss-border: #2A2A30;
+  --color-boss-border-focus: #3A3A44;
 
-  --color-gold: #d4a017;
-  --color-gold-soft: rgba(212, 160, 23, 0.15);
-  --color-gold-glow: rgba(212, 160, 23, 0.35);
+  --color-gold: #FFD700;
+  --color-gold-soft: rgba(255, 215, 0, 0.15);
+  --color-gold-glow: rgba(255, 215, 0, 0.35);
 
-  --color-agent-teal: #0ea5e9;
-  --color-agent-green: #22c55e;
-  --color-agent-amber: #f59e0b;
+  --color-epic-blue: #2196F3;
+  --color-epic-cyan: #00BCD4;
+
+  --color-agent-teal: #00BCD4;
+  --color-agent-green: #4CAF50;
+  --color-agent-amber: #FF9800;
   --color-agent-violet: #a78bfa;
-  --color-agent-rose: #fb7185;
+  --color-agent-rose: #F44336;
 
-  --color-text-primary: #eef0f4;
-  --color-text-secondary: #8b92a0;
-  --color-text-muted: #555e6e;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #A0A0A8;
+  --color-text-muted: #606068;
 }
 
 :root {
@@ -253,63 +256,82 @@
   animation: shimmer 3s ease-in-out infinite;
 }
 
-.hero-grid {
-  background-image:
-    linear-gradient(rgba(212, 160, 23, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(212, 160, 23, 0.05) 1px, transparent 1px);
-  background-size: 60px 60px;
-  animation: grid-fade 8s ease-in-out infinite;
+/* Epic Games dot grid background */
+.epic-dot-grid {
+  background-image: radial-gradient(circle, #ffffff08 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Epic spotlight beam from above */
+.epic-spotlight {
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(33,150,243,0.12), transparent);
+}
+
+/* Epic bottom fade */
+.epic-bottom-fade {
+  background: linear-gradient(to top, #0A0A0B, transparent 50%);
+}
+
+/* Epic gradient text */
+.text-gradient-epic {
+  background: linear-gradient(to right, #FFFFFF, #2196F3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .text-gradient-gold {
-  background: linear-gradient(135deg, #d4a017 0%, #ffd700 50%, #d4a017 100%);
+  background: linear-gradient(135deg, #FFD700 0%, #FFA000 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.text-gradient-hero {
-  background: linear-gradient(135deg, #eef0f4 0%, #d4a017 40%, #ffd700 60%, #eef0f4 100%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: shimmer 5s ease-in-out infinite;
+/* Epic blue glow */
+.epic-glow {
+  box-shadow: 0 0 60px rgba(33, 150, 243, 0.15);
 }
 
-.cta-glow {
-  box-shadow:
-    0 0 15px rgba(212, 160, 23, 0.4),
-    0 0 45px rgba(212, 160, 23, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+.epic-glow-strong {
+  box-shadow: 0 0 80px rgba(33, 150, 243, 0.25), 0 0 120px rgba(33, 150, 243, 0.1);
 }
 
-.cta-glow:hover {
-  box-shadow:
-    0 0 25px rgba(212, 160, 23, 0.6),
-    0 0 60px rgba(212, 160, 23, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+/* Epic card hover */
+.epic-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.epic-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(33, 150, 243, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 30px rgba(33, 150, 243, 0.05);
 }
 
-.agent-card-glow {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+/* Epic CTA button glow */
+.epic-cta-glow {
+  box-shadow: 0 0 20px rgba(33, 150, 243, 0.25), 0 0 40px rgba(0, 188, 212, 0.15);
 }
-.agent-card-glow:hover {
-  transform: translateY(-6px) scale(1.02);
+.epic-cta-glow:hover {
+  box-shadow: 0 0 30px rgba(33, 150, 243, 0.4), 0 0 60px rgba(0, 188, 212, 0.2);
+  filter: brightness(1.1);
 }
 
+/* Epic pricing popular */
+.pricing-popular {
+  box-shadow: 0 0 40px rgba(33, 150, 243, 0.15), 0 0 80px rgba(33, 150, 243, 0.05);
+}
+
+/* Legacy compat */
+.hero-grid {
+  background-image: radial-gradient(circle, #ffffff08 1px, transparent 1px);
+  background-size: 40px 40px;
+}
 .feature-card {
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .feature-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(212, 160, 23, 0.3);
-}
-
-.pricing-popular {
-  box-shadow:
-    0 0 30px rgba(212, 160, 23, 0.2),
-    0 0 60px rgba(212, 160, 23, 0.08);
+  border-color: rgba(33, 150, 243, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 30px rgba(33, 150, 243, 0.05);
 }
 
 .stagger-1 { animation-delay: 0.1s; }
