@@ -6,6 +6,7 @@ import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
 import { queueUE5Command } from "@/lib/ue5/commands";
 import { rateLimitAI } from "@/lib/api/rateLimit";
+import { resolveAssets, combineCodeWithImports, stripImportTags } from "@/lib/ai/assetResolver";
 import type { ChatTurn } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -84,16 +85,28 @@ export async function POST(request: NextRequest) {
               project_id: projectId,
               agent_name: "Grand Studio",
               agent_title: "AI Co-Pilot",
-              content: fullContent,
+              content: stripImportTags(fullContent),
               turn_type: "direct",
             });
 
-            const pythonCode = extractPythonCode(fullContent);
+            let assetImportCode = "";
+            try {
+              const resolved = await resolveAssets(fullContent);
+              if (resolved.importCode) assetImportCode = resolved.importCode;
+            } catch (e) {
+              console.warn("[stream] Asset resolution failed:", e);
+            }
+
+            const cleanedContent = stripImportTags(fullContent);
+            const pythonCode = extractPythonCode(cleanedContent);
             if (pythonCode) {
               const { fixedCode } = autoFixUE5Code(pythonCode);
-              const validation = validateUE5Code(fixedCode);
+              const codeWithImports = assetImportCode
+                ? combineCodeWithImports(fixedCode, assetImportCode)
+                : fixedCode;
+              const validation = validateUE5Code(codeWithImports);
               if (validation.valid) {
-                await queueUE5Command(projectId, fixedCode);
+                await queueUE5Command(projectId, codeWithImports);
               }
             }
           }

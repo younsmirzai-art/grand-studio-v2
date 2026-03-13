@@ -1,3 +1,6 @@
+import { getModelDownloadUrl } from "@/lib/polyhaven/client";
+import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
+
 const POLYHAVEN_RE = /\[POLYHAVEN_IMPORT:\s*([^\]]+)\]/g;
 const SKETCHFAB_RE = /\[SKETCHFAB_IMPORT:\s*([^\]]+)\]/g;
 
@@ -124,4 +127,44 @@ export function stripImportTags(response: string): string {
     .replace(POLYHAVEN_RE, "")
     .replace(SKETCHFAB_RE, "")
     .trim();
+}
+
+/**
+ * Resolves all asset import tags in an AI response by fetching real download
+ * URLs from Poly Haven / Sketchfab, then returns the combined UE5 import code.
+ */
+export async function resolveAssets(
+  aiResponse: string
+): Promise<ResolvedAssets> {
+  const imports = parseImportTags(aiResponse);
+  if (imports.length === 0) return { imports: [], importCode: "" };
+
+  const storageUrls = new Map<string, string>();
+
+  const sfToken = process.env.SKETCHFAB_API_TOKEN ?? "";
+
+  await Promise.all(
+    imports.map(async (imp) => {
+      try {
+        if (imp.source === "polyhaven") {
+          const url = await getModelDownloadUrl(imp.assetId);
+          if (url) storageUrls.set(imp.assetId, url);
+        } else if (imp.source === "sketchfab" && imp.query) {
+          const results = await searchSketchfab(imp.query, {
+            count: 1,
+            token: sfToken,
+          });
+          if (results.length > 0 && sfToken) {
+            const dlUrl = await getSketchfabDownloadUrl(results[0].uid, sfToken);
+            if (dlUrl) storageUrls.set(imp.query, dlUrl);
+          }
+        }
+      } catch (e) {
+        console.warn(`[AssetResolver] Failed to resolve ${imp.source} asset:`, e);
+      }
+    })
+  );
+
+  const importCode = generateImportPython(imports, storageUrls);
+  return { imports, importCode };
 }

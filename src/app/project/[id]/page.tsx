@@ -74,6 +74,8 @@ export default function ProjectPage() {
   const seenSuccessIdsRef = useRef<Set<string>>(new Set());
   const isFirstCommandLoadRef = useRef(true);
   const autoCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastScreenshotTimeRef = useRef(0);
+  const screenshotCountRef = useRef(0);
 
   const buildParam = searchParams.get("build") === "1";
   const showSmartBuildView = buildParam && !!project?.initial_prompt && !smartBuildFinished;
@@ -143,7 +145,7 @@ export default function ProjectPage() {
     return () => clearInterval(t);
   }, [projectId, isFullProjectRunning, buildStatus?.running, setFullProjectRunning, setFullProjectPaused, refetchChat]);
 
-  // Auto-capture on successful commands
+  // Auto-capture on successful BUILD commands (not screenshot commands)
   useEffect(() => {
     if (isFirstCommandLoadRef.current) {
       if (ue5Commands.length > 0) {
@@ -154,13 +156,29 @@ export default function ProjectPage() {
       }
       return;
     }
+    const isScreenshotCode = (code: string) =>
+      code.includes("take_high_res_screenshot") ||
+      code.includes("SCREENSHOT_PATH") ||
+      code.includes("capture_") ||
+      code.includes("AutomationLibrary");
+
     const newSuccesses = ue5Commands.filter(
       (c) => c.status === "success" && !seenSuccessIdsRef.current.has(c.id)
     );
     if (newSuccesses.length === 0) return;
     for (const c of newSuccesses) seenSuccessIdsRef.current.add(c.id);
+
+    const buildSuccesses = newSuccesses.filter((c) => !isScreenshotCode(c.code));
+    if (buildSuccesses.length === 0) return;
+
+    const now = Date.now();
+    if (now - lastScreenshotTimeRef.current < 30_000) return;
+    if (screenshotCountRef.current >= 2) return;
+
     if (autoCaptureTimerRef.current) clearTimeout(autoCaptureTimerRef.current);
     autoCaptureTimerRef.current = setTimeout(async () => {
+      lastScreenshotTimeRef.current = Date.now();
+      screenshotCountRef.current += 1;
       toast.info("Capturing scene screenshot...");
       try {
         await fetch("/api/ue5/capture", {
@@ -323,6 +341,7 @@ export default function ProjectPage() {
   // Send message to AI
   const sendMessage = useCallback(
     async (message: string) => {
+      screenshotCountRef.current = 0;
       const supabase = getClient();
       await supabase.from("chat_turns").insert({
         project_id: projectId,

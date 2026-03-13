@@ -6,6 +6,7 @@ import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
 import { queueUE5Command } from "@/lib/ue5/commands";
 import { rateLimitAI } from "@/lib/api/rateLimit";
+import { resolveAssets, combineCodeWithImports, stripImportTags } from "@/lib/ai/assetResolver";
 import type { ChatTurn } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -48,20 +49,33 @@ export async function POST(request: NextRequest) {
 
     const { rawResponse } = await askGrandStudioAI(bossMessage, projectContext);
 
+    let assetImportCode = "";
+    try {
+      const resolved = await resolveAssets(rawResponse);
+      if (resolved.importCode) assetImportCode = resolved.importCode;
+    } catch (e) {
+      console.warn("[/api/agents/run] Asset resolution failed:", e);
+    }
+
+    const cleanedResponse = stripImportTags(rawResponse);
+
     await supabase.from("chat_turns").insert({
       project_id: projectId,
       agent_name: "Grand Studio",
       agent_title: "AI Co-Pilot",
-      content: rawResponse,
+      content: cleanedResponse,
       turn_type: "boss_command",
     });
 
-    const pythonCode = extractPythonCode(rawResponse);
+    const pythonCode = extractPythonCode(cleanedResponse);
     if (pythonCode) {
       const { fixedCode } = autoFixUE5Code(pythonCode);
-      const validation = validateUE5Code(fixedCode);
+      const codeWithImports = assetImportCode
+        ? combineCodeWithImports(fixedCode, assetImportCode)
+        : fixedCode;
+      const validation = validateUE5Code(codeWithImports);
       if (validation.valid) {
-        await queueUE5Command(projectId, fixedCode);
+        await queueUE5Command(projectId, codeWithImports);
       } else {
         console.warn("[/api/agents/run] Code validation failed:", validation.errors);
       }

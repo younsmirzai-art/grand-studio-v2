@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { createServerClient } from "@/lib/supabase/server";
+import { resolveAssets, combineCodeWithImports, stripImportTags } from "@/lib/ai/assetResolver";
 
 const DANGEROUS_PATTERNS = [
   "os.system",
@@ -45,7 +46,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const code = extractPythonCode(rawResponse);
+    // Resolve asset import tags (Poly Haven / Sketchfab) before extracting code
+    let processedResponse = rawResponse;
+    let assetImportCode = "";
+    try {
+      const resolved = await resolveAssets(rawResponse);
+      if (resolved.importCode) {
+        assetImportCode = resolved.importCode;
+        console.log(`[BUILD EXECUTE] Resolved ${resolved.imports.length} asset imports`);
+      }
+      processedResponse = stripImportTags(rawResponse);
+    } catch (e) {
+      console.warn("[BUILD EXECUTE] Asset resolution failed, continuing without imports:", e);
+    }
+
+    const code = extractPythonCode(processedResponse);
     if (!code || !code.includes("import unreal")) {
       console.log("[BUILD EXECUTE] No valid code extracted, raw length:", rawResponse?.length);
       return NextResponse.json(
@@ -64,7 +79,10 @@ export async function POST(request: NextRequest) {
     }
 
     const validation = autoFixUE5Code(code);
-    const finalCode = CLEANUP_SCRIPT.trim() + "\n\n" + validation.fixedCode;
+    const codeWithImports = assetImportCode
+      ? combineCodeWithImports(validation.fixedCode, assetImportCode)
+      : validation.fixedCode;
+    const finalCode = CLEANUP_SCRIPT.trim() + "\n\n" + codeWithImports;
 
     const supabase = createServerClient();
 

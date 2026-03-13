@@ -27,11 +27,21 @@ interface AICopilotPanelProps {
 }
 
 const SUGGESTIONS = [
-  "Build a medieval castle",
-  "Add trees to scene",
+  "Build a medieval house",
+  "Create a forest scene",
+  "Import rocks from Poly Haven",
   "Change lighting to sunset",
-  "Clear and rebuild",
 ];
+
+const WELCOME_MESSAGE = `Hey! I'm your AI Co-Pilot for Unreal Engine 5.
+
+I can help you:
+• **Build scenes** — houses, castles, forests, cities
+• **Import 3D models** from Poly Haven and Sketchfab
+• **Add materials**, lighting, and atmosphere
+• **Take screenshots** and improve your scene
+
+What would you like to build today?`;
 
 export function AICopilotPanel({
   open,
@@ -159,14 +169,18 @@ export function AICopilotPanel({
             {/* Chat Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 scrollbar-thin">
               {chatTurns.length === 0 && !isGenerating && (
-                <div className="text-center py-8">
-                  <Sparkles className="w-8 h-8 text-[#2196F3]/30 mx-auto mb-3" />
-                  <p className="text-sm text-[#A0A0A8] mb-1">
-                    What would you like to build?
-                  </p>
-                  <p className="text-xs text-[#606068]">
-                    Describe a scene and AI will generate UE5 code
-                  </p>
+                <div className="flex justify-start">
+                  <div className="p-4 mr-6 max-w-[90%] rounded-xl bg-[#2196F3]/5 border border-[#2196F3]/10">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Sparkles className="w-3.5 h-3.5 text-[#2196F3]" />
+                      <span className="text-xs font-semibold text-[#2196F3]">
+                        Grand Studio AI
+                      </span>
+                    </div>
+                    <div className="text-sm text-[#E0E0E0] whitespace-pre-wrap leading-relaxed">
+                      {WELCOME_MESSAGE}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -287,6 +301,9 @@ export function AICopilotPanel({
                       <span className="w-2 h-2 rounded-full bg-[#2196F3] animate-pulse" />
                       <span className="w-2 h-2 rounded-full bg-[#2196F3] animate-pulse [animation-delay:0.15s]" />
                       <span className="w-2 h-2 rounded-full bg-[#2196F3] animate-pulse [animation-delay:0.3s]" />
+                    </span>
+                    <span className="text-xs text-[#606068]">
+                      Grand Studio is thinking...
                     </span>
                   </div>
                 </div>
