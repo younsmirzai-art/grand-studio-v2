@@ -723,6 +723,7 @@ export default function ProjectPage() {
             onAssetClick={handleAssetClick}
             onTemplateClick={handleTemplateClick}
             onClearScene={handleClearScene}
+            projectId={projectId}
           />
         </div>
 

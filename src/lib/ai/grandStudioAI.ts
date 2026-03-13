@@ -84,14 +84,52 @@ ${VERIFIED_PATTERNS}
 
 ${getAssetPromptText()}
 
-ASSET USAGE RULES:
-1. ALWAYS try to use Starter Content assets first (walls, floors, props, materials) when the user's request fits.
-2. If load_asset returns None for a Starter Content path, fall back to BasicShapes and apply a dynamic material or color.
-3. ALWAYS apply materials or colors to objects — never leave meshes as default white when you can add M_Brick_Clay_Beveled, M_Ground_Grass, or make_color(r,g,b).
-4. For buildings: prefer Wall_400x200, Floor_400x400, Pillar_50x500 when available.
-5. For nature: use SM_Rock, SM_Bush when available; use M_Ground_Grass for ground.
-6. For interiors: SM_Chair, SM_Couch, SM_TableRound, SM_Lamp_Ceiling when available.
-7. For water: use M_Water_Lake material on a flat Plane.
+ASSET USAGE RULES (CRITICAL — FOLLOW EXACTLY):
+
+You have access to THREE asset sources. Use them in this EXACT priority order:
+
+PRIORITY 1 — UE5 STARTER CONTENT (use first, fastest):
+  Use for: walls, floors, pillars, stairs, doors, chairs, tables, lamps, shelves, rocks, bushes
+  Use for: ALL materials (brick, wood, metal, glass, grass, stone, water, concrete)
+  Path format: /Game/StarterContent/Architecture/... or /Game/StarterContent/Props/...
+  ALWAYS add fallback: if load_asset returns None, use BasicShapes + make_color()
+
+PRIORITY 2 — POLY HAVEN (use for nature, detailed models, sky):
+  Use for: detailed rocks, trees, vegetation, terrain objects
+  Use for: PBR materials when Starter Content does not have what you need
+  Use for: HDRI sky lighting (sunset, cloudy, forest, night)
+  To request a Poly Haven asset, output this tag:
+  [POLYHAVEN_IMPORT: asset_id | type (model/texture/hdri) | position x,y,z | scale | label]
+  Examples:
+    [POLYHAVEN_IMPORT: rock_formation_01 | model | 500,200,0 | 1.5 | BigRock]
+    [POLYHAVEN_IMPORT: kloofendal_48d_partly_cloudy | hdri | 0,0,0 | 1 | SunsetSky]
+
+PRIORITY 3 — SKETCHFAB (use for specific/unique objects):
+  Use for: dragons, vehicles, weapons, characters, specific furniture, fantasy creatures
+  Use for: anything that Starter Content and Poly Haven do not have
+  To request a Sketchfab asset, output this tag:
+  [SKETCHFAB_IMPORT: search query | position x,y,z | scale | label]
+  Examples:
+    [SKETCHFAB_IMPORT: medieval castle tower | 0,0,500 | 2.0 | CastleTower1]
+    [SKETCHFAB_IMPORT: dragon statue stone | 300,0,0 | 1.0 | DragonStatue]
+
+PRIORITY 4 — BASIC SHAPES (ABSOLUTE LAST RESORT):
+  ONLY use BasicShapes/Cube, Sphere, Cylinder, Cone, Plane when:
+  - Making a simple ground plane (Plane + M_Ground_Grass)
+  - Making custom geometry that no platform has
+  - ALWAYS apply a Starter Content material — NEVER leave white/default
+
+MATERIAL RULES (NEVER ignore these):
+  Ground = M_Ground_Grass or M_Ground_Gravel
+  Walls = M_Brick_Clay_Beveled or M_Wood_Oak
+  Floor = M_Wood_Floor_Walnut_Polished or M_Concrete_Poured
+  Roof = M_Wood_Floor_Walnut_Polished
+  Stone = M_Rock_Slate
+  Metal = M_Metal_Burnished_Steel
+  Water = M_Water_Lake
+  Path = M_CobbleStone_Smooth
+  Glass = M_Glass
+  NEVER leave ANY object without a material
 
 MATERIAL APPLICATION: After spawning a mesh, apply a material. Example:
   mesh_comp = actor.get_component_by_class(unreal.StaticMeshComponent)
