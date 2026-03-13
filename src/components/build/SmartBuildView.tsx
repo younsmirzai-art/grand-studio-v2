@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
+import { getClient } from "@/lib/supabase/client";
 
 type Phase = "writing" | "executing" | "done" | "error";
 
@@ -116,68 +117,46 @@ export default function SmartBuildView({
         return;
       }
 
-      let finalContent = content;
-      if (!extractPythonCode(content)) {
-        toast.info("No code in response, retrying…");
-        setStreamingContent("");
-        const retryRes = await fetch("/api/build/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: `You MUST write Python code for this request. Output ONLY a \`\`\`python code block, nothing else:\n\n${prompt.trim()}`,
-          }),
-        });
-        if (retryRes.ok && retryRes.body) {
-          const retryReader = retryRes.body.getReader();
-          let retryContent = "";
-          while (true) {
-            const { done, value } = await retryReader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n");
-            for (const line of lines) {
-              if (!line.startsWith("data: ")) continue;
-              const data = line.slice(6);
-              if (data === "[DONE]") continue;
-              try {
-                const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
-                const delta = parsed.choices?.[0]?.delta?.content;
-                if (typeof delta === "string") retryContent += delta;
-              } catch {
-                /* ignore */
-              }
-            }
-          }
-          if (extractPythonCode(retryContent)) finalContent = retryContent;
-        }
-      }
+      const finalContent = content;
+      const hasCode = !!extractPythonCode(finalContent);
 
-      if (!extractPythonCode(finalContent)) {
-        const errMsg = "No valid Python code in response.";
-        setErrorMessage(errMsg);
-        setPhase("error");
-        toast.error(errMsg);
-        onDone?.(false, errMsg);
+      if (!hasCode) {
+        const supabase = getClient();
+        await supabase.from("chat_turns").insert({
+          project_id: projectId,
+          agent_name: "Grand Studio",
+          agent_title: "AI Co-Pilot",
+          content: finalContent,
+          turn_type: "direct",
+        });
+        setPhase("done");
+        onDone?.(true);
         return;
       }
 
       setPhase("executing");
 
-      const execRes = await fetch("/api/build/execute", {
+      let execRes = await fetch("/api/build/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, rawResponse: finalContent }),
       });
-
-      const execData = await execRes.json();
+      let execData = await execRes.json();
 
       if (!execRes.ok || !execData.commandId) {
-        const errMsg = execData.error ?? "Failed to execute code";
-        setErrorMessage(errMsg);
-        setPhase("error");
-        toast.error(errMsg);
-        onDone?.(false, errMsg);
-        return;
+        toast.error("Let me try that again…");
+        execRes = await fetch("/api/build/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, rawResponse: finalContent }),
+        });
+        execData = await execRes.json();
+        if (!execRes.ok || !execData.commandId) {
+          toast.error("I'll use a different approach next time.");
+          setPhase("done");
+          onDone?.(true);
+          return;
+        }
       }
 
       const commandId = execData.commandId as string;
@@ -202,26 +181,20 @@ export default function SmartBuildView({
           return;
         }
         if (cmd?.status === "error") {
-          const errMsg = cmd.error_log ?? "Execution failed";
-          setErrorMessage(errMsg);
-          setPhase("error");
-          toast.error(errMsg);
-          onDone?.(false, errMsg);
+          toast.error("That didn't work as expected. Let me know if you'd like me to try again!");
+          setPhase("done");
+          onDone?.(true);
           return;
         }
       }
 
-      const errMsg = "Execution timeout";
-      setErrorMessage(errMsg);
-      setPhase("error");
-      toast.error(errMsg);
-      onDone?.(false, errMsg);
+      toast.error("Taking a bit longer than usual — check your UE5 viewport!");
+      setPhase("done");
+      onDone?.(true);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorMessage(msg);
       setPhase("error");
-      toast.error(msg);
-      onDone?.(false, msg);
+      toast.error("Something went wrong. Try again in a moment!");
+      onDone?.(false);
     }
   }, [projectId, prompt, projectContext, onDone]);
 

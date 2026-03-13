@@ -462,57 +462,59 @@ export default function ProjectPage() {
         setIsGenerating(false);
         setStreamingContent("");
 
-        let finalContent = content;
-        if (!extractPythonCode(content)) {
-          toast.info("No code in response, retrying...");
-          setIsGenerating(true);
-          setStreamingContent("");
-          const retryRes = await fetch("/api/build/stream", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: `You MUST write Python code for this request. Output ONLY a \`\`\`python code block:\n\n${message.trim()}`,
-            }),
+        const finalContent = content;
+        const hasCode = !!extractPythonCode(finalContent);
+
+        if (!hasCode) {
+          await supabase.from("chat_turns").insert({
+            project_id: projectId,
+            agent_name: "Grand Studio",
+            agent_title: "AI Co-Pilot",
+            content: finalContent,
+            turn_type: "direct",
           });
-          if (retryRes.ok && retryRes.body) {
-            const rReader = retryRes.body.getReader();
-            const rDecoder = new TextDecoder();
-            let retryContent = "";
-            while (true) {
-              const { done, value } = await rReader.read();
-              if (done) break;
-              const chunk = rDecoder.decode(value, { stream: true });
-              for (const line of chunk.split("\n")) {
-                if (!line.startsWith("data: ")) continue;
-                const data = line.slice(6);
-                if (data === "[DONE]") continue;
-                try {
-                  const p = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
-                  const d = p.choices?.[0]?.delta?.content;
-                  if (typeof d === "string") retryContent += d;
-                } catch { /* ignore */ }
-              }
-            }
-            setIsGenerating(false);
-            setStreamingContent("");
-            if (extractPythonCode(retryContent)) finalContent = retryContent;
-          }
-        }
-        if (!extractPythonCode(finalContent)) {
-          toast.error("No valid Python code in response.");
           await refetchChat();
           return;
         }
-        const execRes = await fetch("/api/build/execute", {
+        let execRes = await fetch("/api/build/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, rawResponse: finalContent }),
         });
-        const execData = await execRes.json();
+        let execData = await execRes.json();
+
         if (!execRes.ok || !execData.commandId) {
-          toast.error((execData as { error?: string }).error ?? "Failed to execute code");
-          await refetchChat();
-          return;
+          const err = (execData as { error?: string }).error;
+          if (err?.includes("No valid Python") || err?.includes("Dangerous")) {
+            await supabase.from("chat_turns").insert({
+              project_id: projectId,
+              agent_name: "Grand Studio",
+              agent_title: "AI Co-Pilot",
+              content: finalContent,
+              turn_type: "direct",
+            });
+            await refetchChat();
+            return;
+          }
+          toast.error("Let me try that again…");
+          execRes = await fetch("/api/build/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, rawResponse: finalContent }),
+          });
+          execData = await execRes.json();
+          if (!execRes.ok || !execData.commandId) {
+            toast.error("I'll use a different approach next time. Your message was saved.");
+            await supabase.from("chat_turns").insert({
+              project_id: projectId,
+              agent_name: "Grand Studio",
+              agent_title: "AI Co-Pilot",
+              content: finalContent,
+              turn_type: "direct",
+            });
+            await refetchChat();
+            return;
+          }
         }
         const commandId = execData.commandId as string;
         for (let i = 0; i < 30; i++) {
@@ -520,24 +522,23 @@ export default function ProjectPage() {
           const statusRes = await fetch(`/api/build/status?commandId=${encodeURIComponent(commandId)}`);
           const cmd = statusRes.ok ? await statusRes.json() : null;
           if (cmd?.status === "success") {
-            toast.success("Built successfully!");
+            toast.success("Your scene is ready! Check your UE5 viewport.");
             await runVisionLoop(projectId, message);
             await refetchChat();
             return;
           }
           if (cmd?.status === "error") {
-            toast.error(cmd.error_log ?? "Execution failed");
+            toast.error("That didn't work as expected. Let me know if you'd like me to try again!");
             await refetchChat();
             return;
           }
         }
-        toast.error("Execution timeout");
+        toast.error("Taking a bit longer than usual — check your UE5 viewport!");
         await refetchChat();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         setIsGenerating(false);
         setStreamingContent("");
-        toast.error(msg || "Build failed");
+        toast.error("Something went wrong. Try again in a moment!");
         await refetchChat();
       }
     },

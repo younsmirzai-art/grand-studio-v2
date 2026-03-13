@@ -33,15 +33,17 @@ const SUGGESTIONS = [
   "Change lighting to sunset",
 ];
 
-const WELCOME_MESSAGE = `Hey! I'm your AI Co-Pilot for Unreal Engine 5.
+const WELCOME_MESSAGE = `Hey! 👋 I'm Grand Studio — your AI Co-Pilot for Unreal Engine 5.
 
-I can help you:
-• **Build scenes** — houses, castles, forests, cities
-• **Import 3D models** from Poly Haven and Sketchfab
-• **Add materials**, lighting, and atmosphere
-• **Take screenshots** and improve your scene
+I can help you build amazing 3D scenes:
+🏰 Buildings and architecture
+🌲 Nature and landscapes
+💡 Lighting and atmosphere
+📦 Import models from Poly Haven & Sketchfab
 
-What would you like to build today?`;
+Just tell me what you want to build, and I'll make it happen!
+
+What would you like to create today?`;
 
 export function AICopilotPanel({
   open,
