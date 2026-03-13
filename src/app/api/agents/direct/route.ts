@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
+import { askGrandStudioAI, isGreetingOrQuestion } from "@/lib/ai/grandStudioAI";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
@@ -54,7 +54,12 @@ export async function POST(request: NextRequest) {
       detail: `Direct message from Boss`,
     });
 
-    const { rawResponse } = await askGrandStudioAI(message, projectContext);
+    const trimmed = (message as string).trim();
+    const finalMessage = isGreetingOrQuestion(trimmed)
+      ? `The user is greeting you or asking a question. Respond with friendly text only. Do NOT write any Python code.\n\nUser: ${trimmed}`
+      : trimmed;
+
+    const { rawResponse } = await askGrandStudioAI(finalMessage, projectContext);
 
     let assetImportCode = "";
     try {

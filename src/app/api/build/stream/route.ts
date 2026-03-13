@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { askGrandStudioAIStream } from "@/lib/ai/grandStudioAI";
+import { askGrandStudioAIStream, isGreetingOrQuestion } from "@/lib/ai/grandStudioAI";
 
 export async function POST(request: NextRequest) {
   console.log("[BUILD STREAM] Request received");
@@ -15,7 +15,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const stream = await askGrandStudioAIStream(prompt.trim(), projectContext);
+    const trimmed = prompt.trim();
+    const finalPrompt = isGreetingOrQuestion(trimmed)
+      ? `The user is greeting you or asking a question. Respond with friendly text only. Do NOT write any Python code.\n\nUser: ${trimmed}`
+      : trimmed;
+
+    const stream = await askGrandStudioAIStream(finalPrompt, projectContext);
 
     return new Response(stream, {
       headers: {
