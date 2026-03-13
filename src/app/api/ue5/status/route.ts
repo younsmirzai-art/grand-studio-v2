@@ -17,13 +17,18 @@ export async function GET() {
       .order("last_ping", { ascending: false })
       .limit(1);
 
-    const isRelayOnline =
-      heartbeat &&
-      heartbeat.length > 0 &&
-      Date.now() - new Date(heartbeat[0].last_ping as string).getTime() < 30000;
+    const row = heartbeat?.[0] as { last_ping?: string; ue5_connected?: boolean } | undefined;
+    const pingAge = row?.last_ping
+      ? Date.now() - new Date(row.last_ping).getTime()
+      : Infinity;
+
+    const isRelayOnline = pingAge < 60_000 && row?.ue5_connected === true;
 
     return NextResponse.json({
       relay_online: isRelayOnline,
+      last_ping: row?.last_ping ?? null,
+      ue5_connected: row?.ue5_connected ?? false,
+      ping_age_ms: pingAge === Infinity ? null : Math.round(pingAge),
       last_command: data?.[0] ?? null,
     });
   } catch (error) {

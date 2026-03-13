@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { getClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import type { UE5Command } from "@/lib/types";
@@ -8,19 +8,28 @@ import type { UE5Command } from "@/lib/types";
 export function useUE5Status(projectId: string | null) {
   const { setUE5Commands, addUE5Command, updateUE5Command, setRelayConnected } =
     useProjectStore();
+  const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const checkRelayConnection = useCallback(
-    (commands: UE5Command[]) => {
-      const recentExecuted = commands.find(
-        (c) => c.status === "success" || c.status === "error"
-      );
-      if (recentExecuted?.executed_at) {
-        const age = Date.now() - new Date(recentExecuted.executed_at).getTime();
-        setRelayConnected(age < 60_000);
+  const pollHeartbeat = useCallback(async () => {
+    try {
+      const supabase = getClient();
+      const { data } = await supabase
+        .from("relay_heartbeat")
+        .select("last_ping, ue5_connected")
+        .order("last_ping", { ascending: false })
+        .limit(1);
+
+      const row = data?.[0] as { last_ping?: string; ue5_connected?: boolean } | undefined;
+      if (row?.last_ping) {
+        const age = Date.now() - new Date(row.last_ping).getTime();
+        setRelayConnected(age < 60_000 && row.ue5_connected === true);
+      } else {
+        setRelayConnected(false);
       }
-    },
-    [setRelayConnected]
-  );
+    } catch {
+      setRelayConnected(false);
+    }
+  }, [setRelayConnected]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -35,11 +44,13 @@ export function useUE5Status(projectId: string | null) {
       .limit(50)
       .then(({ data }) => {
         if (data) {
-          const typed = data as UE5Command[];
-          setUE5Commands(typed);
-          checkRelayConnection(typed);
+          setUE5Commands(data as UE5Command[]);
         }
       });
+
+    // Poll relay_heartbeat every 10 seconds for connection status
+    pollHeartbeat();
+    heartbeatTimer.current = setInterval(pollHeartbeat, 10_000);
 
     const channel = supabase
       .channel(`ue5:${projectId}`)
@@ -67,7 +78,7 @@ export function useUE5Status(projectId: string | null) {
           const updated = payload.new as UE5Command;
           updateUE5Command(updated.id, updated);
           if (updated.status === "success" || updated.status === "error") {
-            setRelayConnected(true);
+            pollHeartbeat();
           }
         }
       )
@@ -75,6 +86,7 @@ export function useUE5Status(projectId: string | null) {
 
     return () => {
       supabase.removeChannel(channel);
+      if (heartbeatTimer.current) clearInterval(heartbeatTimer.current);
     };
-  }, [projectId, setUE5Commands, addUE5Command, updateUE5Command, checkRelayConnection, setRelayConnected]);
+  }, [projectId, setUE5Commands, addUE5Command, updateUE5Command, setRelayConnected, pollHeartbeat]);
 }
