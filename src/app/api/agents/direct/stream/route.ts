@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { askGrandStudioAIStream, isGreetingOrQuestion } from "@/lib/ai/grandStudioAI";
+import { handleAssetRequest, detectAssetImportRequest } from "@/lib/asset/assetRequestHandler";
+import { queueUE5Command } from "@/lib/ue5/commands";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
-import { queueUE5Command } from "@/lib/ue5/commands";
 import { rateLimitAI } from "@/lib/api/rateLimit";
 import { resolveAssets, combineCodeWithImports, stripImportTags } from "@/lib/ai/assetResolver";
 import type { ChatTurn } from "@/lib/types";
@@ -48,6 +49,35 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmed = (message as string).trim();
+
+    if (detectAssetImportRequest(trimmed)) {
+      const result = await handleAssetRequest(trimmed, projectId);
+      if (result) {
+        await queueUE5Command(projectId, result.importCode);
+        await supabase.from("chat_turns").insert({
+          project_id: projectId,
+          agent_name: "Grand Studio",
+          agent_title: "AI Co-Pilot",
+          content: result.chatMessage,
+          turn_type: "direct",
+        });
+        const stream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: result.chatMessage })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: result.chatMessage })}\n\n`));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
+    }
+
     const finalMessage = isGreetingOrQuestion(trimmed)
       ? `The user is greeting you or asking a question. Respond with friendly text only. Do NOT write any Python code.\n\nUser: ${trimmed}`
       : trimmed;

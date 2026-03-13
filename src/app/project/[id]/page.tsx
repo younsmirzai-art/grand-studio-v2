@@ -413,7 +413,7 @@ export default function ProjectPage() {
         const streamRes = await fetch("/api/build/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: message.trim() }),
+          body: JSON.stringify({ prompt: message.trim(), projectId }),
         });
         if (!streamRes.ok) {
           const errText = await streamRes.text();
@@ -479,7 +479,7 @@ export default function ProjectPage() {
         let execRes = await fetch("/api/build/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, rawResponse: finalContent }),
+          body: JSON.stringify({ projectId, rawResponse: finalContent, userPrompt: message }),
         });
         let execData = await execRes.json();
 
@@ -500,7 +500,7 @@ export default function ProjectPage() {
           execRes = await fetch("/api/build/execute", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId, rawResponse: finalContent }),
+            body: JSON.stringify({ projectId, rawResponse: finalContent, userPrompt: message }),
           });
           execData = await execRes.json();
           if (!execRes.ok || !execData.commandId) {

@@ -3,6 +3,7 @@ import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { createServerClient } from "@/lib/supabase/server";
 import { resolveAssets, combineCodeWithImports, stripImportTags } from "@/lib/ai/assetResolver";
+import { enrichCodeWithPolyHavenAssets } from "@/lib/asset/assetRequestHandler";
 
 const DANGEROUS_PATTERNS = [
   "os.system",
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
   console.log("[BUILD EXECUTE] Request received");
   try {
     const body = await request.json();
-    const { projectId, rawResponse } = body;
+    const { projectId, rawResponse, userPrompt } = body;
     console.log("[BUILD EXECUTE] Body keys:", Object.keys(body), "projectId:", projectId, "rawResponse length:", typeof rawResponse === "string" ? rawResponse.length : 0);
 
     if (!projectId || typeof rawResponse !== "string") {
@@ -79,9 +80,18 @@ export async function POST(request: NextRequest) {
     }
 
     const validation = autoFixUE5Code(code);
-    const codeWithImports = assetImportCode
+    let codeWithImports = assetImportCode
       ? combineCodeWithImports(validation.fixedCode, assetImportCode)
       : validation.fixedCode;
+
+    if (userPrompt && typeof userPrompt === "string") {
+      try {
+        codeWithImports = await enrichCodeWithPolyHavenAssets(codeWithImports, userPrompt);
+      } catch (e) {
+        console.warn("[BUILD EXECUTE] Enrich failed:", e);
+      }
+    }
+
     const finalCode = CLEANUP_SCRIPT.trim() + "\n\n" + codeWithImports;
 
     const supabase = createServerClient();

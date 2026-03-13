@@ -139,7 +139,7 @@ export default function SmartBuildView({
       let execRes = await fetch("/api/build/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, rawResponse: finalContent }),
+        body: JSON.stringify({ projectId, rawResponse: finalContent, userPrompt: prompt }),
       });
       let execData = await execRes.json();
 
@@ -148,7 +148,7 @@ export default function SmartBuildView({
         execRes = await fetch("/api/build/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, rawResponse: finalContent }),
+          body: JSON.stringify({ projectId, rawResponse: finalContent, userPrompt: prompt }),
         });
         execData = await execRes.json();
         if (!execRes.ok || !execData.commandId) {
