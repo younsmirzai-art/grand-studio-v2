@@ -200,7 +200,7 @@ export function WorkspacePanel({
         toast.error(`Import failed: ${reason}`);
         return;
       }
-      const ext = data.url.endsWith(".glb") ? "glb" : "gltf";
+      const ext = data.url.endsWith(".glb") ? "glb" : data.url.endsWith(".fbx") ? "fbx" : "gltf";
       const filename = `${assetId}.${ext}`;
       const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
       let code: string;

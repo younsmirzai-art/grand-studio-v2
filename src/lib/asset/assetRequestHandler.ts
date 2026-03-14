@@ -193,7 +193,7 @@ export async function handleAssetRequest(
     return null;
   }
 
-  const ext = storageUrl.endsWith(".glb") ? "glb" : "gltf";
+  const ext = storageUrl.endsWith(".glb") ? "glb" : storageUrl.endsWith(".fbx") ? "fbx" : "gltf";
   const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
   const label = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
   const importCode = generateUE5ImportCode(storageUrl, filename, label);

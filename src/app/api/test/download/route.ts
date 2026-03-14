@@ -36,33 +36,61 @@ export async function GET(request: NextRequest) {
     const filesData = await filesRes.json();
     log(`Step 3: Files response keys: ${Object.keys(filesData).join(", ")}`);
 
+    // Prefer GLB (single file), then FBX, then GLTF (last resort)
+    type Format = "glb" | "fbx" | "gltf";
     let downloadUrl: string | null = null;
-    if (filesData.gltf) {
+    let ext: Format = "gltf";
+
+    function pickUrl(formatKey: "glb" | "fbx" | "gltf"): string | null {
+      const block = filesData[formatKey];
+      if (!block || typeof block !== "object") return null;
+      const oneK = block["1k"] ?? block["2k"];
+      if (!oneK) return null;
+      return oneK.url ?? oneK[formatKey]?.url ?? oneK.gltf?.url ?? null;
+    }
+
+    if (filesData.glb) {
+      downloadUrl = pickUrl("glb");
+      if (downloadUrl) {
+        ext = "glb";
+        log(`Step 4: Found glb.1k/2k.url`);
+      }
+    }
+    if (!downloadUrl && filesData.fbx) {
+      downloadUrl = pickUrl("fbx");
+      if (downloadUrl) {
+        ext = "fbx";
+        log(`Step 4: Found fbx.1k/2k.url (single file)`);
+      }
+    }
+    if (!downloadUrl && filesData.gltf) {
       const gltf = filesData.gltf;
-      const resKeys = typeof gltf === "object" && gltf !== null ? Object.keys(gltf) : [];
-      log(`Step 4: gltf sub-keys: ${resKeys.join(", ")}`);
       const oneK = gltf["1k"] ?? gltf["2k"];
       if (oneK) {
         downloadUrl = oneK.url ?? oneK.gltf?.url ?? null;
-        if (downloadUrl) log(`Step 5: Found gltf.1k.url or gltf.2k.url: ${downloadUrl.slice(0, 80)}...`);
+        if (downloadUrl) {
+          ext = "gltf";
+          log(`Step 4: Found gltf.1k/2k.url (multi-file, last resort)`);
+        }
       }
     }
     if (!downloadUrl && filesData["1k"]?.gltf?.url) {
       downloadUrl = filesData["1k"].gltf.url;
-      log(`Step 5 (alt): Found 1k.gltf.url`);
+      ext = "gltf";
+      log(`Step 4 (alt): Found 1k.gltf.url`);
     }
     if (!downloadUrl) {
       return NextResponse.json({
         success: false,
-        error: "No gltf.1k.url or gltf.2k.url in files response",
+        error: "No glb, fbx, or gltf URL in files response",
         logs,
         filesSample: JSON.stringify(filesData).slice(0, 800),
       });
     }
 
-    log(`Step 6: Downloading file from Poly Haven`);
+    log(`Step 5: Downloading ${ext.toUpperCase()} from Poly Haven`);
     const fileRes = await fetch(downloadUrl, { cache: "no-store" });
-    log(`Step 7: Download status ${fileRes.status}`);
+    log(`Step 6: Download status ${fileRes.status}`);
     if (!fileRes.ok) {
       return NextResponse.json({
         success: false,
@@ -71,11 +99,10 @@ export async function GET(request: NextRequest) {
       });
     }
     const blob = await fileRes.blob();
-    log(`Step 8: Blob size ${blob.size} bytes`);
+    log(`Step 7: Blob size ${blob.size} bytes`);
 
-    const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
     const storagePath = `polyhaven/${assetId}.${ext}`;
-    log(`Step 9: Uploading to Supabase bucket polyhaven-assets path ${storagePath}`);
+    log(`Step 8: Uploading to Supabase bucket polyhaven-assets path ${storagePath}`);
 
     const supabase = getServiceClient();
     const { error: uploadErr } = await supabase.storage
@@ -86,7 +113,7 @@ export async function GET(request: NextRequest) {
       });
 
     if (uploadErr) {
-      log(`Step 10: Upload error: ${uploadErr.message}`);
+      log(`Step 9: Upload error: ${uploadErr.message}`);
       return NextResponse.json({
         success: false,
         error: "Supabase upload failed",
@@ -96,7 +123,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: publicUrl } = supabase.storage.from("polyhaven-assets").getPublicUrl(storagePath);
-    log(`Step 10: Upload OK. Public URL: ${publicUrl.publicUrl?.slice(0, 80)}...`);
+    log(`Step 9: Upload OK. Public URL: ${publicUrl.publicUrl?.slice(0, 80)}...`);
 
     return NextResponse.json({
       success: true,

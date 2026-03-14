@@ -42,14 +42,38 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
   if (!filesRes.ok) return null;
 
   const filesData = await filesRes.json();
+
+  // Prefer GLB (single file), then FBX (single file), then GLTF (multi-file; last resort)
+  type Format = "glb" | "fbx" | "gltf";
   let downloadUrl: string | null = null;
-  if (filesData.gltf) {
+  let ext: Format = "gltf";
+
+  function pickUrl(formatKey: "glb" | "fbx" | "gltf"): string | null {
+    const block = filesData[formatKey];
+    if (!block || typeof block !== "object") return null;
+    const oneK = block["1k"] ?? block["2k"];
+    if (!oneK) return null;
+    const u = oneK.url ?? oneK[formatKey]?.url ?? oneK.gltf?.url ?? null;
+    return u || null;
+  }
+
+  if (filesData.glb) {
+    downloadUrl = pickUrl("glb");
+    if (downloadUrl) ext = "glb";
+  }
+  if (!downloadUrl && filesData.fbx) {
+    downloadUrl = pickUrl("fbx");
+    if (downloadUrl) ext = "fbx";
+  }
+  if (!downloadUrl && filesData.gltf) {
     const gltf = filesData.gltf;
     const oneK = gltf["1k"] ?? gltf["2k"];
     if (oneK) downloadUrl = oneK.url ?? oneK.gltf?.url ?? null;
+    if (downloadUrl) ext = "gltf";
   }
   if (!downloadUrl && filesData["1k"]?.gltf?.url) {
     downloadUrl = filesData["1k"].gltf.url;
+    ext = "gltf";
   }
   if (!downloadUrl) return null;
 
@@ -57,7 +81,6 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
   if (!fileRes.ok) return null;
   const blob = await fileRes.blob();
 
-  const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
   const storagePath = `polyhaven/${assetId}.${ext}`;
 
   const { error: uploadErr } = await supabase.storage
