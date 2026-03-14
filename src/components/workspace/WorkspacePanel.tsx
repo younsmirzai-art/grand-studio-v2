@@ -441,7 +441,12 @@ export function WorkspacePanel({
                         {r.downloadCount.toLocaleString()} downloads
                       </span>
                       <button
-                        onClick={() => phSubTab === "models" && downloadPolyHaven(r.id, phSubTab, r.name || r.id.replace(/_/g, " "))}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          if (phSubTab === "models") downloadPolyHaven(r.id, phSubTab, r.name || r.id.replace(/_/g, " "));
+                        }}
                         disabled={phDownloading === r.id || phSubTab !== "models"}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                       >
@@ -541,7 +546,12 @@ export function WorkspacePanel({
                         <ExternalLink className="w-3 h-3 inline" />
                       </a>
                       <button
-                        onClick={() => downloadSketchfab(r.uid, r.name)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          downloadSketchfab(r.uid, r.name);
+                        }}
                         disabled={sfDownloading === r.uid}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 shrink-0"
                       >
