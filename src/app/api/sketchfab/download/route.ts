@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (existing?.storage_url) {
-      return NextResponse.json({ url: existing.storage_url, cached: true });
+      return NextResponse.json({ url: existing.storage_url });
     }
 
     const downloadUrl = await getDownloadUrl(uid, token);
@@ -50,42 +50,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const fileRes = await fetch(downloadUrl, { cache: "no-store" });
-    if (!fileRes.ok) {
-      return NextResponse.json({ error: "Failed to download from Sketchfab" }, { status: 502 });
-    }
-
-    const blob = await fileRes.blob();
     const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
-    const storagePath = `sketchfab/${uid}.${ext}`;
-
-    const { error: uploadErr } = await supabase.storage
-      .from("sketchfab-assets")
-      .upload(storagePath, blob, {
-        contentType: blob.type || "application/octet-stream",
-        upsert: true,
-      });
-
-    if (uploadErr) {
-      console.error("[sketchfab/download] Upload error:", uploadErr);
-      return NextResponse.json({ url: downloadUrl, cached: false });
-    }
-
-    const { data: publicUrl } = supabase.storage
-      .from("sketchfab-assets")
-      .getPublicUrl(storagePath);
-
     await supabase.from("downloaded_assets").upsert({
       source: "sketchfab",
       source_id: uid,
       name: uid,
-      storage_url: publicUrl.publicUrl,
+      storage_url: downloadUrl,
       format: ext,
-      file_size_bytes: blob.size,
+      file_size_bytes: 0,
       license: "CC-BY",
     }, { onConflict: "source,source_id" });
 
-    return NextResponse.json({ url: publicUrl.publicUrl, cached: false });
+    return NextResponse.json({ url: downloadUrl });
   } catch (err) {
     console.error("[sketchfab/download] Error:", err);
     return NextResponse.json(

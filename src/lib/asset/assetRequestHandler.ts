@@ -101,36 +101,20 @@ async function downloadSketchfabToSupabase(uid: string): Promise<string | null> 
   const downloadUrl = await getSketchfabDownloadUrl(uid, token);
   if (!downloadUrl) return null;
 
-  const fileRes = await fetch(downloadUrl);
-  if (!fileRes.ok) return null;
-
-  const blob = await fileRes.blob();
   const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
-  const storagePath = `sketchfab/${uid}.${ext}`;
-
-  const { error } = await supabase.storage
-    .from("sketchfab-assets")
-    .upload(storagePath, blob, {
-      contentType: blob.type || "application/octet-stream",
-      upsert: true,
-    });
-
-  if (error) return null;
-
-  const { data: publicUrl } = supabase.storage.from("sketchfab-assets").getPublicUrl(storagePath);
   await supabase.from("downloaded_assets").upsert(
     {
       source: "sketchfab",
       source_id: uid,
       name: uid,
-      storage_url: publicUrl.publicUrl,
+      storage_url: downloadUrl,
       format: ext,
-      file_size_bytes: blob.size,
+      file_size_bytes: 0,
       license: "CC-BY",
     },
     { onConflict: "source,source_id" }
   );
-  return publicUrl.publicUrl;
+  return downloadUrl;
 }
 
 

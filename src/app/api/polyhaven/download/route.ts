@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       if (!url) {
         return NextResponse.json({ error: "No download URL found for this asset" }, { status: 404 });
       }
-      return NextResponse.json({ url, cached: false });
+      return NextResponse.json({ url });
     }
 
     if (type === "texture" || type === "textures") {

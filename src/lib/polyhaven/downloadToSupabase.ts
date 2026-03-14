@@ -1,6 +1,6 @@
 /**
- * Poly Haven model download + Supabase upload.
- * Logic is identical to /api/test/download so it stays proven to work.
+ * Resolve direct Poly Haven model download URL (no Supabase upload).
+ * UE5 Python code downloads directly from this URL via urllib.request.urlretrieve.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -15,11 +15,11 @@ function getSupabase() {
 }
 
 /**
- * 1) GET api.polyhaven.com/files/ASSET_ID
- * 2) Parse gltf.1k.url or gltf.2k.url (same as test/download)
- * 3) Download file
- * 4) Upload to polyhaven-assets bucket
- * 5) Return public URL (and cache in downloaded_assets)
+ * 1) Check downloaded_assets cache for existing direct URL
+ * 2) GET api.polyhaven.com/files/ASSET_ID
+ * 3) Prefer GLB, then FBX, then GLTF — get direct download URL
+ * 4) Cache the direct URL in downloaded_assets (no file upload)
+ * 5) Return direct Poly Haven URL for UE5 to download
  */
 export async function downloadPolyHavenModelToStorage(assetId: string): Promise<string | null> {
   const supabase = getSupabase();
@@ -43,7 +43,6 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
 
   const filesData = await filesRes.json();
 
-  // Prefer GLB (single file), then FBX (single file), then GLTF (multi-file; last resort)
   type Format = "glb" | "fbx" | "gltf";
   let downloadUrl: string | null = null;
   let ext: Format = "gltf";
@@ -77,47 +76,17 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
   }
   if (!downloadUrl) return null;
 
-  const fileRes = await fetch(downloadUrl, { cache: "no-store" });
-  if (!fileRes.ok) return null;
-  const blob = await fileRes.blob();
-
-  const storagePath = `polyhaven/${assetId}.${ext}`;
-
-  const { error: uploadErr } = await supabase.storage
-    .from("polyhaven-assets")
-    .upload(storagePath, blob, {
-      contentType: blob.type || "application/octet-stream",
-      upsert: true,
-    });
-
-  if (uploadErr) {
-    await supabase.from("downloaded_assets").upsert(
-      {
-        source: "polyhaven",
-        source_id: assetId,
-        name: assetId.replace(/_/g, " "),
-        storage_url: downloadUrl,
-        format: ext,
-        file_size_bytes: blob.size,
-        license: "CC0",
-      },
-      { onConflict: "source,source_id" }
-    );
-    return downloadUrl;
-  }
-
-  const { data: publicUrl } = supabase.storage.from("polyhaven-assets").getPublicUrl(storagePath);
   await supabase.from("downloaded_assets").upsert(
     {
       source: "polyhaven",
       source_id: assetId,
       name: assetId.replace(/_/g, " "),
-      storage_url: publicUrl.publicUrl,
+      storage_url: downloadUrl,
       format: ext,
-      file_size_bytes: blob.size,
+      file_size_bytes: 0,
       license: "CC0",
     },
     { onConflict: "source,source_id" }
   );
-  return publicUrl.publicUrl;
+  return downloadUrl;
 }

@@ -48,6 +48,19 @@ const CATEGORIES = [
   { id: "Particles", icon: Flame },
 ];
 
+const POLYHAVEN_POPULAR_IDS = [
+  "ArmChair_01",
+  "Barrel_01",
+  "ceramic_vase_03",
+  "Chandelier_01",
+  "coast_rocks_05",
+  "food_apple_01",
+  "indoor_plant_04",
+  "shoe_01",
+  "wooden_table_02",
+  "wooden_crate_01",
+];
+
 const ASSET_ICON_MAP: Record<string, typeof Box> = {
   Architecture: Box,
   Props: Lamp,
@@ -178,6 +191,7 @@ export function WorkspacePanel({
 
   const downloadPolyHaven = useCallback(async (assetId: string, type: string, displayName: string) => {
     setPhDownloading(assetId);
+    toast.info("Downloading 3D model (this may take a moment for large files)…");
     const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
     try {
       const res = await fetch("/api/polyhaven/download", {
@@ -259,6 +273,7 @@ export function WorkspacePanel({
 
   const downloadSketchfab = useCallback(async (uid: string, name: string) => {
     setSfDownloading(uid);
+    toast.info("Downloading 3D model (this may take a moment for large files)…");
     try {
       const res = await fetch("/api/sketchfab/download", {
         method: "POST",
@@ -434,6 +449,66 @@ export function WorkspacePanel({
                 </button>
               ))}
             </div>
+            {phSubTab === "models" && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-[#A0A0A8] mb-2">Popular Assets</p>
+                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+                  {POLYHAVEN_POPULAR_IDS.map((id) => {
+                    const name = id.replace(/_/g, " ");
+                    const thumb = `https://cdn.polyhaven.com/asset_img/thumbs/${id}.png?width=256`;
+                    return (
+                      <div
+                        key={id}
+                        className="group shrink-0 w-28 rounded-xl border border-white/5 overflow-hidden bg-[#111114] hover:border-[#2196F3]/30 transition"
+                      >
+                        <div className="h-20 bg-[#0A0A0B] overflow-hidden relative">
+                          <img
+                            src={thumb}
+                            alt={name}
+                            className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition"
+                            loading="lazy"
+                          />
+                          <span className="absolute top-1 right-1 text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
+                            CC0
+                          </span>
+                        </div>
+                        <div className="p-1.5">
+                          <p className="text-[10px] font-medium text-white truncate mb-1">{name}</p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              downloadPolyHaven(id, "models", name);
+                            }}
+                            disabled={phDownloading === id}
+                            className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {phDownloading === id ? (
+                              <>
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                Downloading…
+                              </>
+                            ) : phImportedId === id ? (
+                              <>
+                                <Check className="w-2.5 h-2.5" />
+                                Imported!
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-2.5 h-2.5" />
+                                Import
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <form
               onSubmit={(e) => { e.preventDefault(); searchPolyHaven(); }}
               className="relative mb-4"
@@ -499,8 +574,8 @@ export function WorkspacePanel({
                       >
                         {phDownloading === r.id ? (
                           <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Importing…
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                            <span className="truncate">Downloading model…</span>
                           </>
                         ) : phImportedId === r.id ? (
                           <>
@@ -604,8 +679,8 @@ export function WorkspacePanel({
                       >
                         {sfDownloading === r.uid ? (
                           <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Importing…
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                            <span className="truncate">Downloading model…</span>
                           </>
                         ) : sfImportedId === r.uid ? (
                           <>
