@@ -3,7 +3,8 @@
  * Bypasses the AI and directly searches, downloads, and generates UE5 import code.
  */
 
-import { searchAssets, getModelDownloadUrl } from "@/lib/polyhaven/client";
+import { searchAssets } from "@/lib/polyhaven/client";
+import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { createServerClient } from "@/lib/supabase/server";
 import { generateUE5ImportCode } from "@/lib/ue5/importCode";
@@ -79,76 +80,7 @@ function extractObjectQuery(message: string, hasPolyHaven: boolean, hasSketchfab
 }
 
 async function downloadPolyHavenToSupabase(assetId: string): Promise<string | null> {
-  const supabase = createServerClient();
-
-  const { data: existing } = await supabase
-    .from("downloaded_assets")
-    .select("storage_url")
-    .eq("source", "polyhaven")
-    .eq("source_id", assetId)
-    .maybeSingle();
-
-  if (existing?.storage_url) {
-    console.log("[handleAssetRequest] downloadPolyHavenToSupabase: cached", assetId);
-    return existing.storage_url;
-  }
-
-  console.log("[handleAssetRequest] downloadPolyHavenToSupabase: fetching download URL for", assetId);
-  const downloadUrl = await getModelDownloadUrl(assetId, "1k");
-  if (!downloadUrl) {
-    console.log("[handleAssetRequest] downloadPolyHavenToSupabase: no download URL for", assetId);
-    return null;
-  }
-  console.log("[handleAssetRequest] downloadPolyHavenToSupabase: got URL, downloading file");
-
-  const fileRes = await fetch(downloadUrl);
-  if (!fileRes.ok) {
-    console.log("[handleAssetRequest] downloadPolyHavenToSupabase: fetch failed", fileRes.status);
-    return null;
-  }
-
-  const blob = await fileRes.blob();
-  const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
-  const storagePath = `polyhaven/${assetId}.${ext}`;
-
-  const { error } = await supabase.storage
-    .from("polyhaven-assets")
-    .upload(storagePath, blob, {
-      contentType: blob.type || "application/octet-stream",
-      upsert: true,
-    });
-
-  if (error) {
-    await supabase.from("downloaded_assets").upsert(
-      {
-        source: "polyhaven",
-        source_id: assetId,
-        name: assetId.replace(/_/g, " "),
-        storage_url: downloadUrl,
-        format: ext,
-        file_size_bytes: blob.size,
-        license: "CC0",
-      },
-      { onConflict: "source,source_id" }
-    );
-    return downloadUrl;
-  }
-
-  const { data: publicUrl } = supabase.storage.from("polyhaven-assets").getPublicUrl(storagePath);
-  await supabase.from("downloaded_assets").upsert(
-    {
-      source: "polyhaven",
-      source_id: assetId,
-      name: assetId.replace(/_/g, " "),
-      storage_url: publicUrl.publicUrl,
-      format: ext,
-      file_size_bytes: blob.size,
-      license: "CC0",
-    },
-    { onConflict: "source,source_id" }
-  );
-  console.log("[handleAssetRequest] downloadPolyHavenToSupabase: uploaded to Supabase", assetId);
-  return publicUrl.publicUrl;
+  return downloadPolyHavenModelToStorage(assetId);
 }
 
 async function downloadSketchfabToSupabase(uid: string): Promise<string | null> {

@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const fileRes = await fetch(downloadUrl);
+    const fileRes = await fetch(downloadUrl, { cache: "no-store" });
     if (!fileRes.ok) {
       return NextResponse.json({ error: "Failed to download from Sketchfab" }, { status: 502 });
     }
