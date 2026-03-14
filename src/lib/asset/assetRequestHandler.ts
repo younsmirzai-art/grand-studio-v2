@@ -3,10 +3,10 @@
  * Bypasses the AI and directly searches, downloads, and generates UE5 import code.
  */
 
-import { searchAssets } from "@/lib/polyhaven/client";
+import { searchAssets, getModelDownloadUrl } from "@/lib/polyhaven/client";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
-import { getModelDownloadUrl } from "@/lib/polyhaven/client";
 import { createServerClient } from "@/lib/supabase/server";
+import { generateUE5ImportCode } from "@/lib/ue5/importCode";
 
 export interface AssetRequestResult {
   chatMessage: string;
@@ -40,14 +40,15 @@ export function detectAssetImportRequest(message: string): {
     lower.includes("fetch") ||
     lower.includes("download");
 
-  if (!hasImport && !hasPolyHaven && !hasSketchfab) return null;
+  const isImportRequest = hasImport || hasPolyHaven || hasSketchfab;
+  if (!isImportRequest) return null;
 
   let platform: "polyhaven" | "sketchfab" | "both" = "both";
   if (hasPolyHaven && !hasSketchfab) platform = "polyhaven";
   else if (hasSketchfab && !hasPolyHaven) platform = "sketchfab";
 
   const query = extractObjectQuery(message, hasPolyHaven, hasSketchfab);
-  if (!query || query.length < 2) return null;
+  if (!query || query.length < 1) return null;
 
   return { isImport: true, platform, query };
 }
@@ -83,13 +84,24 @@ async function downloadPolyHavenToSupabase(assetId: string): Promise<string | nu
     .eq("source_id", assetId)
     .maybeSingle();
 
-  if (existing?.storage_url) return existing.storage_url;
+  if (existing?.storage_url) {
+    console.log("[handleAssetRequest] downloadPolyHavenToSupabase: cached", assetId);
+    return existing.storage_url;
+  }
 
+  console.log("[handleAssetRequest] downloadPolyHavenToSupabase: fetching download URL for", assetId);
   const downloadUrl = await getModelDownloadUrl(assetId, "1k");
-  if (!downloadUrl) return null;
+  if (!downloadUrl) {
+    console.log("[handleAssetRequest] downloadPolyHavenToSupabase: no download URL for", assetId);
+    return null;
+  }
+  console.log("[handleAssetRequest] downloadPolyHavenToSupabase: got URL, downloading file");
 
   const fileRes = await fetch(downloadUrl);
-  if (!fileRes.ok) return null;
+  if (!fileRes.ok) {
+    console.log("[handleAssetRequest] downloadPolyHavenToSupabase: fetch failed", fileRes.status);
+    return null;
+  }
 
   const blob = await fileRes.blob();
   const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
@@ -131,6 +143,7 @@ async function downloadPolyHavenToSupabase(assetId: string): Promise<string | nu
     },
     { onConflict: "source,source_id" }
   );
+  console.log("[handleAssetRequest] downloadPolyHavenToSupabase: uploaded to Supabase", assetId);
   return publicUrl.publicUrl;
 }
 
@@ -184,59 +197,6 @@ async function downloadSketchfabToSupabase(uid: string): Promise<string | null> 
   return publicUrl.publicUrl;
 }
 
-function generateImportPythonCode(
-  storageUrl: string,
-  label: string,
-  position = "0,0,0",
-  scale = "1"
-): string {
-  const ext = storageUrl.endsWith(".glb") ? "glb" : "gltf";
-  const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
-  const filename = `${safeLabel}.${ext}`;
-  const localPath = `C:/GrandStudio/Downloads/${filename}`;
-  const ue5Path = `/Game/GrandStudio/Imports/${safeLabel}`;
-
-  const [x, y, z] = position.split(",").map((s) => s.trim());
-  const scaleVal = parseFloat(scale) || 1;
-
-  return `import unreal
-import urllib.request
-import os
-
-download_dir = 'C:/GrandStudio/Downloads'
-os.makedirs(download_dir, exist_ok=True)
-
-try:
-    local_file = '${localPath}'
-    urllib.request.urlretrieve('${storageUrl}', local_file)
-    unreal.log('Downloaded: ${filename}')
-
-    task = unreal.AssetImportTask()
-    task.set_editor_property('filename', local_file)
-    task.set_editor_property('destination_path', '${ue5Path}')
-    task.set_editor_property('automated', True)
-    task.set_editor_property('save', True)
-    task.set_editor_property('replace_existing', True)
-    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
-
-    imported_paths = task.get_editor_property('imported_object_paths')
-    if imported_paths and len(imported_paths) > 0:
-        asset_path = str(imported_paths[0])
-        asset = unreal.EditorAssetLibrary.load_asset(asset_path)
-        if asset:
-            editor = unreal.EditorLevelLibrary
-            pos = unreal.Vector(${x || "0"}, ${y || "0"}, ${z || "0"})
-            actor = editor.spawn_actor_from_object(asset, pos)
-            if actor:
-                actor.set_actor_scale3d(unreal.Vector(${scaleVal}, ${scaleVal}, ${scaleVal}))
-                actor.set_actor_label('${safeLabel}')
-                unreal.log('Imported and placed: ${safeLabel}')
-    else:
-        unreal.log_warning('Import completed but no assets returned')
-except Exception as e:
-    unreal.log_warning(f'Import failed: {e}')
-`;
-}
 
 /**
  * Handle direct asset import request. Returns chat message + import code, or null if failed.
@@ -246,18 +206,27 @@ export async function handleAssetRequest(
   _projectId: string
 ): Promise<AssetRequestResult | null> {
   const detected = detectAssetImportRequest(message);
-  if (!detected) return null;
+  if (!detected) {
+    console.log("[handleAssetRequest] detectAssetImportRequest returned null");
+    return null;
+  }
 
   const { platform, query } = detected;
+  console.log("[handleAssetRequest] Searching for platform:", platform, "query:", query);
+
   let storageUrl: string | null = null;
   let assetName = query;
   let sourceLabel = "";
 
   if (platform === "polyhaven" || platform === "both") {
+    console.log("[handleAssetRequest] Searching Poly Haven for query:", query);
     const results = await searchAssets(query, "models", 5);
+    console.log("[handleAssetRequest] Poly Haven found results:", results.length, results[0]?.id ?? "none");
     if (results.length > 0) {
       const best = results[0];
+      console.log("[handleAssetRequest] Best result:", best.id, best.name);
       storageUrl = await downloadPolyHavenToSupabase(best.id);
+      console.log("[handleAssetRequest] Download URL (Poly Haven):", storageUrl ? "yes" : "no");
       if (storageUrl) {
         assetName = best.name;
         sourceLabel = "Poly Haven";
@@ -267,8 +236,11 @@ export async function handleAssetRequest(
 
   if (!storageUrl && (platform === "sketchfab" || platform === "both")) {
     const token = process.env.SKETCHFAB_API_TOKEN;
+    console.log("[handleAssetRequest] Sketchfab token present:", !!token);
     if (token) {
+      console.log("[handleAssetRequest] Searching Sketchfab for query:", query);
       const results = await searchSketchfab(query, { count: 5, token });
+      console.log("[handleAssetRequest] Sketchfab found results:", results.length);
       if (results.length > 0) {
         const best = results[0];
         storageUrl = await downloadSketchfabToSupabase(best.uid);
@@ -280,13 +252,20 @@ export async function handleAssetRequest(
     }
   }
 
-  if (!storageUrl) return null;
+  if (!storageUrl) {
+    console.log("[handleAssetRequest] No storage URL after search — returning null");
+    return null;
+  }
 
-  const importCode = generateImportPythonCode(storageUrl, assetName.replace(/\s+/g, "_"));
+  const ext = storageUrl.endsWith(".glb") ? "glb" : "gltf";
+  const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
+  const label = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const importCode = generateUE5ImportCode(storageUrl, filename, label);
   const chatMessage = sourceLabel
-    ? `Found a great model on ${sourceLabel}! Importing "${assetName}" to your scene now… ✨`
-    : `Found a great model! Importing "${assetName}" to your scene now… ✨`;
+    ? `Found ${assetName} on ${sourceLabel}! Importing to your UE5 scene now… ✨`
+    : `Found ${assetName}! Importing to your UE5 scene now… ✨`;
 
+  console.log("[handleAssetRequest] Success — returning chatMessage + importCode");
   return { chatMessage, importCode, assetName };
 }
 

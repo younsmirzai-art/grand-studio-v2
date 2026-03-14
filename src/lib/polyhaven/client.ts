@@ -27,12 +27,16 @@ const assetCache = new Map<PolyHavenAssetType, { data: PolyHavenAsset[]; expires
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 async function phFetch(path: string) {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const url = `${BASE_URL}${path}`;
+  console.log("[Poly Haven] API call to", url);
+  const res = await fetch(url, {
     headers: { "User-Agent": USER_AGENT },
     next: { revalidate: 3600 },
   });
   if (!res.ok) throw new Error(`Poly Haven API error: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  console.log("[Poly Haven] Response data keys:", typeof data === "object" && data !== null ? Object.keys(data).slice(0, 10) : "n/a");
+  return data;
 }
 
 function parseAssetList(raw: Record<string, { name?: string; categories?: string[]; tags?: string[]; download_count?: number }>, type: PolyHavenAssetType): PolyHavenAsset[] {
@@ -88,10 +92,34 @@ export function getThumbnailUrl(assetId: string, width = 256): string {
 }
 
 export async function getModelDownloadUrl(assetId: string, resolution = "1k"): Promise<string | null> {
-  const links = await getDownloadLinks(assetId);
-  const gltf = links?.gltf?.[resolution]?.url ?? links?.gltf?.["1k"]?.url;
-  if (gltf) return gltf;
-  const fbx = links?.fbx?.[resolution]?.url ?? links?.fbx?.["1k"]?.url;
+  const links = await getDownloadLinks(assetId) as Record<string, unknown>;
+  if (!links) {
+    console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> links empty");
+    return null;
+  }
+  const keys = Object.keys(links);
+  console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> links keys:", keys);
+
+  let gltf = (links as Record<string, Record<string, { url?: string }>>)?.gltf?.[resolution]?.url
+    ?? (links as Record<string, Record<string, { url?: string }>>)?.gltf?.["1k"]?.url;
+  if (!gltf && (keys.includes("1k") || keys.includes("2k"))) {
+    const resKey = keys.includes(resolution) ? resolution : "1k";
+    const resBlock = (links[resKey] as Record<string, { url?: string }>) ?? {};
+    gltf = resBlock.gltf?.url ?? resBlock.GLTF?.url;
+  }
+  if (gltf) {
+    console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> URL found (gltf)");
+    return gltf;
+  }
+  let fbx = (links as Record<string, Record<string, { url?: string }>>)?.fbx?.[resolution]?.url
+    ?? (links as Record<string, Record<string, { url?: string }>>)?.fbx?.["1k"]?.url;
+  if (!fbx && (keys.includes("1k") || keys.includes("2k"))) {
+    const resKey = keys.includes(resolution) ? resolution : "1k";
+    const resBlock = (links[resKey] as Record<string, { url?: string }>) ?? {};
+    fbx = resBlock.fbx?.url ?? resBlock.FBX?.url;
+  }
+  if (fbx) console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> URL found (fbx)");
+  else console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> NO download URL");
   return fbx ?? null;
 }
 

@@ -52,30 +52,31 @@ export async function POST(request: NextRequest) {
 
     if (detectAssetImportRequest(trimmed)) {
       const result = await handleAssetRequest(trimmed, projectId);
-      if (result) {
-        await queueUE5Command(projectId, result.importCode);
-        await supabase.from("chat_turns").insert({
-          project_id: projectId,
-          agent_name: "Grand Studio",
-          agent_title: "AI Co-Pilot",
-          content: result.chatMessage,
-          turn_type: "direct",
-        });
-        const stream = new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: result.chatMessage })}\n\n`));
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: result.chatMessage })}\n\n`));
-            controller.close();
-          },
-        });
-        return new Response(stream, {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-store",
-          },
-        });
-      }
+      const encoder = new TextEncoder();
+      const chatMessage = result
+        ? result.chatMessage
+        : "Couldn't find that on Poly Haven or Sketchfab. Try the Asset Library tabs to browse, or use a different search term.";
+      if (result) await queueUE5Command(projectId, result.importCode);
+      await supabase.from("chat_turns").insert({
+        project_id: projectId,
+        agent_name: "Grand Studio",
+        agent_title: "AI Co-Pilot",
+        content: chatMessage,
+        turn_type: "direct",
+      });
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: chatMessage })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: chatMessage })}\n\n`));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-store",
+        },
+      });
     }
 
     const finalMessage = isGreetingOrQuestion(trimmed)

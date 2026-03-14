@@ -19,26 +19,39 @@ export async function POST(request: NextRequest) {
 
     const trimmed = prompt.trim();
 
-    if (detectAssetImportRequest(trimmed) && projectId) {
+    const importDetected = detectAssetImportRequest(trimmed);
+    console.log("[BUILD STREAM] Checking if import request:", !!importDetected, "projectId:", !!projectId);
+    if (importDetected) {
+      console.log("[BUILD STREAM] Import detected — platform:", importDetected.platform, "query:", importDetected.query);
+    }
+
+    if (importDetected && projectId) {
+      console.log("[BUILD STREAM] Handling import directly — NOT calling AI");
       const result = await handleAssetRequest(trimmed, projectId);
+      console.log("[BUILD STREAM] handleAssetRequest result:", result ? "success" : "null");
+      const encoder = new TextEncoder();
+      const streamBody = result
+        ? (controller: ReadableStreamDefaultController<Uint8Array>) => {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: result!.chatMessage } }] })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: result!.chatMessage })}\n\n`));
+            controller.close();
+          }
+        : (controller: ReadableStreamDefaultController<Uint8Array>) => {
+            const msg = "Couldn't find that on Poly Haven or Sketchfab. Try the Poly Haven or Sketchfab tab to browse, or use a different search term.";
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: msg } }] })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: msg })}\n\n`));
+            controller.close();
+          };
       if (result) {
         await queueUE5Command(projectId, result.importCode);
-        const stream = new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: result.chatMessage } }] })}\n\n`));
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: result.chatMessage })}\n\n`));
-            controller.close();
-          },
-        });
-        return new Response(stream, {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache, no-transform",
-            Connection: "keep-alive",
-          },
-        });
       }
+      return new Response(new ReadableStream({ start: streamBody }), {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
     }
 
     const finalPrompt = isGreetingOrQuestion(trimmed)

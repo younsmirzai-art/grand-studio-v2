@@ -25,6 +25,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { ASSET_CATALOG, type AssetEntry } from "@/lib/ue5/assetLibrary";
+import { generateUE5ImportCode } from "@/lib/ue5/importCode";
 import { SCENE_TEMPLATES } from "@/lib/ue5/sceneTemplates";
 import type { UE5Command, GodEyeEntry } from "@/lib/types";
 import { toast } from "sonner";
@@ -106,12 +107,14 @@ export function WorkspacePanel({
   const [phResults, setPhResults] = useState<PHResult[]>([]);
   const [phLoading, setPhLoading] = useState(false);
   const [phDownloading, setPhDownloading] = useState<string | null>(null);
+  const [phImportedId, setPhImportedId] = useState<string | null>(null);
 
   // Sketchfab state
   const [sfQuery, setSfQuery] = useState("");
   const [sfResults, setSfResults] = useState<SFResult[]>([]);
   const [sfLoading, setSfLoading] = useState(false);
   const [sfDownloading, setSfDownloading] = useState<string | null>(null);
+  const [sfImportedId, setSfImportedId] = useState<string | null>(null);
 
   const filteredAssets = useMemo(() => {
     let list = ASSET_CATALOG;
@@ -173,27 +176,44 @@ export function WorkspacePanel({
     setPhLoading(false);
   }, [phQuery, phSubTab]);
 
-  const downloadPolyHaven = useCallback(async (assetId: string, type: string) => {
+  const downloadPolyHaven = useCallback(async (assetId: string, type: string, displayName: string) => {
     setPhDownloading(assetId);
-    toast.info("Downloading from Poly Haven...");
     try {
       const res = await fetch("/api/polyhaven/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assetId, type, projectId }),
+        body: JSON.stringify({ assetId, type: type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model", projectId }),
       });
       const data = await res.json();
-      if (data.url) {
-        toast.success("Asset downloaded! Use AI Co-Pilot to place it.");
-        onAssetClick({ name: assetId.replace(/_/g, " "), path: data.url, category: "Poly Haven", subcategory: type, description: `Poly Haven ${type}` });
-      } else {
-        toast.error(data.error ?? "Download failed");
+      if (!data.url) {
+        toast.error(data.error ?? "Import failed. Try another asset.");
+        setPhDownloading(null);
+        return;
       }
+      const ext = data.url.endsWith(".glb") ? "glb" : "gltf";
+      const filename = `${assetId}.${ext}`;
+      const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const code = generateUE5ImportCode(data.url, filename, label);
+      const execRes = await fetch("/api/ue5/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, code }),
+      });
+      const execData = await execRes.json();
+      if (!execRes.ok || !execData.commandId) {
+        toast.error("Import failed. Try another asset.");
+        setPhDownloading(null);
+        return;
+      }
+      const name = displayName || assetId.replace(/_/g, " ");
+      toast.success(`${name} imported to UE5!`);
+      setPhImportedId(assetId);
+      setTimeout(() => setPhImportedId(null), 3000);
     } catch {
-      toast.error("Download failed");
+      toast.error("Import failed. Try another asset.");
     }
     setPhDownloading(null);
-  }, [projectId, onAssetClick]);
+  }, [projectId]);
 
   // Sketchfab search
   const searchSketchfab = useCallback(async () => {
@@ -215,7 +235,6 @@ export function WorkspacePanel({
 
   const downloadSketchfab = useCallback(async (uid: string, name: string) => {
     setSfDownloading(uid);
-    toast.info("Downloading from Sketchfab...");
     try {
       const res = await fetch("/api/sketchfab/download", {
         method: "POST",
@@ -223,17 +242,34 @@ export function WorkspacePanel({
         body: JSON.stringify({ uid, projectId }),
       });
       const data = await res.json();
-      if (data.url) {
-        toast.success("Model downloaded! Use AI Co-Pilot to place it.");
-        onAssetClick({ name, path: data.url, category: "Sketchfab", subcategory: "Model", description: `Sketchfab model: ${name}` });
-      } else {
-        toast.error(data.error ?? "Download failed");
+      if (!data.url) {
+        toast.error(data.error ?? "Import failed. Try another asset.");
+        setSfDownloading(null);
+        return;
       }
+      const ext = data.url.endsWith(".glb") ? "glb" : "gltf";
+      const filename = `${uid}.${ext}`;
+      const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
+      const code = generateUE5ImportCode(data.url, filename, label);
+      const execRes = await fetch("/api/ue5/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, code }),
+      });
+      const execData = await execRes.json();
+      if (!execRes.ok || !execData.commandId) {
+        toast.error("Import failed. Try another asset.");
+        setSfDownloading(null);
+        return;
+      }
+      toast.success(`${name} imported to UE5!`);
+      setSfImportedId(uid);
+      setTimeout(() => setSfImportedId(null), 3000);
     } catch {
-      toast.error("Download failed");
+      toast.error("Import failed. Try another asset.");
     }
     setSfDownloading(null);
-  }, [projectId, onAssetClick]);
+  }, [projectId]);
 
   const tabs: { id: TabId; label: string; icon: typeof Box }[] = [
     { id: "starter", label: "Starter", icon: Box },
@@ -400,21 +436,31 @@ export function WorkspacePanel({
                     <p className="text-xs font-medium text-white truncate mb-1">
                       {r.name || r.id.replace(/_/g, " ")}
                     </p>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] text-[#606068]">
                         {r.downloadCount.toLocaleString()} downloads
                       </span>
                       <button
-                        onClick={() => downloadPolyHaven(r.id, phSubTab)}
-                        disabled={phDownloading === r.id}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#2196F3]/10 text-[#2196F3] text-[10px] font-medium hover:bg-[#2196F3]/20 transition disabled:opacity-50"
+                        onClick={() => phSubTab === "models" && downloadPolyHaven(r.id, phSubTab, r.name || r.id.replace(/_/g, " "))}
+                        disabled={phDownloading === r.id || phSubTab !== "models"}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                       >
                         {phDownloading === r.id ? (
-                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Importing…
+                          </>
+                        ) : phImportedId === r.id ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            Imported!
+                          </>
                         ) : (
-                          <Download className="w-2.5 h-2.5" />
+                          <>
+                            <Download className="w-3 h-3" />
+                            Import to Scene
+                          </>
                         )}
-                        Import
                       </button>
                     </div>
                   </div>
@@ -485,7 +531,7 @@ export function WorkspacePanel({
                     <p className="text-[10px] text-[#606068] truncate mb-1">
                       by {r.author} · {(r.faceCount / 1000).toFixed(0)}K faces
                     </p>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <a
                         href={`https://sketchfab.com/3d-models/${r.uid}`}
                         target="_blank"
@@ -497,14 +543,24 @@ export function WorkspacePanel({
                       <button
                         onClick={() => downloadSketchfab(r.uid, r.name)}
                         disabled={sfDownloading === r.uid}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#2196F3]/10 text-[#2196F3] text-[10px] font-medium hover:bg-[#2196F3]/20 transition disabled:opacity-50"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 shrink-0"
                       >
                         {sfDownloading === r.uid ? (
-                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Importing…
+                          </>
+                        ) : sfImportedId === r.uid ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            Imported!
+                          </>
                         ) : (
-                          <Download className="w-2.5 h-2.5" />
+                          <>
+                            <Download className="w-3 h-3" />
+                            Import to Scene
+                          </>
                         )}
-                        Import
                       </button>
                     </div>
                   </div>
