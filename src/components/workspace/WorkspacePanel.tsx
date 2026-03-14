@@ -178,41 +178,65 @@ export function WorkspacePanel({
 
   const downloadPolyHaven = useCallback(async (assetId: string, type: string, displayName: string) => {
     setPhDownloading(assetId);
+    const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
     try {
       const res = await fetch("/api/polyhaven/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assetId, type: type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model", projectId }),
+        body: JSON.stringify({ assetId, type: requestType, projectId }),
       });
-      const data = await res.json();
-      if (!data.url) {
-        toast.error(data.error ?? "Import failed. Try another asset.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const reason = data?.error ?? `HTTP ${res.status}`;
+        console.error("[Import Poly Haven] Download API error:", reason, data);
         setPhDownloading(null);
+        toast.error(`Import failed: ${reason}`);
+        return;
+      }
+      if (!data.url) {
+        const reason = data?.error ?? "No URL in response";
+        console.error("[Import Poly Haven] No url in response:", data);
+        setPhDownloading(null);
+        toast.error(`Import failed: ${reason}`);
         return;
       }
       const ext = data.url.endsWith(".glb") ? "glb" : "gltf";
       const filename = `${assetId}.${ext}`;
       const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const code = generateUE5ImportCode(data.url, filename, label);
+      let code: string;
+      try {
+        code = generateUE5ImportCode(data.url, filename, label);
+      } catch (e) {
+        console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
+        setPhDownloading(null);
+        toast.error("Import failed: could not generate import code");
+        return;
+      }
       const execRes = await fetch("/api/ue5/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, code }),
       });
-      const execData = await execRes.json();
+      const execData = await execRes.json().catch(() => ({}));
       if (!execRes.ok || !execData.commandId) {
-        toast.error("Import failed. Try another asset.");
+        const reason = execData?.error ?? `HTTP ${execRes.status}`;
+        console.error("[Import Poly Haven] UE5 execute error:", reason, execData);
         setPhDownloading(null);
+        toast.error(`Import failed: ${reason}`);
         return;
       }
       const name = displayName || assetId.replace(/_/g, " ");
       toast.success(`${name} imported to UE5!`);
       setPhImportedId(assetId);
       setTimeout(() => setPhImportedId(null), 3000);
-    } catch {
-      toast.error("Import failed. Try another asset.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error("[Import Poly Haven] Error:", e);
+      setPhDownloading(null);
+      toast.error(`Import failed: ${message}`);
+    } finally {
+      setPhDownloading(null);
     }
-    setPhDownloading(null);
   }, [projectId]);
 
   // Sketchfab search
@@ -241,34 +265,57 @@ export function WorkspacePanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uid, projectId }),
       });
-      const data = await res.json();
-      if (!data.url) {
-        toast.error(data.error ?? "Import failed. Try another asset.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const reason = data?.error ?? `HTTP ${res.status}`;
+        console.error("[Import Sketchfab] Download API error:", reason, data);
         setSfDownloading(null);
+        toast.error(`Import failed: ${reason}`);
+        return;
+      }
+      if (!data.url) {
+        const reason = data?.error ?? "No URL in response";
+        console.error("[Import Sketchfab] No url in response:", data);
+        setSfDownloading(null);
+        toast.error(`Import failed: ${reason}`);
         return;
       }
       const ext = data.url.endsWith(".glb") ? "glb" : "gltf";
       const filename = `${uid}.${ext}`;
       const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
-      const code = generateUE5ImportCode(data.url, filename, label);
+      let code: string;
+      try {
+        code = generateUE5ImportCode(data.url, filename, label);
+      } catch (e) {
+        console.error("[Import Sketchfab] generateUE5ImportCode failed:", e);
+        setSfDownloading(null);
+        toast.error("Import failed: could not generate import code");
+        return;
+      }
       const execRes = await fetch("/api/ue5/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, code }),
       });
-      const execData = await execRes.json();
+      const execData = await execRes.json().catch(() => ({}));
       if (!execRes.ok || !execData.commandId) {
-        toast.error("Import failed. Try another asset.");
+        const reason = execData?.error ?? `HTTP ${execRes.status}`;
+        console.error("[Import Sketchfab] UE5 execute error:", reason, execData);
         setSfDownloading(null);
+        toast.error(`Import failed: ${reason}`);
         return;
       }
       toast.success(`${name} imported to UE5!`);
       setSfImportedId(uid);
       setTimeout(() => setSfImportedId(null), 3000);
-    } catch {
-      toast.error("Import failed. Try another asset.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error("[Import Sketchfab] Error:", e);
+      setSfDownloading(null);
+      toast.error(`Import failed: ${message}`);
+    } finally {
+      setSfDownloading(null);
     }
-    setSfDownloading(null);
   }, [projectId]);
 
   const tabs: { id: TabId; label: string; icon: typeof Box }[] = [

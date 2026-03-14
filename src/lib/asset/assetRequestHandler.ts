@@ -53,6 +53,10 @@ export function detectAssetImportRequest(message: string): {
   return { isImport: true, platform, query };
 }
 
+const STOPWORDS = new Set([
+  "ok", "okay", "lets", "let's", "search", "import", "that", "this", "from", "a", "an", "the", "and", "me", "please", "find", "get", "for", "it", "to", "in", "on", "with", "can", "you", "could", "would", "want", "need", "just", "like", "something",
+]);
+
 function extractObjectQuery(message: string, hasPolyHaven: boolean, hasSketchfab: boolean): string {
   let text = message
     .replace(/from\s+poly\s+haven/gi, "")
@@ -66,12 +70,12 @@ function extractObjectQuery(message: string, hasPolyHaven: boolean, hasSketchfab
     .replace(/get\s+/gi, " ")
     .replace(/fetch\s+/gi, " ")
     .replace(/download\s+/gi, " ")
-    .replace(/a\s+/gi, " ")
-    .replace(/an\s+/gi, " ")
-    .replace(/the\s+/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return text || "model";
+  const words = text.split(" ").filter(Boolean);
+  const content = words.filter((w) => !STOPWORDS.has(w.toLowerCase()));
+  const query = content.join(" ").trim();
+  return query || "model";
 }
 
 async function downloadPolyHavenToSupabase(assetId: string): Promise<string | null> {
