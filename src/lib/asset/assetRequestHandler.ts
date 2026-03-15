@@ -177,7 +177,7 @@ export async function handleAssetRequest(
     return null;
   }
 
-  const ext = storageUrl.endsWith(".glb") ? "glb" : storageUrl.endsWith(".fbx") ? "fbx" : "gltf";
+  const ext = storageUrl.includes("sketchfab") ? "glb" : storageUrl.endsWith(".glb") ? "glb" : storageUrl.endsWith(".fbx") ? "fbx" : "gltf";
   const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
   const label = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
   const importCode = generateUE5ImportCode(storageUrl, filename, label);
@@ -265,7 +265,7 @@ export async function enrichCodeWithPolyHavenAssets(
   ];
 
   for (const imp of imports) {
-    const ext = imp.url.endsWith(".glb") ? "glb" : "gltf";
+    const ext = imp.url.includes("sketchfab") ? "glb" : imp.url.endsWith(".glb") ? "glb" : "gltf";
     const filename = `${imp.label}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const ue5Path = `/Game/GrandStudio/Imports/${imp.label}`;

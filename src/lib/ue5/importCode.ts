@@ -9,7 +9,11 @@ export function generateUE5ImportCode(
   label: string
 ): string {
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
-  const localPath = `C:/GrandStudio/Downloads/${filename}`;
+  // Sketchfab Download API returns GLB binary; always use .glb extension for Sketchfab URLs
+  const resolvedFilename = downloadUrl.toLowerCase().includes("sketchfab")
+    ? filename.replace(/\.gltf$/i, ".glb")
+    : filename;
+  const localPath = `C:/GrandStudio/Downloads/${resolvedFilename}`;
 
   return `import unreal
 import urllib.request
