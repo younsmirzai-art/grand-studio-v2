@@ -5,7 +5,7 @@ import { getClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Folder, Clock, LogOut, Search } from "lucide-react";
+import { Plus, Folder, Clock, LogOut, Search, Plug } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
 
@@ -85,6 +85,13 @@ export default function DashboardPage() {
           GRAND STUDIO
         </Link>
         <div className="flex-1" />
+        <Link
+          href="/connect"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#606068] hover:text-white hover:bg-white/5 transition"
+        >
+          <Plug className="w-3.5 h-3.5" />
+          Connect UE5
+        </Link>
         {user?.email && (
           <span className="text-xs text-[#606068] hidden sm:block">{user.email}</span>
         )}

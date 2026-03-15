@@ -670,14 +670,20 @@ export default function ProjectPage() {
 
         {/* Right */}
         <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg ${
-            isRelayConnected ? "bg-emerald-500/10" : "bg-red-500/10"
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${isRelayConnected ? "bg-emerald-500" : "bg-red-500"}`} />
-            <span className={`text-xs ${isRelayConnected ? "text-emerald-400" : "text-red-400"}`}>
-              {isRelayConnected ? "Connected" : "Disconnected"}
-            </span>
-          </div>
+          {isRelayConnected ? (
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-xs text-emerald-400">Connected</span>
+            </div>
+          ) : (
+            <Link
+              href="/connect"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition"
+            >
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-xs text-red-400">Disconnected — set up relay</span>
+            </Link>
+          )}
           <Link
             href={`/project/${projectId}/settings`}
             className="p-2 rounded-lg text-[#606068] hover:text-white hover:bg-white/5 transition"
