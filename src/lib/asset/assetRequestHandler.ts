@@ -7,7 +7,7 @@ import { searchAssets } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { createServerClient } from "@/lib/supabase/server";
-import { generateUE5ImportCode } from "@/lib/ue5/importCode";
+import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
 
 export interface AssetRequestResult {
   chatMessage: string;
@@ -154,6 +154,7 @@ export async function handleAssetRequest(
     }
   }
 
+  let sketchfabUid: string | null = null;
   if (!storageUrl && (platform === "sketchfab" || platform === "both")) {
     const token = process.env.SKETCHFAB_API_TOKEN;
     console.log("[handleAssetRequest] Sketchfab token present:", !!token);
@@ -167,6 +168,7 @@ export async function handleAssetRequest(
         if (storageUrl) {
           assetName = best.name;
           sourceLabel = "Sketchfab";
+          sketchfabUid = best.uid;
         }
       }
     }
@@ -177,10 +179,15 @@ export async function handleAssetRequest(
     return null;
   }
 
-  const ext = storageUrl.includes("sketchfab") ? "glb" : storageUrl.endsWith(".glb") ? "glb" : storageUrl.endsWith(".fbx") ? "fbx" : "gltf";
-  const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
   const label = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const importCode = generateUE5ImportCode(storageUrl, filename, label);
+  const importCode =
+    sourceLabel === "Sketchfab" && sketchfabUid
+      ? generateSketchfabImportCode(storageUrl, `${sketchfabUid}.zip`, label)
+      : (() => {
+          const ext = storageUrl!.endsWith(".glb") ? "glb" : storageUrl!.endsWith(".fbx") ? "fbx" : "gltf";
+          const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
+          return generateUE5ImportCode(storageUrl!, filename, label);
+        })();
   const chatMessage = sourceLabel
     ? `Found ${assetName} on ${sourceLabel}! Importing to your UE5 scene now… ✨`
     : `Found ${assetName}! Importing to your UE5 scene now… ✨`;

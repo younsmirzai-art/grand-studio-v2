@@ -25,7 +25,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { ASSET_CATALOG, type AssetEntry } from "@/lib/ue5/assetLibrary";
-import { generateUE5ImportCode } from "@/lib/ue5/importCode";
+import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
 import { SCENE_TEMPLATES } from "@/lib/ue5/sceneTemplates";
 import type { UE5Command, GodEyeEntry } from "@/lib/types";
 import { toast } from "sonner";
@@ -295,14 +295,12 @@ export function WorkspacePanel({
         toast.error(`Import failed: ${reason}`);
         return;
       }
-      const ext = data.url.includes("sketchfab") ? "glb" : data.url.endsWith(".glb") ? "glb" : "gltf";
-      const filename = `${uid}.${ext}`;
       const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
       let code: string;
       try {
-        code = generateUE5ImportCode(data.url, filename, label);
+        code = generateSketchfabImportCode(data.url, `${uid}.zip`, label);
       } catch (e) {
-        console.error("[Import Sketchfab] generateUE5ImportCode failed:", e);
+        console.error("[Import Sketchfab] generateSketchfabImportCode failed:", e);
         setSfDownloading(null);
         toast.error("Import failed: could not generate import code");
         return;
