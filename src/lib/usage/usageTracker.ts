@@ -39,7 +39,7 @@ export interface UsageLimitResult {
 }
 
 /** Get effective plan: only 'active' subscription with current_period_end in future counts as pro/team. */
-async function getEffectivePlan(userId: string): Promise<"free" | "pro" | "team"> {
+export async function getEffectivePlan(userId: string): Promise<"free" | "pro" | "team"> {
   const supabase = createServerClient();
   const { data: sub } = await supabase
     .from("subscriptions")

@@ -180,6 +180,30 @@ export default function HomePage() {
     }
   };
 
+  const handleUpgradeTeam = async () => {
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ priceId: STRIPE_PRICES.team }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      if (res.status === 401) {
+        router.push("/auth/login?redirectTo=/dashboard");
+        return;
+      }
+      if (data.error) alert(data.error);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
   useEffect(() => {
     createAuthClient()
       .auth.getUser()
@@ -208,6 +232,7 @@ export default function HomePage() {
             <a href="#features" className="hover:text-white transition-colors">Features</a>
             <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
             <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
+            <Link href="/support" className="hover:text-white transition-colors">Support</Link>
           </div>
 
           {/* Right — desktop */}
@@ -238,6 +263,7 @@ export default function HomePage() {
             <a href="#features" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">Features</a>
             <a href="#how-it-works" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">How It Works</a>
             <a href="#pricing" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">Pricing</a>
+            <Link href="/support" onClick={() => setMobileOpen(false)} className="block text-sm text-[#A0A0A8] hover:text-white">Support</Link>
             <hr className="border-white/5" />
             <Link href="/auth/login" className="block text-sm text-[#A0A0A8]">Login</Link>
             <Link href="/auth/signup" className="block text-center px-5 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white">
@@ -560,12 +586,14 @@ export default function HomePage() {
                   </li>
                 ))}
               </ul>
-              <a
-                href="mailto:team@grandstudio.app"
-                className="block text-center w-full py-3 rounded-lg text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition"
+              <button
+                type="button"
+                onClick={handleUpgradeTeam}
+                disabled={checkoutLoading}
+                className="block text-center w-full py-3 rounded-lg text-sm font-bold border border-white/20 text-white hover:bg-white/10 transition disabled:opacity-50"
               >
-                CONTACT US
-              </a>
+                {checkoutLoading ? "Redirecting…" : "GET TEAM PLAN"}
+              </button>
             </div>
           </div>
         </div>
@@ -670,6 +698,9 @@ export default function HomePage() {
                 </li>
                 <li>
                   <a href="#pricing" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">Pricing</a>
+                </li>
+                <li>
+                  <Link href="/support" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">Support</Link>
                 </li>
                 <li>
                   <Link href="/connect" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">Documentation</Link>
