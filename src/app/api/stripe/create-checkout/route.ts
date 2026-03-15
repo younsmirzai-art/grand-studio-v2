@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerAuthClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const supabase = await createServerAuthClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    console.log("[create-checkout] user session:", user ? { id: user.id, email: user.email } : "none");
+    if (authError) {
+      console.log("[create-checkout] auth error:", authError.message, authError);
+    }
+
     if (!user) {
+      console.log("[create-checkout] Unauthorized: no user session (cookies may not be sent or session expired)");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -48,6 +55,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    console.error("[create-checkout] error:", e);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

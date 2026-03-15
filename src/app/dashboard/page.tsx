@@ -63,7 +63,7 @@ export default function DashboardPage() {
   const handleManageSubscription = async () => {
     setPortalLoading(true);
     try {
-      const res = await fetch("/api/stripe/portal", { method: "POST" });
+      const res = await fetch("/api/stripe/portal", { method: "POST", credentials: "include" });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
       else if (data.error) alert(data.error);
@@ -78,6 +78,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
       });
       const data = await res.json();

@@ -162,6 +162,7 @@ export default function HomePage() {
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
       });
       const data = await res.json();
