@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable}`}>
+    <html lang="en" className={`dark scroll-smooth ${inter.variable}`}>
       <body className="font-sans antialiased bg-[#0A0A0B] text-white">
         <TooltipProvider delayDuration={200}>
           {children}

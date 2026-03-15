@@ -20,6 +20,8 @@ import {
   Github,
   Twitter,
   MapPin,
+  Settings,
+  Rocket,
 } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 
@@ -91,10 +93,32 @@ const PILLARS = [
 ];
 
 const STEPS = [
-  { num: "01", icon: Download, title: "CONNECT", desc: "Download the relay bridge and connect your UE5 editor in one click." },
-  { num: "02", icon: MessageSquare, title: "DESCRIBE", desc: "Tell the AI what you want to build — a castle, a forest, a city block." },
-  { num: "03", icon: Code, title: "GENERATE", desc: "AI writes production-ready UE5 Python code with real assets and materials." },
-  { num: "04", icon: Play, title: "EXECUTE", desc: "Code auto-executes in Unreal Engine. Watch your scene come to life." },
+  {
+    num: "01",
+    icon: Download,
+    title: "DOWNLOAD",
+    desc: "Download the free relay bridge for Windows. One small file connects Grand Studio to your Unreal Engine.",
+    ctaLabel: "Download for Windows",
+    ctaHref: "/api/relay/setup-script",
+  },
+  {
+    num: "02",
+    icon: Play,
+    title: "OPEN UE5",
+    desc: "Open Unreal Engine 5, go to Edit > Plugins, enable Web Remote Control, restart UE5.",
+  },
+  {
+    num: "03",
+    icon: MessageSquare,
+    title: "DESCRIBE",
+    desc: "Tell the AI what you want to build. A castle, a forest, a city, anything you can imagine.",
+  },
+  {
+    num: "04",
+    icon: Code,
+    title: "BUILD",
+    desc: "AI writes Python code, imports real 3D models from Poly Haven and Sketchfab, and builds your scene live.",
+  },
 ];
 
 const SHOWCASE = [
@@ -396,7 +420,16 @@ export default function HomePage() {
                   <s.icon className="w-7 h-7 text-[#2196F3]" />
                 </div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">{s.title}</h3>
-                <p className="text-sm text-[#A0A0A8] leading-relaxed">{s.desc}</p>
+                <p className="text-sm text-[#A0A0A8] leading-relaxed mb-3">{s.desc}</p>
+                {"ctaHref" in s && s.ctaHref && "ctaLabel" in s && s.ctaLabel && (
+                  <a
+                    href={s.ctaHref}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-[#2196F3]/20 border border-[#2196F3]/40 text-[#2196F3] hover:bg-[#2196F3]/30 transition"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {s.ctaLabel}
+                  </a>
+                )}
               </div>
             ))}
           </div>
@@ -522,7 +555,59 @@ export default function HomePage() {
       </Section>
 
       {/* ============================================================ */}
-      {/*  SECTION 8 — FINAL CTA                                       */}
+      {/*  SECTION 8 — GET STARTED                                     */}
+      {/* ============================================================ */}
+      <Section id="get-started" className="py-32 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-16">
+            <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— GET STARTED</p>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">Three Steps to Your First Scene</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="text-center p-6 rounded-2xl border border-white/5 bg-[#111114]/50 hover:border-[#2196F3]/20 transition">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center">
+                <Download className="w-7 h-7 text-[#2196F3]" />
+              </div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">1. Download the Relay</h3>
+              <p className="text-sm text-[#A0A0A8] mb-4">One-click setup for Windows. Connects Grand Studio to UE5.</p>
+              <a
+                href="/api/relay/setup-script"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-[#2196F3]/20 border border-[#2196F3]/40 text-[#2196F3] hover:bg-[#2196F3]/30 transition"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download
+              </a>
+            </div>
+
+            <div className="text-center p-6 rounded-2xl border border-white/5 bg-[#111114]/50 hover:border-[#2196F3]/20 transition">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center">
+                <Settings className="w-7 h-7 text-[#2196F3]" />
+              </div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">2. Enable UE5 Plugin</h3>
+              <p className="text-sm text-[#A0A0A8]">Edit &gt; Plugins &rarr; enable Web Remote Control, then restart UE5.</p>
+            </div>
+
+            <div className="text-center p-6 rounded-2xl border border-white/5 bg-[#111114]/50 hover:border-[#2196F3]/20 transition">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center">
+                <Rocket className="w-7 h-7 text-[#2196F3]" />
+              </div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">3. Start Building</h3>
+              <p className="text-sm text-[#A0A0A8] mb-4">Create an account and describe your first scene in plain English.</p>
+              <Link
+                href="/auth/signup"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition"
+              >
+                Sign up free
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  SECTION 9 — FINAL CTA                                       */}
       {/* ============================================================ */}
       <Section className="py-32 px-6 relative">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(33,150,243,0.12)_0%,_transparent_70%)]" />
@@ -563,18 +648,15 @@ export default function HomePage() {
             <div>
               <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-4">Product</h4>
               <ul className="space-y-2.5">
-                {[
-                  { label: "Features", href: "#features" },
-                  { label: "Pricing", href: "#pricing" },
-                  { label: "Documentation", href: "#" },
-                  { label: "GitHub", href: "#" },
-                ].map((l) => (
-                  <li key={l.label}>
-                    <a href={l.href} className="text-sm text-[#A0A0A8] hover:text-white transition-colors">
-                      {l.label}
-                    </a>
-                  </li>
-                ))}
+                <li>
+                  <a href="#features" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">Features</a>
+                </li>
+                <li>
+                  <a href="#pricing" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">Pricing</a>
+                </li>
+                <li>
+                  <Link href="/connect" className="text-sm text-[#A0A0A8] hover:text-white transition-colors">Documentation</Link>
+                </li>
               </ul>
             </div>
 
@@ -586,10 +668,22 @@ export default function HomePage() {
                 <span>Built for creators everywhere</span>
               </div>
               <div className="flex items-center gap-3">
-                <a href="#" className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition">
+                <a
+                  href="https://github.com/younsmirzai-art/grand-studio-v2"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition"
+                  aria-label="GitHub"
+                >
                   <Github className="w-4 h-4" />
                 </a>
-                <a href="#" className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition">
+                <a
+                  href="https://twitter.com/grandstudio"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition"
+                  aria-label="Twitter"
+                >
                   <Twitter className="w-4 h-4" />
                 </a>
               </div>
@@ -600,8 +694,8 @@ export default function HomePage() {
           <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-xs text-[#606068]">&copy; 2026 Grand Studio. All rights reserved.</p>
             <div className="flex items-center gap-6 text-xs text-[#606068]">
-              <a href="#" className="hover:text-[#A0A0A8] transition-colors">Privacy</a>
-              <a href="#" className="hover:text-[#A0A0A8] transition-colors">Terms</a>
+              <Link href="/privacy" className="hover:text-[#A0A0A8] transition-colors">Privacy</Link>
+              <Link href="/terms" className="hover:text-[#A0A0A8] transition-colors">Terms</Link>
             </div>
           </div>
         </div>
