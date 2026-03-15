@@ -2,6 +2,7 @@
 
 import { createAuthClient } from "@/lib/supabase/auth-client";
 import { getClient } from "@/lib/supabase/client";
+import { STRIPE_PRICES } from "@/lib/stripe/config";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -21,6 +22,7 @@ export default function DashboardPage() {
   const [creating, setCreating] = useState(false);
   const [subscription, setSubscription] = useState<{ plan: string; status: string } | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
 
   useEffect(() => {
     const auth = createAuthClient();
@@ -67,6 +69,22 @@ export default function DashboardPage() {
       else if (data.error) alert(data.error);
     } finally {
       setPortalLoading(false);
+    }
+  };
+
+  const handleUpgradeToPro = async () => {
+    setUpgradeLoading(true);
+    try {
+      const res = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else if (data.error) alert(data.error);
+    } finally {
+      setUpgradeLoading(false);
     }
   };
 
@@ -120,7 +138,7 @@ export default function DashboardPage() {
           <Plug className="w-3.5 h-3.5" />
           Connect UE5
         </Link>
-        {isProOrTeam && subscriptionActive && (
+        {isProOrTeam && subscriptionActive ? (
           <button
             onClick={handleManageSubscription}
             disabled={portalLoading}
@@ -128,6 +146,14 @@ export default function DashboardPage() {
           >
             <CreditCard className="w-3.5 h-3.5" />
             Manage Subscription
+          </button>
+        ) : (
+          <button
+            onClick={handleUpgradeToPro}
+            disabled={upgradeLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#2196F3] to-[#1976D2] text-white hover:brightness-110 transition disabled:opacity-50"
+          >
+            {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
           </button>
         )}
         {user?.email && (

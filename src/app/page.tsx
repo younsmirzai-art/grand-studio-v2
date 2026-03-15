@@ -23,6 +23,7 @@ import {
   Gamepad2,
 } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
+import { STRIPE_PRICES } from "@/lib/stripe/config";
 
 /* ------------------------------------------------------------------ */
 /*  Animated section wrapper                                          */
@@ -153,6 +154,30 @@ const TEAM_FEATURES = [
 export default function HomePage() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  const handleUpgradePro = async () => {
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      if (res.status === 401) {
+        router.push("/auth/login?redirectTo=/dashboard");
+        return;
+      }
+      if (data.error) alert(data.error);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
 
   useEffect(() => {
     createAuthClient()
@@ -509,12 +534,14 @@ export default function HomePage() {
                   </li>
                 ))}
               </ul>
-              <Link
-                href="/dashboard?upgrade=pro"
-                className="block text-center w-full py-3 rounded-lg text-sm font-bold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition"
+              <button
+                type="button"
+                onClick={handleUpgradePro}
+                disabled={checkoutLoading}
+                className="block text-center w-full py-3 rounded-lg text-sm font-bold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition disabled:opacity-50"
               >
-                UPGRADE TO PRO
-              </Link>
+                {checkoutLoading ? "Redirecting…" : "UPGRADE TO PRO"}
+              </button>
             </div>
 
             {/* Team */}
