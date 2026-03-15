@@ -23,6 +23,8 @@ export default function DashboardPage() {
   const [subscription, setSubscription] = useState<{ plan: string; status: string } | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeModalMessage, setUpgradeModalMessage] = useState("");
 
   useEffect(() => {
     const auth = createAuthClient();
@@ -101,21 +103,26 @@ export default function DashboardPage() {
   const handleCreate = async () => {
     if (!newName.trim() || !user) return;
     setCreating(true);
+    setUpgradeModalOpen(false);
     try {
-      const supabase = getClient();
-      const { data, error } = await supabase
-        .from("projects")
-        .insert({
-          name: newName.trim(),
-          initial_prompt: newPrompt.trim(),
-          user_id: user.id,
-          status: "active",
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      if (data) router.push(`/project/${data.id}`);
-    } catch {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: newName.trim(), initial_prompt: newPrompt.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.id) {
+        router.push(`/project/${data.id}`);
+        return;
+      }
+      if (res.status === 403 && data.limitReached) {
+        setUpgradeModalMessage(data.error || "You can only have 2 projects on the Free plan. Upgrade to Pro for up to 10 projects!");
+        setUpgradeModalOpen(true);
+        return;
+      }
+      if (data.error) alert(data.error);
+    } finally {
       setCreating(false);
     }
   };
@@ -158,7 +165,12 @@ export default function DashboardPage() {
           </button>
         )}
         {user?.email && (
-          <span className="text-xs text-[#606068] hidden sm:block">{user.email}</span>
+          <span className="text-xs text-[#606068] hidden sm:flex sm:items-center sm:gap-2">
+            <span>{user.email}</span>
+            <span className="px-2 py-0.5 rounded bg-white/5 text-[10px] font-medium text-[#A0A0A8]">
+              {!subscription || subscription.status !== "active" ? "Free Plan" : subscription.plan === "team" ? "Team Plan" : subscription.plan === "pro" ? "Pro Plan" : "Free Plan"}
+            </span>
+          </span>
         )}
         <button
           onClick={handleSignOut}
@@ -293,6 +305,39 @@ export default function DashboardPage() {
                 className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#1976D2] text-white text-sm font-semibold hover:brightness-110 transition disabled:opacity-40"
               >
                 {creating ? "Creating…" : "Create"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Upgrade limit modal */}
+      {upgradeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setUpgradeModalOpen(false)} />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-[#111114] border border-[#2196F3]/20 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl"
+          >
+            <h2 className="text-lg font-semibold text-white mb-2">You&apos;ve reached your limit</h2>
+            <p className="text-sm text-[#A0A0A8] mb-4">{upgradeModalMessage}</p>
+            <p className="text-xs text-[#606068] mb-6">
+              Pro includes unlimited AI messages, unlimited Poly Haven & Sketchfab imports, 10 projects, and more.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setUpgradeModalOpen(false)}
+                className="px-4 py-2 text-sm text-[#606068] hover:text-white transition-colors"
+              >
+                Maybe later
+              </button>
+              <button
+                onClick={() => { setUpgradeModalOpen(false); handleUpgradeToPro(); }}
+                disabled={upgradeLoading}
+                className="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-sm font-semibold hover:brightness-110 transition disabled:opacity-50"
+              >
+                Upgrade to Pro — $19/month
               </button>
             </div>
           </motion.div>

@@ -13,6 +13,8 @@ export interface AssetRequestResult {
   chatMessage: string;
   importCode: string;
   assetName: string;
+  /** Which platform was used for usage tracking. */
+  platformUsed?: "polyhaven" | "sketchfab";
 }
 
 /** Detect if message is an asset import request and extract platform + query. */
@@ -192,8 +194,9 @@ export async function handleAssetRequest(
     ? `Found ${assetName} on ${sourceLabel}! Importing to your UE5 scene now… ✨`
     : `Found ${assetName}! Importing to your UE5 scene now… ✨`;
 
+  const platformUsed = sourceLabel === "Poly Haven" ? "polyhaven" : sourceLabel === "Sketchfab" ? "sketchfab" : undefined;
   console.log("[handleAssetRequest] Success — returning chatMessage + importCode");
-  return { chatMessage, importCode, assetName };
+  return { chatMessage, importCode, assetName, platformUsed };
 }
 
 /** Keywords that suggest we should add Poly Haven assets when code uses BasicShapes. */

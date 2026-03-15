@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTextureDownloadUrls, getHDRIDownloadUrl } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
 import { createClient } from "@supabase/supabase-js";
+import { createServerAuthClient } from "@/lib/supabase/server";
+import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,8 +12,17 @@ function getServiceClient() {
   return createClient(url, key);
 }
 
+const UPGRADE_MSG = "You've reached your daily Poly Haven import limit. Upgrade to Pro for unlimited imports!";
+
 export async function POST(request: NextRequest) {
   try {
+    const supabaseAuth = await createServerAuthClient();
+    const { data: { user } } = await supabaseAuth.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = user.id;
+
     const { assetId, type, resolution, projectId } = (await request.json()) as {
       assetId: string;
       type: string;
@@ -24,10 +35,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "model" || type === "models") {
+      const limitCheck = await checkUsageLimit(userId, "polyhaven_import");
+      if (!limitCheck.allowed) {
+        return NextResponse.json({ error: UPGRADE_MSG, limitReached: true }, { status: 403 });
+      }
       const url = await downloadPolyHavenModelToStorage(assetId);
       if (!url) {
         return NextResponse.json({ error: "No download URL found for this asset" }, { status: 404 });
       }
+      await recordUsage(userId, "polyhaven_import");
       return NextResponse.json({ url });
     }
 
@@ -37,6 +53,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "hdri" || type === "hdris") {
+      const limitCheck = await checkUsageLimit(userId, "polyhaven_import");
+      if (!limitCheck.allowed) {
+        return NextResponse.json({ error: UPGRADE_MSG, limitReached: true }, { status: 403 });
+      }
       const downloadUrl = await getHDRIDownloadUrl(assetId, resolution ?? "2k");
       if (!downloadUrl) {
         return NextResponse.json({ error: "No download URL found for this asset" }, { status: 404 });
@@ -67,6 +87,7 @@ export async function POST(request: NextRequest) {
         file_size_bytes: blob.size,
         license: "CC0",
       }, { onConflict: "source,source_id" });
+      await recordUsage(userId, "polyhaven_import");
       return NextResponse.json({ url: publicUrl.publicUrl, cached: false });
     }
 

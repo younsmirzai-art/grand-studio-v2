@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDownloadUrl } from "@/lib/sketchfab/client";
 import { createClient } from "@supabase/supabase-js";
+import { createServerAuthClient } from "@/lib/supabase/server";
+import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,8 +11,17 @@ function getServiceClient() {
   return createClient(url, key);
 }
 
+const UPGRADE_MSG = "You've reached your daily Sketchfab import limit. Upgrade to Pro for unlimited imports!";
+
 export async function POST(request: NextRequest) {
   try {
+    const supabaseAuth = await createServerAuthClient();
+    const { data: { user } } = await supabaseAuth.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = user.id;
+
     const { uid, projectId } = (await request.json()) as {
       uid: string;
       projectId?: string;
@@ -18,6 +29,11 @@ export async function POST(request: NextRequest) {
 
     if (!uid) {
       return NextResponse.json({ error: "uid is required" }, { status: 400 });
+    }
+
+    const limitCheck = await checkUsageLimit(userId, "sketchfab_import");
+    if (!limitCheck.allowed) {
+      return NextResponse.json({ error: UPGRADE_MSG, limitReached: true }, { status: 403 });
     }
 
     const token = process.env.SKETCHFAB_API_TOKEN;
@@ -61,6 +77,7 @@ export async function POST(request: NextRequest) {
       license: "CC-BY",
     }, { onConflict: "source,source_id" });
 
+    await recordUsage(userId, "sketchfab_import");
     return NextResponse.json({ url: downloadUrl });
   } catch (err) {
     console.error("[sketchfab/download] Error:", err);

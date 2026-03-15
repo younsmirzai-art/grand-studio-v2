@@ -17,6 +17,7 @@ import type { ChatTurn, UE5Command } from "@/lib/types";
 import type { AssetEntry } from "@/lib/ue5/assetLibrary";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { getTemplateForPrompt } from "@/lib/ue5/sceneTemplates";
+import { STRIPE_PRICES } from "@/lib/stripe/config";
 
 import { AICopilotPanel } from "@/components/workspace/AICopilotPanel";
 import { WorkspacePanel } from "@/components/workspace/WorkspacePanel";
@@ -69,6 +70,15 @@ export default function ProjectPage() {
   const [prefillMessage, setPrefillMessage] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [projectName, setProjectName] = useState("");
+  const [usage, setUsage] = useState<{
+    plan: string;
+    ai_message: { used: number; limit: number };
+    polyhaven_import: { used: number; limit: number };
+    sketchfab_import: { used: number; limit: number };
+  } | null>(null);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [limitReachedMessage, setLimitReachedMessage] = useState("");
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
 
   const autoBuildStartedRef = useRef(false);
   const seenSuccessIdsRef = useRef<Set<string>>(new Set());
@@ -114,6 +124,22 @@ export default function ProjectPage() {
       .order("created_at", { ascending: true });
     if (data) setChatTurns(data as ChatTurn[]);
   }, [projectId, setChatTurns]);
+
+  // Usage for limits display
+  const refetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setUsage(data);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    refetchUsage();
+  }, [projectId, refetchUsage]);
 
   // Auto-build on initial load
   const autoBuild = searchParams.get("autoBuild") === "1";
@@ -240,13 +266,23 @@ export default function ProjectPage() {
       const res = await fetch("/api/ue5/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ projectId }),
       });
       const data = await res.json();
-      if (res.ok) toast.success("Screenshot requested.");
-      else toast.error(data.error ?? "Capture failed");
+      if (res.ok) {
+        toast.success("Screenshot requested.");
+        await refetchUsage();
+      } else {
+        if (data.limitReached) {
+          setLimitReachedMessage(data.error ?? "You've reached your daily screenshot limit.");
+          setUpgradeModalOpen(true);
+        } else {
+          toast.error(data.error ?? "Capture failed");
+        }
+      }
     } catch { toast.error("Capture failed"); }
-  }, [projectId]);
+  }, [projectId, refetchUsage]);
 
   // Execute code
   const handleExecuteCode = useCallback(
@@ -413,21 +449,30 @@ export default function ProjectPage() {
         const streamRes = await fetch("/api/build/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ prompt: message.trim(), projectId }),
         });
         if (!streamRes.ok) {
           const errText = await streamRes.text();
           let errMessage = "Build request failed";
+          let limitReached = false;
           try {
-            const parsed = JSON.parse(errText) as { error?: string };
+            const parsed = JSON.parse(errText) as { error?: string; limitReached?: boolean };
             if (parsed?.error) errMessage = parsed.error;
+            if (parsed?.limitReached) limitReached = true;
           } catch {
             if (errText && errText.length < 200) errMessage = errText;
           }
           setIsGenerating(false);
           setStreamingContent("");
-          toast.error(errMessage);
+          if (limitReached) {
+            setLimitReachedMessage(errMessage);
+            setUpgradeModalOpen(true);
+          } else {
+            toast.error(errMessage);
+          }
           await refetchChat();
+          await refetchUsage();
           return;
         }
         const reader = streamRes.body?.getReader();
@@ -450,7 +495,12 @@ export default function ProjectPage() {
             const data = line.slice(6);
             if (data === "[DONE]") continue;
             try {
-              const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
+              const parsed = JSON.parse(data) as { error?: string; limitReached?: boolean; choices?: { delta?: { content?: string } }[] };
+              if (parsed.limitReached && parsed.error) {
+                setLimitReachedMessage(parsed.error);
+                setUpgradeModalOpen(true);
+                break;
+              }
               const delta = parsed.choices?.[0]?.delta?.content;
               if (typeof delta === "string") {
                 content += delta;
@@ -474,6 +524,7 @@ export default function ProjectPage() {
             turn_type: "direct",
           });
           await refetchChat();
+          await refetchUsage();
           return;
         }
         let execRes = await fetch("/api/build/execute", {
@@ -494,6 +545,7 @@ export default function ProjectPage() {
               turn_type: "direct",
             });
             await refetchChat();
+            await refetchUsage();
             return;
           }
           toast.error("Let me try that again…");
@@ -513,6 +565,7 @@ export default function ProjectPage() {
               turn_type: "direct",
             });
             await refetchChat();
+            await refetchUsage();
             return;
           }
         }
@@ -525,24 +578,28 @@ export default function ProjectPage() {
             toast.success("Your scene is ready! Check your UE5 viewport.");
             await runVisionLoop(projectId, message);
             await refetchChat();
+            await refetchUsage();
             return;
           }
           if (cmd?.status === "error") {
             toast.error("That didn't work as expected. Let me know if you'd like me to try again!");
             await refetchChat();
+            await refetchUsage();
             return;
           }
         }
         toast.error("Taking a bit longer than usual — check your UE5 viewport!");
         await refetchChat();
+        await refetchUsage();
       } catch (err) {
         setIsGenerating(false);
         setStreamingContent("");
         toast.error("Something went wrong. Try again in a moment!");
         await refetchChat();
+        await refetchUsage();
       }
     },
-    [projectId, refetchChat, runVisionLoop]
+    [projectId, refetchChat, refetchUsage, runVisionLoop]
   );
 
   // Full project controls
@@ -602,6 +659,23 @@ export default function ProjectPage() {
     setCopilotOpen(true);
   }, []);
 
+  const handleUpgradeToPro = useCallback(async () => {
+    setUpgradeLoading(true);
+    try {
+      const res = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else if (data.error) toast.error(data.error);
+    } finally {
+      setUpgradeLoading(false);
+    }
+  }, []);
+
   // Save project name
   const handleSaveName = useCallback(async () => {
     if (!projectName.trim()) return;
@@ -619,6 +693,10 @@ export default function ProjectPage() {
           prompt={(project?.initial_prompt as string) ?? ""}
           onDone={handleSmartBuildDone}
           onStop={() => handleSmartBuildDone(false)}
+          onLimitReached={(msg) => {
+            setLimitReachedMessage(msg);
+            setUpgradeModalOpen(true);
+          }}
         />
       </div>
     );
@@ -670,6 +748,15 @@ export default function ProjectPage() {
 
         {/* Right */}
         <div className="flex items-center gap-3">
+          {usage && (
+            <span className="text-[11px] text-[#606068] hidden sm:inline">
+              {usage.plan === "free" ? (
+                <>AI: {usage.ai_message.used}/{usage.ai_message.limit} today | Imports: {usage.polyhaven_import.used}/{usage.polyhaven_import.limit} today</>
+              ) : (
+                <>AI: Unlimited | Imports: Unlimited</>
+              )}
+            </span>
+          )}
           {isRelayConnected ? (
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -750,6 +837,10 @@ export default function ProjectPage() {
             onTemplateClick={handleTemplateClick}
             onClearScene={handleClearScene}
             projectId={projectId}
+            onLimitReached={(msg) => {
+              setLimitReachedMessage(msg);
+              setUpgradeModalOpen(true);
+            }}
           />
         </div>
 
@@ -802,6 +893,32 @@ export default function ProjectPage() {
       <Dialog open={imageTo3DModalOpen} onOpenChange={setImageTo3DModalOpen}>
         <DialogContent className="bg-[#111114] border-[#2A2A30] max-w-2xl p-0 overflow-hidden">
           <ImageTo3D projectId={projectId} onCodeGenerated={handleExecuteCode} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Upgrade limit modal */}
+      <Dialog open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen}>
+        <DialogContent className="bg-[#111114] border-[#2196F3]/20 max-w-md p-6">
+          <h2 className="text-lg font-semibold text-white mb-2">You&apos;ve reached your daily limit</h2>
+          <p className="text-sm text-[#A0A0A8] mb-4">{limitReachedMessage || "Upgrade to Pro for more."}</p>
+          <p className="text-xs text-[#606068] mb-6">
+            Pro includes unlimited AI messages, unlimited Poly Haven & Sketchfab imports, 10 projects, and more.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setUpgradeModalOpen(false)}
+              className="px-4 py-2 text-sm text-[#606068] hover:text-white transition-colors"
+            >
+              Maybe later
+            </button>
+            <button
+              onClick={() => { setUpgradeModalOpen(false); handleUpgradeToPro(); }}
+              disabled={upgradeLoading}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-sm font-semibold hover:brightness-110 transition disabled:opacity-50"
+            >
+              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro — $19/month"}
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

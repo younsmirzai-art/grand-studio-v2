@@ -15,6 +15,7 @@ interface SmartBuildViewProps {
   projectContext?: string;
   onDone?: (success: boolean, errorMessage?: string) => void;
   onStop?: () => void;
+  onLimitReached?: (message: string) => void;
 }
 
 export default function SmartBuildView({
@@ -23,6 +24,7 @@ export default function SmartBuildView({
   projectContext,
   onDone,
   onStop,
+  onLimitReached,
 }: SmartBuildViewProps) {
   const [phase, setPhase] = useState<Phase>("writing");
   const [streamingContent, setStreamingContent] = useState("");
@@ -50,21 +52,25 @@ export default function SmartBuildView({
       const res = await fetch("/api/build/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), projectContext }),
+        credentials: "include",
+        body: JSON.stringify({ prompt: prompt.trim(), projectId, projectContext }),
       });
 
       if (!res.ok) {
         const errText = await res.text();
         let errMsg = `Request failed: ${res.status}`;
+        let limitReached = false;
         try {
-          const data = JSON.parse(errText) as { error?: string };
+          const data = JSON.parse(errText) as { error?: string; limitReached?: boolean };
           if (data?.error) errMsg = data.error;
+          if (data?.limitReached) limitReached = true;
         } catch {
           if (errText && errText.length < 200) errMsg = errText;
         }
         setErrorMessage(errMsg);
         setPhase("error");
-        toast.error(errMsg);
+        if (limitReached) onLimitReached?.(errMsg);
+        else toast.error(errMsg);
         onDone?.(false, errMsg);
         return;
       }
@@ -97,7 +103,14 @@ export default function SmartBuildView({
           const data = line.slice(6);
           if (data === "[DONE]") continue;
           try {
-            const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
+            const parsed = JSON.parse(data) as { error?: string; limitReached?: boolean; choices?: { delta?: { content?: string } }[] };
+            if (parsed.limitReached && parsed.error) {
+              setErrorMessage(parsed.error);
+              setPhase("error");
+              onLimitReached?.(parsed.error);
+              onDone?.(false, parsed.error);
+              return;
+            }
             const delta = parsed.choices?.[0]?.delta?.content;
             if (typeof delta === "string") {
               content += delta;

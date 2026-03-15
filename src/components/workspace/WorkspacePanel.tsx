@@ -37,6 +37,7 @@ interface WorkspacePanelProps {
   onTemplateClick: (name: string, description: string) => void;
   onClearScene: () => void;
   projectId: string;
+  onLimitReached?: (message: string) => void;
 }
 
 const CATEGORIES = [
@@ -105,6 +106,7 @@ export function WorkspacePanel({
   onTemplateClick,
   onClearScene,
   projectId,
+  onLimitReached,
 }: WorkspacePanelProps) {
   const [tab, setTab] = useState<TabId>("starter");
   const [search, setSearch] = useState("");
@@ -197,6 +199,7 @@ export function WorkspacePanel({
       const res = await fetch("/api/polyhaven/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ assetId, type: requestType, projectId }),
       });
       const data = await res.json().catch(() => ({}));
@@ -204,7 +207,8 @@ export function WorkspacePanel({
         const reason = data?.error ?? `HTTP ${res.status}`;
         console.error("[Import Poly Haven] Download API error:", reason, data);
         setPhDownloading(null);
-        toast.error(`Import failed: ${reason}`);
+        if (data?.limitReached) onLimitReached?.(reason);
+        else toast.error(`Import failed: ${reason}`);
         return;
       }
       if (!data.url) {
@@ -251,7 +255,7 @@ export function WorkspacePanel({
     } finally {
       setPhDownloading(null);
     }
-  }, [projectId]);
+  }, [projectId, onLimitReached]);
 
   // Sketchfab search
   const searchSketchfab = useCallback(async () => {
@@ -278,6 +282,7 @@ export function WorkspacePanel({
       const res = await fetch("/api/sketchfab/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ uid, projectId }),
       });
       const data = await res.json().catch(() => ({}));
@@ -285,7 +290,8 @@ export function WorkspacePanel({
         const reason = data?.error ?? `HTTP ${res.status}`;
         console.error("[Import Sketchfab] Download API error:", reason, data);
         setSfDownloading(null);
-        toast.error(`Import failed: ${reason}`);
+        if (data?.limitReached) onLimitReached?.(reason);
+        else toast.error(`Import failed: ${reason}`);
         return;
       }
       if (!data.url) {
@@ -329,7 +335,7 @@ export function WorkspacePanel({
     } finally {
       setSfDownloading(null);
     }
-  }, [projectId]);
+  }, [projectId, onLimitReached]);
 
   const tabs: { id: TabId; label: string; icon: typeof Box }[] = [
     { id: "starter", label: "Starter", icon: Box },
