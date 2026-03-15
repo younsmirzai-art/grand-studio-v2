@@ -18,7 +18,6 @@ import {
   Check,
   ArrowRight,
   Github,
-  Twitter,
   MapPin,
   Settings,
   Rocket,
@@ -119,13 +118,6 @@ const STEPS = [
     title: "BUILD",
     desc: "AI writes Python code, imports real 3D models from Poly Haven and Sketchfab, and builds your scene live.",
   },
-];
-
-const SHOWCASE = [
-  { name: "Medieval Castle", time: "45 seconds" },
-  { name: "Dense Forest", time: "38 seconds" },
-  { name: "City Block at Night", time: "52 seconds" },
-  { name: "Tropical Island", time: "41 seconds" },
 ];
 
 const FREE_FEATURES = [
@@ -437,44 +429,7 @@ export default function HomePage() {
       </Section>
 
       {/* ============================================================ */}
-      {/*  SECTION 5 — SHOWCASE                                        */}
-      {/* ============================================================ */}
-      <Section className="py-32 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— SHOWCASE</p>
-            <h2 className="text-4xl md:text-5xl font-bold text-white">Built With Grand Studio</h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {SHOWCASE.map((s) => (
-              <div
-                key={s.name}
-                className="group relative rounded-2xl border border-white/5 bg-gradient-to-br from-[#111114] to-[#0A0A0B] overflow-hidden hover:scale-[1.02] transition-transform duration-300"
-              >
-                <div className="aspect-[16/10] flex items-end p-6 relative">
-                  {/* Subtle grid overlay */}
-                  <div className="absolute inset-0 epic-dot-grid opacity-30" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0B] via-transparent to-transparent" />
-
-                  <div className="relative z-10 w-full flex items-end justify-between">
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{s.name}</h3>
-                      <p className="text-sm text-[#606068]">AI-generated scene</p>
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-[#2196F3]/10 border border-[#2196F3]/20 text-xs text-[#2196F3] font-medium">
-                      Built in {s.time}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Section>
-
-      {/* ============================================================ */}
-      {/*  SECTION 6 — STATS BAR                                       */}
+      {/*  SECTION 5 — STATS BAR                                       */}
       {/* ============================================================ */}
       <Section className="bg-[#111114] border-y border-white/5 py-16 px-6">
         <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-12 text-center">
@@ -673,18 +628,9 @@ export default function HomePage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition"
-                  aria-label="GitHub"
+                  aria-label="GitHub repository"
                 >
                   <Github className="w-4 h-4" />
-                </a>
-                <a
-                  href="https://twitter.com/grandstudio"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-9 h-9 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-[#A0A0A8] hover:text-white hover:border-white/20 transition"
-                  aria-label="Twitter"
-                >
-                  <Twitter className="w-4 h-4" />
                 </a>
               </div>
             </div>
