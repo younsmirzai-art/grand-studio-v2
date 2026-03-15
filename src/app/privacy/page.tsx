@@ -39,9 +39,11 @@ export default function PrivacyPage() {
             <p className="text-[#A0A0A8] leading-relaxed mb-4">
               We use the following services to operate Grand Studio:
             </p>
+            <p className="text-[#A0A0A8] leading-relaxed mb-4">
+              We use <strong className="text-white">Claude Opus 4.6</strong> by Anthropic to power our AI Co-Pilot. Your prompts are processed through Anthropic&apos;s API to generate UE5 code and assist with scene building.
+            </p>
             <ul className="list-disc pl-6 space-y-2 text-[#A0A0A8]">
               <li><strong className="text-white">Supabase</strong> — database and authentication (account and project data).</li>
-              <li><strong className="text-white">OpenRouter</strong> — AI models for natural language and code generation.</li>
               <li><strong className="text-white">Poly Haven</strong> and <strong className="text-white">Sketchfab</strong> — 3D model and texture search and download for your scenes. Their own privacy policies apply to assets you access through our integration.</li>
             </ul>
           </section>

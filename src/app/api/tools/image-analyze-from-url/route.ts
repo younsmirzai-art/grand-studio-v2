@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         "X-Title": "Grand Studio v2",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o",
+        model: process.env.OPENROUTER_MODEL || "anthropic/claude-3-5-sonnet-20241022",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent },
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const err = await response.text();
       return NextResponse.json(
-        { error: `OpenRouter error: ${err}` },
+        { error: `Vision API error: ${err}` },
         { status: 502 }
       );
     }

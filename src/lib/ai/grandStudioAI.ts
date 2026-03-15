@@ -13,7 +13,8 @@ export function isGreetingOrQuestion(message: string): boolean {
   return shortGreetings.some((t) => trimmed === t || trimmed.startsWith(t + " ") || trimmed === t + "!");
 }
 
-const DEFAULT_MODEL = "google/gemini-2.0-flash-001";
+/** Claude Opus 4.6 — shown to users as "Claude Opus 4.6". OpenRouter model id for Anthropic. */
+const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 
 const VERIFIED_PATTERNS = Object.entries(QUICK_BUILD_COMPONENTS)
   .map(([key, code]) => `--- ${key} ---\n${code.slice(0, 1200)}${code.length > 1200 ? "\n..." : ""}\n`)

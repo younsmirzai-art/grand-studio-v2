@@ -428,7 +428,7 @@ export default function ProjectSettingsPage() {
         {/* API */}
         <section>
           <h3 className="text-sm font-semibold text-text-primary mb-3">API</h3>
-          <p className="text-xs text-text-muted">OpenRouter API key: •••••••••••••••••</p>
+          <p className="text-xs text-text-muted">Claude Opus 4.6 (Anthropic) API key: •••••••••••••••••</p>
           <p className="text-xs text-text-muted mt-1">Configure in Vercel environment variables.</p>
         </section>
 

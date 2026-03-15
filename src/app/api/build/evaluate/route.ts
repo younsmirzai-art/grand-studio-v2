@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     const model =
-      process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001";
+      process.env.OPENROUTER_MODEL || "anthropic/claude-3-5-sonnet-20241022";
 
     if (!apiKey) {
       return NextResponse.json(
@@ -69,7 +69,7 @@ ALWAYS respond with executable Python code for fixes when SCORE < 8, never just 
     if (!response.ok) {
       const errText = await response.text();
       return NextResponse.json(
-        { error: `OpenRouter ${response.status}: ${errText.slice(0, 200)}` },
+        { error: `Vision API ${response.status}: ${errText.slice(0, 200)}` },
         { status: response.status }
       );
     }

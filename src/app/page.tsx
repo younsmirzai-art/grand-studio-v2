@@ -121,19 +121,30 @@ const STEPS = [
 ];
 
 const FREE_FEATURES = [
-  "5 builds per day",
-  "Basic asset library",
+  "10 AI messages per day",
+  "5 Poly Haven imports per day",
+  "3 Sketchfab imports per day",
+  "2 projects",
+  "5 screenshots per day",
   "Community support",
-  "Relay bridge included",
 ];
 
 const PRO_FEATURES = [
-  "Unlimited builds",
-  "Full asset library + Megascans",
-  "AI Vision feedback loop",
-  "Priority AI models",
+  "Unlimited AI messages",
+  "Unlimited Poly Haven imports",
+  "Unlimited Sketchfab imports",
+  "10 projects",
+  "Unlimited screenshots",
+  "Powered by Claude Opus 4.6",
   "Email support",
-  "Scene templates",
+];
+
+const TEAM_FEATURES = [
+  "Everything in Pro",
+  "Unlimited projects",
+  "Up to 5 team members",
+  "Powered by Claude Opus 4.6",
+  "Priority email support",
 ];
 
 /* ------------------------------------------------------------------ */
@@ -450,13 +461,13 @@ export default function HomePage() {
       {/*  SECTION 7 — PRICING                                         */}
       {/* ============================================================ */}
       <Section id="pricing" className="py-32 px-6">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— PRICING</p>
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">Start Free. Scale When Ready.</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Free */}
             <div className="rounded-2xl border border-[#2A2A30] bg-[#111114] p-8">
               <h3 className="text-xl font-bold text-white mb-1">Free</h3>
@@ -476,18 +487,18 @@ export default function HomePage() {
                 href="/auth/signup"
                 className="block text-center w-full py-3 rounded-lg text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition"
               >
-                GET STARTED
+                GET STARTED FREE
               </Link>
             </div>
 
-            {/* Pro */}
+            {/* Pro — Popular */}
             <div className="relative rounded-2xl border border-[#2196F3]/40 bg-[#111114] p-8 pricing-popular">
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-[#2196F3] text-white text-xs font-bold uppercase tracking-wider">
                 Popular
               </div>
               <h3 className="text-xl font-bold text-white mb-1">Pro</h3>
               <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-black text-white">$29</span>
+                <span className="text-4xl font-black text-white">$19</span>
                 <span className="text-sm text-[#606068]">/mo</span>
               </div>
               <ul className="space-y-3 mb-8">
@@ -498,12 +509,35 @@ export default function HomePage() {
                   </li>
                 ))}
               </ul>
-              <button
-                disabled
-                className="w-full py-3 rounded-lg text-sm font-bold bg-[#2196F3]/20 text-[#2196F3] cursor-not-allowed"
+              <Link
+                href="/dashboard?upgrade=pro"
+                className="block text-center w-full py-3 rounded-lg text-sm font-bold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition"
               >
-                COMING SOON
-              </button>
+                UPGRADE TO PRO
+              </Link>
+            </div>
+
+            {/* Team */}
+            <div className="rounded-2xl border border-[#2A2A30] bg-[#111114] p-8">
+              <h3 className="text-xl font-bold text-white mb-1">Team</h3>
+              <div className="flex items-baseline gap-1 mb-6">
+                <span className="text-4xl font-black text-white">$49</span>
+                <span className="text-sm text-[#606068]">/mo</span>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {TEAM_FEATURES.map((f) => (
+                  <li key={f} className="flex items-center gap-2.5 text-sm text-[#A0A0A8]">
+                    <Check className="w-4 h-4 text-[#00BCD4] shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="mailto:team@grandstudio.app"
+                className="block text-center w-full py-3 rounded-lg text-sm font-semibold border border-white/20 text-white hover:bg-white/10 transition"
+              >
+                CONTACT US
+              </a>
             </div>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { getClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Folder, Clock, LogOut, Search, Plug } from "lucide-react";
+import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
 
@@ -19,6 +19,8 @@ export default function DashboardPage() {
   const [newName, setNewName] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
   const [creating, setCreating] = useState(false);
+  const [subscription, setSubscription] = useState<{ plan: string; status: string } | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     const auth = createAuthClient();
@@ -44,6 +46,32 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) fetchProjects();
   }, [user, fetchProjects]);
+
+  useEffect(() => {
+    if (!user) return;
+    const supabase = getClient();
+    supabase
+      .from("subscriptions")
+      .select("plan, status")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setSubscription(data ?? null));
+  }, [user]);
+
+  const handleManageSubscription = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await fetch("/api/stripe/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else if (data.error) alert(data.error);
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const isProOrTeam = subscription?.plan === "pro" || subscription?.plan === "team";
+  const subscriptionActive = subscription?.status === "active";
 
   const handleSignOut = async () => {
     const auth = createAuthClient();
@@ -92,6 +120,16 @@ export default function DashboardPage() {
           <Plug className="w-3.5 h-3.5" />
           Connect UE5
         </Link>
+        {isProOrTeam && subscriptionActive && (
+          <button
+            onClick={handleManageSubscription}
+            disabled={portalLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#606068] hover:text-white hover:bg-white/5 transition disabled:opacity-50"
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            Manage Subscription
+          </button>
+        )}
         {user?.email && (
           <span className="text-xs text-[#606068] hidden sm:block">{user.email}</span>
         )}

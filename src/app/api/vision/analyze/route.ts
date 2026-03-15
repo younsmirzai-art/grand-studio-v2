@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       project_id: projectId,
       event_type: "api_call",
       agent_name: "Vision",
-      detail: "Analyzing screenshot with GPT-4o Vision",
+      detail: "Analyzing screenshot with Claude Opus 4.6",
     });
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
         "X-Title": "Grand Studio v2",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o",
+        model: process.env.OPENROUTER_MODEL || "anthropic/claude-3-5-sonnet-20241022",
         messages: [
           {
             role: "user",
