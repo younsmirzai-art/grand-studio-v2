@@ -1,7 +1,8 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient as createSSRClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { Resend } from "resend";
+import { createServerClient } from "@/lib/supabase/server";
 
 const WELCOME_FROM = "Grand Studio <welcome@grandstudio.dev>";
 
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
 
   if (code) {
     const cookieStore = await cookies();
-    const supabase = createServerClient(
+    const supabase = createSSRClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
@@ -77,10 +78,39 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error && data?.user) {
       const user = data.user;
-      const createdAt = new Date(user.created_at).getTime();
-      const isNewSignup = Date.now() - createdAt < 120_000; // within 2 minutes
-      if (isNewSignup) {
-        sendWelcomeEmail(user).catch((e) => console.error("[auth/callback] Welcome email failed:", e));
+      const userId = user.id;
+
+      let shouldSendWelcome = false;
+      let welcomeReason = "";
+
+      if (!process.env.RESEND_API_KEY) {
+        welcomeReason = "RESEND_API_KEY not set";
+        console.log("[auth/callback] Welcome email not sent:", welcomeReason);
+      } else if (!user.email) {
+        welcomeReason = "user has no email";
+        console.log("[auth/callback] Welcome email not sent:", welcomeReason);
+      } else {
+        const serverSupabase = createServerClient();
+        const [projectsRes, usageRes] = await Promise.all([
+          serverSupabase.from("projects").select("id").eq("user_id", userId).limit(1),
+          serverSupabase.from("usage_logs").select("id").eq("user_id", userId).limit(1),
+        ]);
+        const hasProjects = (projectsRes.data?.length ?? 0) > 0;
+        const hasUsage = (usageRes.data?.length ?? 0) > 0;
+        if (!hasProjects && !hasUsage) {
+          shouldSendWelcome = true;
+          welcomeReason = "new user (zero projects, zero usage_logs)";
+        } else {
+          welcomeReason = `existing user (projects: ${hasProjects}, usage_logs: ${hasUsage})`;
+          console.log("[auth/callback] Welcome email not sent:", welcomeReason);
+        }
+      }
+
+      if (shouldSendWelcome) {
+        console.log("[auth/callback] Sending welcome email:", welcomeReason);
+        sendWelcomeEmail(user).catch((e) => {
+          console.error("[auth/callback] Welcome email failed:", e);
+        });
       }
 
       const forwardedHost = request.headers.get("x-forwarded-host");
