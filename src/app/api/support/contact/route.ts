@@ -4,7 +4,7 @@ import { createServerAuthClient } from "@/lib/supabase/server";
 import { getEffectivePlan } from "@/lib/usage/usageTracker";
 
 const SUPPORT_EMAIL = "peterparker668855@gmail.com";
-const FROM_EMAIL = "onboarding@resend.dev";
+const SUPPORT_FROM = "Grand Studio Support <support@grandstudio.dev>";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     const resend = new Resend(apiKey);
     const emailSubject = `[Grand Studio Support] ${subject} from ${name}`;
-    const html = `
+    const supportHtml = `
       <p><strong>From:</strong> ${name} &lt;${email}&gt;</p>
       <p><strong>Subject:</strong> ${subject}</p>
       <p><strong>Plan:</strong> ${plan}</p>
@@ -47,20 +47,32 @@ export async function POST(request: NextRequest) {
       <p>${message.replace(/\n/g, "<br />")}</p>
     `;
 
-    const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+    const { error: supportError } = await resend.emails.send({
+      from: SUPPORT_FROM,
       to: SUPPORT_EMAIL,
       subject: emailSubject,
-      html,
+      html: supportHtml,
     });
 
-    if (error) {
-      console.error("[support/contact] Resend error:", error);
+    if (supportError) {
+      console.error("[support/contact] Resend error:", supportError);
       return NextResponse.json(
-        { error: error.message ?? "Failed to send email." },
+        { error: supportError.message ?? "Failed to send email." },
         { status: 500 }
       );
     }
+
+    const confirmHtml = `
+      <p>Hi ${name},</p>
+      <p>Thanks for contacting Grand Studio support. We received your message about <strong>${subject}</strong> and will get back to you within 24 hours.</p>
+      <p>- The Grand Studio Team</p>
+    `;
+    await resend.emails.send({
+      from: SUPPORT_FROM,
+      to: email,
+      subject: "We received your message!",
+      html: confirmHtml,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (e) {

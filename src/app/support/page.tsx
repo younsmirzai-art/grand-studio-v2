@@ -170,10 +170,7 @@ export default function SupportPage() {
         )}
 
         <p className="mt-10 text-sm text-[#606068] text-center">
-          For urgent issues, email us at{" "}
-          <a href="mailto:peterparker668855@gmail.com" className="text-[#2196F3] hover:underline">
-            peterparker668855@gmail.com
-          </a>
+          We typically respond within 24 hours. Check your email for a confirmation after submitting.
         </p>
       </main>
     </div>

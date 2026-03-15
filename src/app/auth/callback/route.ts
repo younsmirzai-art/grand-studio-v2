@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { Resend } from "resend";
 
-const WELCOME_FROM = "Grand Studio <onboarding@resend.dev>";
+const WELCOME_FROM = "Grand Studio <welcome@grandstudio.dev>";
 
 async function sendWelcomeEmail(user: { email?: string; user_metadata?: Record<string, unknown> }) {
   const apiKey = process.env.RESEND_API_KEY;
