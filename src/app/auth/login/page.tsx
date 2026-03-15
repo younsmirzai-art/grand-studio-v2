@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Mail, Lock } from "lucide-react";
+import { Loader2, Mail, Lock, Gamepad2 } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 
 export default function LoginPage() {
@@ -116,6 +116,21 @@ function LoginForm() {
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "SIGN IN"}
             </button>
+
+            <div className="relative my-6">
+              <span className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-white/5" />
+              </span>
+              <span className="relative flex justify-center text-xs text-[#606068]">or</span>
+            </div>
+
+            <a
+              href="/api/auth/epic"
+              className="w-full py-3 rounded-lg bg-[#1A1A1F] border border-white/10 text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-white/10 transition"
+            >
+              <Gamepad2 className="w-4 h-4" />
+              Sign in with Epic Games
+            </a>
           </form>
 
           <p className="text-center text-[#606068] text-sm mt-6">
