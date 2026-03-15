@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
+import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -27,6 +28,7 @@ export default function RootLayout({
         <TooltipProvider delayDuration={200}>
           {children}
         </TooltipProvider>
+        <Analytics />
         <Toaster
           theme="dark"
           position="bottom-right"
