@@ -62,6 +62,39 @@ export default function DashboardPage() {
       .then(({ data }) => setSubscription(data ?? null));
   }, [user]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    console.log("[Dashboard] Dashboard loaded for user", user.id, user.email ?? "(no email)");
+    console.log("[Dashboard] Checking welcome email status");
+    let cancelled = false;
+    (async () => {
+      try {
+        console.log("[Dashboard] Calling welcome email API for", user.email);
+        const res = await fetch("/api/email/welcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        });
+        if (cancelled) return;
+        const data = await res.json().catch(() => ({}));
+        if (data.sent === false && data.reason === "already_sent") {
+          console.log("[Dashboard] Welcome email already sent, skipping");
+          return;
+        }
+        if (res.ok && data.sent === true) {
+          console.log("[Dashboard] Welcome email sent successfully to", user.email);
+          return;
+        }
+        if (!res.ok) {
+          console.log("[Dashboard] Welcome email error:", data.error ?? res.status);
+        }
+      } catch (e) {
+        if (!cancelled) console.log("[Dashboard] Welcome email error: details", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id, user?.email]);
+
   const handleManageSubscription = async () => {
     setPortalLoading(true);
     try {
