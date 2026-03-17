@@ -101,7 +101,17 @@ export default function GeneratePage() {
     } catch {}
   }, []);
 
-  // TODO: Re-enable plan check after testing
+  const fetchModels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/meshy/my-models", { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setModels((data.models as GeneratedModelRow[]) ?? []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     const auth = createAuthClient();
     auth.auth.getUser().then(({ data }) => {
@@ -130,17 +140,6 @@ export default function GeneratePage() {
   useEffect(() => {
     if (user) fetchModels();
   }, [user, fetchModels]);
-
-  const fetchModels = useCallback(async () => {
-    try {
-      const res = await fetch("/api/meshy/my-models", { credentials: "include" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setModels((data.models as GeneratedModelRow[]) ?? []);
-    } catch {
-      // ignore
-    }
-  }, []);
 
   const uploadImage = useCallback(async (file: File) => {
     setImageUploading(true);
