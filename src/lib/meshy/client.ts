@@ -1,4 +1,5 @@
 const MESHY_BASE = "https://api.meshy.ai/v2";
+const MESHY_OPENAPI = "https://api.meshy.ai/openapi/v1";
 
 function getHeaders(): HeadersInit {
   const key = process.env.MESHY_API_KEY;
@@ -84,5 +85,96 @@ export async function getTaskStatus(taskId: string): Promise<MeshyTaskStatusResu
     status: (data.status ?? "PENDING") as MeshyTaskStatus,
     progress: data.progress,
     model_urls: data.model_urls,
+  };
+}
+
+/**
+ * Create a Retexture (AI Texturing) task. Returns task ID.
+ */
+export async function createRetexture(
+  modelUrl: string,
+  textStylePrompt: string,
+  options?: { enablePbr?: boolean }
+): Promise<string> {
+  const res = await fetch(`${MESHY_OPENAPI}/retexture`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({
+      model_url: modelUrl,
+      text_style_prompt: textStylePrompt.slice(0, 600),
+      enable_pbr: options?.enablePbr ?? true,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `API error: ${res.status}`);
+  }
+  const data = (await res.json()) as { result?: string };
+  if (!data.result) throw new Error("No task ID in response");
+  return data.result;
+}
+
+/**
+ * Get status of a Retexture task.
+ */
+export async function getRetextureStatus(taskId: string): Promise<MeshyTaskStatusResult> {
+  const res = await fetch(`${MESHY_OPENAPI}/retexture/${taskId}`, {
+    method: "GET",
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error(`Retexture status error: ${res.status}`);
+  const data = (await res.json()) as { status?: string; progress?: number; model_urls?: { glb?: string; fbx?: string; obj?: string } };
+  return {
+    status: (data.status ?? "PENDING") as MeshyTaskStatus,
+    progress: data.progress,
+    model_urls: data.model_urls,
+  };
+}
+
+/**
+ * Create a Text to Image task. Returns task ID.
+ */
+export async function createTextToImage(
+  prompt: string,
+  options?: { aiModel?: "nano-banana" | "nano-banana-pro"; aspectRatio?: string }
+): Promise<string> {
+  const res = await fetch(`${MESHY_OPENAPI}/text-to-image`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({
+      ai_model: options?.aiModel ?? "nano-banana",
+      prompt,
+      aspect_ratio: options?.aspectRatio ?? "1:1",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? `API error: ${res.status}`);
+  }
+  const data = (await res.json()) as { result?: string };
+  if (!data.result) throw new Error("No task ID in response");
+  return data.result;
+}
+
+export interface TextToImageStatusResult {
+  status: MeshyTaskStatus;
+  progress?: number;
+  image_urls?: string[];
+}
+
+/**
+ * Get status of a Text to Image task.
+ */
+export async function getTextToImageStatus(taskId: string): Promise<TextToImageStatusResult> {
+  const res = await fetch(`${MESHY_OPENAPI}/text-to-image/${taskId}`, {
+    method: "GET",
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error(`Text-to-image status error: ${res.status}`);
+  const data = (await res.json()) as { status?: string; progress?: number; image_urls?: string[] };
+  return {
+    status: (data.status ?? "PENDING") as MeshyTaskStatus,
+    progress: data.progress,
+    image_urls: data.image_urls,
   };
 }

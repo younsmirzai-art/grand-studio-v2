@@ -124,7 +124,25 @@ export default function DashboardPage() {
     }
   };
 
-  const isProOrTeam = subscription?.plan === "pro" || subscription?.plan === "team";
+  const handleUpgradeToTeam = async () => {
+    setUpgradeLoading(true);
+    try {
+      const res = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ priceId: STRIPE_PRICES.team }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else if (data.error) alert(data.error);
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
+
+  const isPro = subscription?.plan === "pro" && subscription?.status === "active";
+  const isTeam = subscription?.plan === "team" && subscription?.status === "active";
   const subscriptionActive = subscription?.status === "active";
 
   const handleSignOut = async () => {
@@ -192,7 +210,7 @@ export default function DashboardPage() {
         >
           Support
         </Link>
-        {isProOrTeam && subscriptionActive ? (
+        {isTeam ? (
           <button
             onClick={handleManageSubscription}
             disabled={portalLoading}
@@ -201,14 +219,31 @@ export default function DashboardPage() {
             <CreditCard className="w-3.5 h-3.5" />
             Manage Subscription
           </button>
-        ) : (
+        ) : isPro ? (
           <button
-            onClick={handleUpgradeToPro}
+            onClick={handleUpgradeToTeam}
             disabled={upgradeLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#2196F3] to-[#1976D2] text-white hover:brightness-110 transition disabled:opacity-50"
           >
-            {upgradeLoading ? "Redirecting…" : "Upgrade to Pro"}
+            {upgradeLoading ? "Redirecting…" : "Upgrade to Team $49/mo"}
           </button>
+        ) : (
+          <>
+            <button
+              onClick={handleUpgradeToPro}
+              disabled={upgradeLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-[#2196F3] to-[#1976D2] text-white hover:brightness-110 transition disabled:opacity-50"
+            >
+              {upgradeLoading ? "Redirecting…" : "Upgrade to Pro $19/mo"}
+            </button>
+            <button
+              onClick={handleUpgradeToTeam}
+              disabled={upgradeLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/20 text-white hover:bg-white/10 transition disabled:opacity-50"
+            >
+              {upgradeLoading ? "Redirecting…" : "Upgrade to Team $49/mo"}
+            </button>
+          </>
         )}
         {user?.email && (
           <span className="text-xs text-[#606068] hidden sm:flex sm:items-center sm:gap-2">

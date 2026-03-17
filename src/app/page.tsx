@@ -198,7 +198,7 @@ export default function HomePage() {
 
   const handleUpgradeTeam = async () => {
     const priceId = STRIPE_PRICES.team ?? "price_1TB7k1FNUGc8wt3GjUdT9A4V";
-    console.log("[Pricing] Team plan clicked, priceId:", priceId);
+    console.log("Team checkout calling API with priceId", priceId);
     setCheckoutLoading(true);
     try {
       const res = await fetch("/api/stripe/create-checkout", {
@@ -208,13 +208,12 @@ export default function HomePage() {
         body: JSON.stringify({ priceId }),
       });
       const data = await res.json();
-      console.log("[Pricing] Team checkout response:", res.status, data);
       if (data.url) {
         window.location.href = data.url;
         return;
       }
       if (res.status === 401) {
-        router.push("/auth/login?redirectTo=/dashboard");
+        router.push("/auth/login?redirectTo=/%23pricing");
         return;
       }
       if (data.error) alert(data.error);
@@ -223,13 +222,7 @@ export default function HomePage() {
     }
   };
 
-  useEffect(() => {
-    createAuthClient()
-      .auth.getUser()
-      .then(({ data }) => {
-        if (data?.user) router.push("/dashboard");
-      });
-  }, [router]);
+  // Do NOT redirect logged-in users away from landing - they need to use Pro/Team checkout buttons
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-white overflow-x-hidden">
