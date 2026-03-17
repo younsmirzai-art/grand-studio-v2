@@ -90,6 +90,23 @@ export default function GeneratePage() {
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState("");
 
+  // Unified 3D provider (Text to 3D): Meshy | Grand Forge | Auto
+  const [textProvider, setTextProvider] = useState<"meshy" | "masterpiece" | "auto">("meshy");
+  type UnifiedGen = {
+    generationId: string;
+    provider: string;
+    providerJobId: string;
+    status: string;
+    asset_url: string | null;
+    preview_url: string | null;
+    prompt: string;
+    import_status: string | null;
+    material_count?: number;
+    texture_count?: number;
+    ue_asset_path?: string | null;
+  };
+  const [unifiedGenerations, setUnifiedGenerations] = useState<UnifiedGen[]>([]);
+
   const fetchUsage = useCallback(async () => {
     try {
       const res = await fetch("/api/usage", { credentials: "include" });
@@ -193,12 +210,43 @@ export default function GeneratePage() {
       setProgress(null);
       setModelUrl(null);
       setResultImageUrl(null);
+      setUnifiedGenerations([]);
+
+      if (textProvider === "meshy") {
+        try {
+          const res = await fetch("/api/meshy/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ prompt: textPrompt.trim(), artStyle, type: "text" }),
+          });
+          const data = await res.json();
+          if (res.status === 403 && data.limitReached) {
+            setUpgradeModalMessage(data.error ?? "Daily limit reached.");
+            setUpgradeModalOpen(true);
+            setGenerating(false);
+            return;
+          }
+          if (!res.ok) throw new Error(data.error ?? "Failed to start");
+          setTaskId(data.taskId);
+          fetchUsage();
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Failed to start");
+          setGenerating(false);
+        }
+        return;
+      }
+
       try {
-        const res = await fetch("/api/meshy/generate", {
+        const res = await fetch("/api/tools/3d/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ prompt: textPrompt.trim(), artStyle, type: "text" }),
+          body: JSON.stringify({
+            prompt: textPrompt.trim(),
+            provider: textProvider,
+            art_style: artStyle,
+          }),
         });
         const data = await res.json();
         if (res.status === 403 && data.limitReached) {
@@ -208,12 +256,24 @@ export default function GeneratePage() {
           return;
         }
         if (!res.ok) throw new Error(data.error ?? "Failed to start");
-        setTaskId(data.taskId);
+        const results = Array.isArray(data.results) ? data.results : [data.results];
+        const initial: UnifiedGen[] = results.map((r: { generationId: string; provider: string; providerJobId: string; status: string }) => ({
+          generationId: r.generationId,
+          provider: r.provider,
+          providerJobId: r.providerJobId,
+          status: r.status,
+          asset_url: null,
+          preview_url: null,
+          prompt: textPrompt.trim(),
+          import_status: null,
+        }));
+        setUnifiedGenerations(initial);
         fetchUsage();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Failed to start");
         setGenerating(false);
       }
+      return;
     } else if (m === "image") {
       if (!imageUrl.trim()) {
         toast.error("Upload an image or paste a URL");
@@ -318,7 +378,58 @@ export default function GeneratePage() {
         setGenerating(false);
       }
     }
-  }, [textPrompt, artStyle, imageUrl, textureModelUrl, texturePrompt, textToImagePrompt, aspectRatio, fetchUsage]);
+  }, [textPrompt, artStyle, imageUrl, textureModelUrl, texturePrompt, textToImagePrompt, aspectRatio, fetchUsage, textProvider]);
+
+  // Poll unified 3D generations (Grand Forge / Auto)
+  useEffect(() => {
+    if (unifiedGenerations.length === 0 || !generating || taskMode !== "text") return;
+    const pending = unifiedGenerations.filter((g) => g.status !== "complete" && g.status !== "failed");
+    if (pending.length === 0) {
+      setGenerating(false);
+      return;
+    }
+    const poll = async () => {
+      for (const g of pending) {
+        try {
+          const statusRes = await fetch(`/api/tools/3d/status?generationId=${encodeURIComponent(g.generationId)}`, { credentials: "include" });
+          const statusData = await statusRes.json();
+          if (statusData.status === "complete") {
+            const resultRes = await fetch(`/api/tools/3d/result?generationId=${encodeURIComponent(g.generationId)}`, { credentials: "include" });
+            const resultData = await resultRes.json();
+            setUnifiedGenerations((prev) => {
+              const next = prev.map((x) =>
+                x.generationId === g.generationId
+                  ? {
+                      ...x,
+                      status: "complete",
+                      asset_url: resultData.asset_url ?? null,
+                      preview_url: resultData.preview_url ?? null,
+                      import_status: resultData.import_status ?? null,
+                      material_count: resultData.material_count,
+                      texture_count: resultData.texture_count,
+                      ue_asset_path: resultData.ue_asset_path,
+                    }
+                  : x
+              );
+              const allDone = next.every((x) => x.status === "complete" || x.status === "failed");
+              if (allDone) setTimeout(() => setGenerating(false), 0);
+              return next;
+            });
+          } else if (statusData.status === "failed") {
+            setUnifiedGenerations((prev) => {
+              const next = prev.map((x) => (x.generationId === g.generationId ? { ...x, status: "failed" } : x));
+              const allDone = next.every((x) => x.status === "complete" || x.status === "failed");
+              if (allDone) setTimeout(() => setGenerating(false), 0);
+              return next;
+            });
+          }
+        } catch {}
+      }
+    };
+    poll();
+    const t = setInterval(poll, 6000);
+    return () => clearInterval(t);
+  }, [unifiedGenerations, generating, taskMode]);
 
   useEffect(() => {
     if (!taskId || !generating) return;
@@ -390,6 +501,47 @@ export default function GeneratePage() {
       setImporting(false);
     }
   }, [taskId, importProjectId, taskMode, router]);
+
+  const handleUnifiedImport = useCallback(
+    async (generationId: string) => {
+      if (!importProjectId) {
+        toast.error("Select a project");
+        return;
+      }
+      setImporting(true);
+      try {
+        const res = await fetch("/api/tools/3d/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ generationId, projectId: importProjectId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Import failed");
+        toast.success("Import queued. Open your project to see it in UE5. Status will update when the relay runs.");
+        const resultRes = await fetch(`/api/tools/3d/result?generationId=${encodeURIComponent(generationId)}`, { credentials: "include" });
+        const resultData = await resultRes.json();
+        setUnifiedGenerations((prev) =>
+          prev.map((x) =>
+            x.generationId === generationId
+              ? {
+                  ...x,
+                  import_status: resultData.import_status ?? x.import_status,
+                  material_count: resultData.material_count ?? x.material_count,
+                  texture_count: resultData.texture_count ?? x.texture_count,
+                  ue_asset_path: resultData.ue_asset_path ?? x.ue_asset_path,
+                }
+              : x
+          )
+        );
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Import failed");
+      } finally {
+        setImporting(false);
+      }
+    },
+    [importProjectId]
+  );
 
   if (user === null) {
     return (
@@ -526,6 +678,18 @@ export default function GeneratePage() {
                 rows={3}
                 className="w-full px-4 py-3 rounded-xl bg-[#0A0A0B] border border-white/10 text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/50 transition resize-none text-sm mb-4"
               />
+              <div className="mb-4">
+                <label className="block text-[10px] font-medium text-[#606068] uppercase tracking-wider mb-1.5">Provider</label>
+                <select
+                  value={textProvider}
+                  onChange={(e) => setTextProvider(e.target.value as "meshy" | "masterpiece" | "auto")}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#0A0A0B] border border-white/10 text-white outline-none focus:border-[#2196F3]/50 transition text-sm"
+                >
+                  <option value="meshy">Meshy</option>
+                  <option value="masterpiece">Grand Forge</option>
+                  <option value="auto">Auto (both)</option>
+                </select>
+              </div>
               <div className="mb-4">
                 <label className="block text-[10px] font-medium text-[#606068] uppercase tracking-wider mb-1.5">Art style</label>
                 <select
@@ -691,7 +855,89 @@ export default function GeneratePage() {
           </div>
         )}
 
-        {/* Result — 3D model */}
+        {/* Result — Unified (Grand Forge / Auto) */}
+        {taskMode === "text" &&
+          unifiedGenerations.some((g) => g.status === "complete" && g.asset_url) &&
+          !generating && (
+            <div className="rounded-2xl border border-[#2196F3]/20 bg-[#111114]/80 p-6 mb-8">
+              <h3 className="text-sm font-semibold text-white mb-3">Your model(s) are ready</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {unifiedGenerations
+                  .filter((g) => g.status === "complete" && g.asset_url)
+                  .map((g) => (
+                    <div
+                      key={g.generationId}
+                      className="rounded-xl border border-white/5 bg-[#0A0A0B] p-4 flex flex-col gap-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-medium text-[#606068] uppercase">
+                          {g.provider === "masterpiece" ? "Grand Forge" : g.provider === "meshy" ? "Meshy" : g.provider}
+                        </span>
+                        {g.import_status && (
+                          <span
+                            className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              g.import_status === "textured"
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : g.import_status === "materials_only" || g.import_status === "mesh_only"
+                                  ? "bg-amber-500/20 text-amber-400"
+                                  : "bg-red-500/20 text-red-400"
+                            }`}
+                          >
+                            {g.import_status === "textured"
+                              ? "Textured ✅"
+                              : g.import_status === "materials_only"
+                                ? "Materials only ⚠️"
+                                : g.import_status === "mesh_only"
+                                  ? "Mesh only ⚠️"
+                                  : "Failed ❌"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="w-full aspect-square rounded-lg bg-[#1A1A1F] flex items-center justify-center overflow-hidden">
+                        {g.preview_url ? (
+                          <img src={g.preview_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <Sparkles className="w-10 h-10 text-[#2196F3]/50" />
+                        )}
+                      </div>
+                      <p className="text-xs text-[#A0A0A8] truncate" title={g.prompt}>{g.prompt}</p>
+                      <a
+                        href={g.asset_url!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm text-[#2196F3] hover:underline"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </a>
+                      <div className="flex flex-wrap gap-2 items-center mt-auto">
+                        <select
+                          value={importProjectId}
+                          onChange={(e) => setImportProjectId(e.target.value)}
+                          className="px-3 py-2 rounded-lg bg-[#111114] border border-white/10 text-white text-xs outline-none focus:border-[#2196F3]/50"
+                        >
+                          <option value="">Select project…</option>
+                          {projects.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleUnifiedImport(g.generationId)}
+                          disabled={importing || !importProjectId}
+                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#2196F3] text-white text-xs font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50"
+                        >
+                          {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                          Import to UE5
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+        {/* Result — 3D model (Meshy flow) */}
         {modelUrl && !generating && (
           <div className="rounded-2xl border border-[#2196F3]/20 bg-[#111114]/80 p-6 mb-8">
             <h3 className="text-sm font-semibold text-white mb-3">Your model is ready</h3>

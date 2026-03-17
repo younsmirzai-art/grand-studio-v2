@@ -8,6 +8,7 @@ export interface ImportContext {
   source_provider: string;
   source_url: string;
   file_type: string;
+  preview_image_url?: string;
 }
 
 export async function queueUE5Command(

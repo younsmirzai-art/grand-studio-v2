@@ -152,10 +152,11 @@ def extract_import_result_from_ue5_response(ue5_result):
 
 
 def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
-    """Upsert one row into ue5_import_assets from parsed IMPORT_RESULT + command import_context."""
+    """Upsert one row into ue5_import_assets; sync import_status to generated_3d_assets if applicable."""
     if not import_context or not import_result:
         return
     try:
+        preview_url = import_context.get("preview_image_url") or import_result.get("preview_image_url")
         row = {
             "project_id": project_id,
             "ue5_command_id": cmd_id,
@@ -167,10 +168,22 @@ def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
             "texture_count": import_result.get("texture_count", 0),
             "import_status": import_result.get("import_status") or "failed",
             "import_error": import_result.get("import_error"),
-            "preview_image_url": import_result.get("preview_image_url"),
+            "preview_image_url": preview_url,
         }
         supabase.table("ue5_import_assets").insert(row).execute()
         print(f"         Import result saved: {row['import_status']} (materials={row['material_count']}, textures={row['texture_count']})")
+        # Sync back to generated_3d_assets so UI can show import status/badges
+        try:
+            supabase.table("generated_3d_assets").update({
+                "ue_asset_path": row["ue_asset_path"],
+                "import_status": row["import_status"],
+                "material_count": row["material_count"],
+                "texture_count": row["texture_count"],
+                "import_error": row["import_error"],
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("ue5_command_id", cmd_id).execute()
+        except Exception:
+            pass
     except Exception as e:
         print(f"         Failed to save import result: {e}")
 
