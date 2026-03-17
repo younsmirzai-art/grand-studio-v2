@@ -29,7 +29,7 @@ interface AICopilotPanelProps {
 const SUGGESTIONS = [
   "Build a medieval house",
   "Create a forest scene",
-  "Import rocks from Poly Haven",
+  "Import rocks from our 3D library",
   "Change lighting to sunset",
 ];
 
@@ -39,7 +39,7 @@ I can help you build amazing 3D scenes:
 🏰 Buildings and architecture
 🌲 Nature and landscapes
 💡 Lighting and atmosphere
-📦 Import models from Poly Haven & Sketchfab
+📦 Import thousands of professional 3D models
 
 Just tell me what you want to build, and I'll make it happen!
 

@@ -186,7 +186,7 @@ export function WorkspacePanel({
       const data = await res.json();
       setPhResults(data.results ?? []);
     } catch {
-      toast.error("Poly Haven search failed");
+      toast.error("3D model search failed");
     }
     setPhLoading(false);
   }, [phQuery, phSubTab]);
@@ -270,7 +270,7 @@ export function WorkspacePanel({
       const data = await res.json();
       setSfResults(data.results ?? []);
     } catch {
-      toast.error("Sketchfab search failed");
+      toast.error("Community model search failed");
     }
     setSfLoading(false);
   }, [sfQuery]);
@@ -338,9 +338,9 @@ export function WorkspacePanel({
   }, [projectId, onLimitReached]);
 
   const tabs: { id: TabId; label: string; icon: typeof Box }[] = [
-    { id: "starter", label: "Starter", icon: Box },
-    { id: "polyhaven", label: "Poly Haven", icon: Globe },
-    { id: "sketchfab", label: "Sketchfab", icon: Download },
+    { id: "starter", label: "Built-in", icon: Box },
+    { id: "polyhaven", label: "3D Models", icon: Globe },
+    { id: "sketchfab", label: "Community", icon: Download },
     { id: "templates", label: "Templates", icon: Shapes },
     { id: "scene", label: "Scene", icon: Terminal },
     { id: "history", label: "History", icon: Clock },
@@ -368,7 +368,7 @@ export function WorkspacePanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {/* ====== STARTER CONTENT ====== */}
+        {/* ====== BUILT-IN ====== */}
         {tab === "starter" && (
           <div className="p-4">
             <div className="relative mb-3">
@@ -432,7 +432,7 @@ export function WorkspacePanel({
           </div>
         )}
 
-        {/* ====== POLY HAVEN ====== */}
+        {/* ====== 3D MODELS ====== */}
         {tab === "polyhaven" && (
           <div className="p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -455,7 +455,7 @@ export function WorkspacePanel({
             </div>
             {phSubTab === "models" && (
               <div className="mb-4">
-                <p className="text-xs font-medium text-[#A0A0A8] mb-2">Popular Assets</p>
+                <p className="text-xs font-medium text-[#A0A0A8] mb-2">Popular</p>
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
                   {POLYHAVEN_POPULAR_IDS.map((id) => {
                     const name = id.replace(/_/g, " ");
@@ -472,9 +472,6 @@ export function WorkspacePanel({
                             className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition"
                             loading="lazy"
                           />
-                          <span className="absolute top-1 right-1 text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
-                            CC0
-                          </span>
                         </div>
                         <div className="p-1.5">
                           <p className="text-[10px] font-medium text-white truncate mb-1">{name}</p>
@@ -521,7 +518,7 @@ export function WorkspacePanel({
               <input
                 value={phQuery}
                 onChange={(e) => setPhQuery(e.target.value)}
-                placeholder={`Search Poly Haven ${phSubTab}... (rock, wood, sunset)`}
+                placeholder={`Search 3D models... (rock, wood, sunset)`}
                 className="w-full pl-10 pr-20 py-2.5 bg-[#1A1A1F] border border-white/5 rounded-lg text-sm text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/40 transition"
               />
               <button
@@ -536,8 +533,8 @@ export function WorkspacePanel({
             {phResults.length === 0 && !phLoading && (
               <div className="text-center py-12">
                 <Globe className="w-10 h-10 text-[#2A2A30] mx-auto mb-3" />
-                <p className="text-sm text-[#606068] mb-1">Search Poly Haven</p>
-                <p className="text-xs text-[#606068]">Free CC0 {phSubTab} — no API key needed</p>
+                <p className="text-sm text-[#606068] mb-1">Search 3D models</p>
+                <p className="text-xs text-[#606068]">Models, textures, and HDRI</p>
               </div>
             )}
 
@@ -554,9 +551,6 @@ export function WorkspacePanel({
                       className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition"
                       loading="lazy"
                     />
-                    <span className="absolute top-1.5 right-1.5 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
-                      CC0 Free
-                    </span>
                   </div>
                   <div className="p-2.5">
                     <p className="text-xs font-medium text-white truncate mb-1">
@@ -601,7 +595,7 @@ export function WorkspacePanel({
           </div>
         )}
 
-        {/* ====== SKETCHFAB ====== */}
+        {/* ====== COMMUNITY ====== */}
         {tab === "sketchfab" && (
           <div className="p-4">
             <form
@@ -612,7 +606,7 @@ export function WorkspacePanel({
               <input
                 value={sfQuery}
                 onChange={(e) => setSfQuery(e.target.value)}
-                placeholder="Search Sketchfab... (dragon, castle, vehicle)"
+                placeholder="Search community models... (dragon, castle, vehicle)"
                 className="w-full pl-10 pr-20 py-2.5 bg-[#1A1A1F] border border-white/5 rounded-lg text-sm text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/40 transition"
               />
               <button
@@ -627,8 +621,8 @@ export function WorkspacePanel({
             {sfResults.length === 0 && !sfLoading && (
               <div className="text-center py-12">
                 <Download className="w-10 h-10 text-[#2A2A30] mx-auto mb-3" />
-                <p className="text-sm text-[#606068] mb-1">Search Sketchfab</p>
-                <p className="text-xs text-[#606068]">1M+ free 3D models (API key required for download)</p>
+                <p className="text-sm text-[#606068] mb-1">Search community models</p>
+                <p className="text-xs text-[#606068]">1M+ professional 3D models</p>
               </div>
             )}
 
@@ -651,26 +645,13 @@ export function WorkspacePanel({
                         <Box className="w-8 h-8 text-[#2A2A30]" />
                       </div>
                     )}
-                    <span className={`absolute top-1.5 right-1.5 text-[9px] px-1.5 py-0.5 rounded font-medium ${
-                      r.license.includes("CC0") ? "bg-emerald-500/20 text-emerald-400" : "bg-[#2196F3]/20 text-[#2196F3]"
-                    }`}>
-                      {r.license.includes("CC0") ? "CC0" : "CC-BY"}
-                    </span>
                   </div>
                   <div className="p-2.5">
                     <p className="text-xs font-medium text-white truncate mb-0.5">{r.name}</p>
                     <p className="text-[10px] text-[#606068] truncate mb-1">
-                      by {r.author} · {(r.faceCount / 1000).toFixed(0)}K faces
+                      {(r.faceCount / 1000).toFixed(0)}K faces
                     </p>
                     <div className="flex items-center justify-between gap-2">
-                      <a
-                        href={`https://sketchfab.com/3d-models/${r.uid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-[#606068] hover:text-[#2196F3] transition"
-                      >
-                        <ExternalLink className="w-3 h-3 inline" />
-                      </a>
                       <button
                         type="button"
                         onClick={(e) => {

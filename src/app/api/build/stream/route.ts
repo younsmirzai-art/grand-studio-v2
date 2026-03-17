@@ -54,13 +54,13 @@ export async function POST(request: NextRequest) {
       if (checkPoly) {
         const polyCheck = await checkUsageLimit(userId, "polyhaven_import");
         if (!polyCheck.allowed) {
-          return streamJsonError("You've reached your daily Poly Haven import limit. Upgrade to Pro for unlimited imports!");
+          return streamJsonError("You've reached your daily model import limit. Upgrade to Pro for unlimited imports!");
         }
       }
       if (checkSketch) {
         const sketchCheck = await checkUsageLimit(userId, "sketchfab_import");
         if (!sketchCheck.allowed) {
-          return streamJsonError("You've reached your daily Sketchfab import limit. Upgrade to Pro for unlimited imports!");
+          return streamJsonError("You've reached your daily community import limit. Upgrade to Pro for unlimited imports!");
         }
       }
 
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
             controller.close();
           }
         : (controller: ReadableStreamDefaultController<Uint8Array>) => {
-            const msg = "Couldn't find that on Poly Haven or Sketchfab. Try the Poly Haven or Sketchfab tab to browse, or use a different search term.";
+            const msg = "Couldn't find that model. Try a different search term or browse the Asset Library tabs.";
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: msg } }] })}\n\n`));
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: msg })}\n\n`));
             controller.close();

@@ -11,7 +11,7 @@ function getServiceClient() {
   return createClient(url, key);
 }
 
-const UPGRADE_MSG = "You've reached your daily Sketchfab import limit. Upgrade to Pro for unlimited imports!";
+const UPGRADE_MSG = "You've reached your daily community import limit. Upgrade to Pro for unlimited imports!";
 
 export async function POST(request: NextRequest) {
   try {

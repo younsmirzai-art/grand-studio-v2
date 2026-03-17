@@ -80,7 +80,7 @@ export function SketchfabSearchModal({ projectId }: SketchfabSearchModalProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-text-primary">
             <Globe className="w-5 h-5 text-agent-teal" />
-            Sketchfab Search
+            Community Models
           </DialogTitle>
         </DialogHeader>
 

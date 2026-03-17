@@ -47,7 +47,7 @@ export default function TermsPage() {
               <strong className="text-white">Your content:</strong> You retain ownership of the scenes and projects you create with Grand Studio. We do not claim ownership of your creative work.
             </p>
             <p className="text-[#A0A0A8] leading-relaxed">
-              <strong className="text-white">Imported assets:</strong> 3D models and materials from Poly Haven, Sketchfab, and similar sources are subject to their respective licenses (e.g. CC0, CC-BY). You are responsible for complying with those licenses when using assets in your projects.
+              <strong className="text-white">Imported assets:</strong> 3D models and materials from our asset library and third-party providers are subject to their respective licenses. You are responsible for complying with those licenses when using assets in your projects.
             </p>
           </section>
 

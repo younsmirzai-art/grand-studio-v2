@@ -12,7 +12,7 @@ function getServiceClient() {
   return createClient(url, key);
 }
 
-const UPGRADE_MSG = "You've reached your daily Poly Haven import limit. Upgrade to Pro for unlimited imports!";
+const UPGRADE_MSG = "You've reached your daily model import limit. Upgrade to Pro for unlimited imports!";
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       const supabase = getServiceClient();
       const fileRes = await fetch(downloadUrl, { cache: "no-store" });
       if (!fileRes.ok) {
-        return NextResponse.json({ error: "Failed to download from Poly Haven" }, { status: 502 });
+        return NextResponse.json({ error: "Failed to download model" }, { status: 502 });
       }
       const blob = await fileRes.blob();
       const storagePath = `polyhaven/${assetId}.hdr`;

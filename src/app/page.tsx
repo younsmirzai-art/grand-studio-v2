@@ -73,8 +73,8 @@ const PILLARS = [
     title: "Smart Asset Library",
     desc: "AI selects from hundreds of professional meshes and materials. Real architecture, real vegetation, real textures.",
     features: [
-      "Starter Content + Megascans",
-      "5 scene templates",
+      "Thousands of professional assets",
+      "Ready-made scene templates",
       "AI auto-selects assets",
       "Category browsing",
     ],
@@ -117,14 +117,13 @@ const STEPS = [
     num: "04",
     icon: Code,
     title: "BUILD",
-    desc: "AI writes Python code, imports real 3D models from Poly Haven and Sketchfab, and builds your scene live.",
+    desc: "AI writes Python code, imports real 3D models from our professional asset library, and builds your scene live.",
   },
 ];
 
 const FREE_FEATURES = [
   "10 AI messages per day",
-  "5 Poly Haven imports per day",
-  "3 Sketchfab imports per day",
+  "8 model imports per day",
   "2 projects",
   "5 screenshots per day",
   "Community support",
@@ -132,8 +131,7 @@ const FREE_FEATURES = [
 
 const PRO_FEATURES = [
   "Unlimited AI messages",
-  "Unlimited Poly Haven imports",
-  "Unlimited Sketchfab imports",
+  "Unlimited model imports",
   "10 projects",
   "Unlimited screenshots",
   "Powered by Claude Opus 4.6",

@@ -190,9 +190,7 @@ export async function handleAssetRequest(
           const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
           return generateUE5ImportCode(storageUrl!, filename, label);
         })();
-  const chatMessage = sourceLabel
-    ? `Found ${assetName} on ${sourceLabel}! Importing to your UE5 scene now… ✨`
-    : `Found ${assetName}! Importing to your UE5 scene now… ✨`;
+  const chatMessage = `Found ${assetName} in our library! Importing to your UE5 scene now… ✨`;
 
   const platformUsed = sourceLabel === "Poly Haven" ? "polyhaven" : sourceLabel === "Sketchfab" ? "sketchfab" : undefined;
   console.log("[handleAssetRequest] Success — returning chatMessage + importCode");

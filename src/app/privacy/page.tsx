@@ -44,7 +44,7 @@ export default function PrivacyPage() {
             </p>
             <ul className="list-disc pl-6 space-y-2 text-[#A0A0A8]">
               <li><strong className="text-white">Supabase</strong> — database and authentication (account and project data).</li>
-              <li><strong className="text-white">Poly Haven</strong> and <strong className="text-white">Sketchfab</strong> — 3D model and texture search and download for your scenes. Their own privacy policies apply to assets you access through our integration.</li>
+              <li><strong className="text-white">Third-party 3D asset providers</strong> — We use professional 3D asset providers for models and textures in your scenes. Their privacy policies apply to assets you access through our platform.</li>
             </ul>
           </section>
 

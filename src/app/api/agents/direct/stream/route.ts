@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       const encoder = new TextEncoder();
       const chatMessage = result
         ? result.chatMessage
-        : "Couldn't find that on Poly Haven or Sketchfab. Try the Asset Library tabs to browse, or use a different search term.";
+        : "Couldn't find that model. Try a different search term or browse the Asset Library tabs.";
       if (result) await queueUE5Command(projectId, result.importCode);
       await supabase.from("chat_turns").insert({
         project_id: projectId,

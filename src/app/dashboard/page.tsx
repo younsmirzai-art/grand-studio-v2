@@ -362,7 +362,7 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-white mb-2">You&apos;ve reached your limit</h2>
             <p className="text-sm text-[#A0A0A8] mb-4">{upgradeModalMessage}</p>
             <p className="text-xs text-[#606068] mb-6">
-              Pro includes unlimited AI messages, unlimited Poly Haven & Sketchfab imports, 10 projects, and more.
+              Pro includes unlimited AI messages, unlimited model imports, 10 projects, and more.
             </p>
             <div className="flex gap-3">
               <button

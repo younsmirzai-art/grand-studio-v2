@@ -139,7 +139,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
             className="w-full justify-start gap-2 text-text-muted hover:text-text-secondary h-8 text-xs"
           >
             <Globe className="w-3.5 h-3.5" />
-            Sketchfab Search
+            Community Models
           </Button>
           <Button
             variant="ghost"

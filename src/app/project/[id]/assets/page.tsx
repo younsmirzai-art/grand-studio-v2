@@ -242,7 +242,7 @@ function SketchfabTab({ projectId }: { projectId: string }) {
                     rel="noopener noreferrer"
                     className="text-[10px] text-agent-teal hover:underline font-medium"
                   >
-                    View on Sketchfab
+                    View model
                   </a>
                   <Button
                     size="sm"
@@ -264,7 +264,7 @@ function SketchfabTab({ projectId }: { projectId: string }) {
           <p className="text-sm font-medium mb-1">
             {searched
               ? "No models found"
-              : "Search Sketchfab for 3D models"}
+              : "Search community models"}
           </p>
           <p className="text-xs">
             {searched
@@ -416,7 +416,7 @@ export default function AssetsPage() {
                   <span className="text-agent-teal">
                     <Globe className="w-3.5 h-3.5" />
                   </span>
-                  Sketchfab
+                  Community
                 </TabsTrigger>
               </TabsList>
 
