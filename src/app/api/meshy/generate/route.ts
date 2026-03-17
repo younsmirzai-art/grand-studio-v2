@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
-import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
+import { checkUsageLimit, recordUsage, getEffectivePlan } from "@/lib/usage/usageTracker";
 import { createTextTo3D, createImageTo3D, createTextToImage } from "@/lib/meshy/client";
 
 const LIMIT_MSG =
-  "You have used all your AI 3D Generator credits for today. Free plan: 3/day, Pro: 3/day, Team: 10/day. Upgrade for more!";
+  "You have used all your AI 3D Generator credits for today. Pro plan: 3/day, Team: 10/day. Upgrade for more!";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +12,17 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const plan = await getEffectivePlan(user.id);
+    if (plan === "free") {
+      return NextResponse.json(
+        {
+          error:
+            "AI 3D Generator is available on Pro and Team plans. Pro: 3 models/day, Team: 10 models/day. Upgrade to unlock AI 3D generation!",
+          limitReached: true,
+        },
+        { status: 403 },
+      );
     }
     const limitResult = await checkUsageLimit(user.id, "meshy_generate");
     if (!limitResult.allowed) {

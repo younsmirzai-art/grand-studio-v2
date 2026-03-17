@@ -138,7 +138,7 @@ const FREE_FEATURES = [
   "8 model imports per day",
   "2 projects",
   "5 screenshots per day",
-  "AI 3D Generator — 3 models per day",
+  "AI 3D Generator — Preview only",
   "Community support",
 ];
 

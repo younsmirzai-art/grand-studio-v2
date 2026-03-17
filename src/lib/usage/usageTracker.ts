@@ -7,7 +7,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     sketchfab_import: 3,
     screenshot: 5,
     max_projects: 2,
-    meshy_generate: 3, // temporary for testing; set to 0 later
+    meshy_generate: 0,
   },
   pro: {
     ai_message: 99999,

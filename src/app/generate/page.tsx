@@ -45,6 +45,19 @@ interface RecentModel {
   createdAt: number;
 }
 
+interface GeneratedModelRow {
+  id: string;
+  task_id: string;
+  prompt: string | null;
+  status: string;
+  model_url: string | null;
+  thumbnail_url: string | null;
+  art_style: string | null;
+  mode: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export default function GeneratePage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string } | null>(null);
@@ -72,6 +85,8 @@ export default function GeneratePage() {
   const [importProjectId, setImportProjectId] = useState("");
   const [importing, setImporting] = useState(false);
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
+  const [plan, setPlan] = useState<"free" | "pro" | "team" | "unknown">("unknown");
+  const [models, setModels] = useState<GeneratedModelRow[]>([]);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState("");
 
@@ -80,7 +95,8 @@ export default function GeneratePage() {
       const res = await fetch("/api/usage", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setUsage(data.meshy_generate ?? { used: 0, limit: 3 });
+        setUsage(data.meshy_generate ?? { used: 0, limit: 0 });
+        setPlan((data.plan as "free" | "pro" | "team") ?? "free");
       }
     } catch {}
   }, []);
@@ -110,6 +126,21 @@ export default function GeneratePage() {
   useEffect(() => {
     if (user) fetchUsage();
   }, [user, fetchUsage]);
+
+  useEffect(() => {
+    if (user) fetchModels();
+  }, [user, fetchModels]);
+
+  const fetchModels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/meshy/my-models", { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setModels((data.models as GeneratedModelRow[]) ?? []);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const uploadImage = useCallback(async (file: File) => {
     setImageUploading(true);
@@ -389,6 +420,37 @@ export default function GeneratePage() {
             </span>
           </div>
         </div>
+
+        {plan === "free" && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/70">
+            <div className="rounded-2xl border border-white/10 bg-[#111114] p-6 max-w-md w-full shadow-xl text-center">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[#2196F3]/10 flex items-center justify-center">
+                <Sparkles className="w-6 h-6 text-[#2196F3]" />
+              </div>
+              <h2 className="text-lg font-semibold text-white mb-1">AI 3D Generator — Pro &amp; Team Only</h2>
+              <p className="text-xs text-[#A0A0A8] mb-4">
+                Create custom 3D models from text or images. Upgrade to Pro ($19/mo) for 3 models per day or Team ($49/mo) for 10 models per day.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
+                <a
+                  href="/#pricing"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-xs font-semibold hover:brightness-110 transition"
+                >
+                  Upgrade to Pro
+                </a>
+                <a
+                  href="/#pricing"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-white/20 text-white text-xs font-semibold hover:bg-white/10 transition"
+                >
+                  Upgrade to Team
+                </a>
+              </div>
+              <p className="text-[10px] text-[#606068]">
+                You can still explore Grand Studio and AI Co-Pilot on the Free plan.
+              </p>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="relative max-w-5xl mx-auto px-6 py-12">
@@ -697,7 +759,6 @@ export default function GeneratePage() {
             </div>
           </div>
         )}
-
         {/* Recently Generated */}
         {recent.length > 0 && (
           <section>
@@ -720,6 +781,93 @@ export default function GeneratePage() {
                   >
                     Download
                   </a>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* My Models (from Supabase) */}
+        {models.length > 0 && (
+          <section className="mt-8">
+            <h2 className="text-lg font-semibold text-white mb-4">My Models</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {models.map((m) => (
+                <div
+                  key={m.id}
+                  className="rounded-xl border border-white/5 bg-[#111114]/80 p-4 flex flex-col gap-2"
+                >
+                  <div className="w-full aspect-square rounded-lg bg-[#1A1A1F] border border-white/5 flex items-center justify-center overflow-hidden">
+                    {m.thumbnail_url ? (
+                      <img
+                        src={m.thumbnail_url}
+                        alt={m.prompt ?? "Generated model"}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Sparkles className="w-8 h-8 text-[#2196F3]/40" />
+                    )}
+                  </div>
+                  <p className="text-xs text-white truncate" title={m.prompt ?? ""}>
+                    {m.prompt ?? "Untitled model"}
+                  </p>
+                  <p className="text-[10px] text-[#606068]">
+                    {new Date(m.created_at).toLocaleDateString()}
+                  </p>
+                  <div className="mt-auto flex flex-wrap gap-2 items-center">
+                    {m.model_url && (
+                      <a
+                        href={m.model_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[11px] text-[#2196F3] hover:underline"
+                      >
+                        <Download className="w-3 h-3" />
+                        Download GLB
+                      </a>
+                    )}
+                    {m.model_url && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!importProjectId) {
+                            toast.error("Select a project above before importing");
+                            return;
+                          }
+                          setImporting(true);
+                          try {
+                            const res = await fetch("/api/meshy/import", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({
+                                taskId: m.task_id,
+                                projectId: importProjectId,
+                                mode: m.mode === "image-to-3d" ? "image" : m.mode === "texture" ? "texture" : "text",
+                              }),
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error ?? "Import failed");
+                            toast.success("Import queued. Open your project in Grand Studio to run it in UE5.");
+                            router.push(`/project/${importProjectId}`);
+                          } catch (e) {
+                            toast.error(e instanceof Error ? e.message : "Import failed");
+                          } finally {
+                            setImporting(false);
+                          }
+                        }}
+                        disabled={importing || !importProjectId}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[11px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50"
+                      >
+                        {importing ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <ExternalLink className="w-3 h-3" />
+                        )}
+                        Import to UE5
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

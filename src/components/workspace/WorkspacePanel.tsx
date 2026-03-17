@@ -679,22 +679,32 @@ export function WorkspacePanel({
           </div>
         )}
 
-        {/* ====== AI GENERATOR (Team only) ====== */}
+        {/* ====== AI GENERATOR (Pro & Team only) ====== */}
         {tab === "aigenerator" && (
           <div className="p-4 relative">
-            {userPlan !== "team" ? (
+            {userPlan === "free" ? (
               <div className="rounded-xl border border-white/10 bg-[#111114]/80 p-6 text-center">
                 <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[#2196F3]/10 flex items-center justify-center">
                   <Sparkles className="w-6 h-6 text-[#2196F3]" />
                 </div>
-                <h3 className="text-sm font-semibold text-white mb-1">Exclusive to Team Plan</h3>
-                <p className="text-xs text-[#A0A0A8] mb-4">Create custom 3D models from text with Grand Studio AI 3D Generator. Upgrade to Team for $49/month.</p>
-                <a
-                  href="/#pricing"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-xs font-semibold hover:brightness-110 transition"
-                >
-                  Upgrade to Team
-                </a>
+                <h3 className="text-sm font-semibold text-white mb-1">AI 3D Generator — Pro &amp; Team Only</h3>
+                <p className="text-xs text-[#A0A0A8] mb-4">
+                  Create custom 3D models from text or images. Upgrade to Pro ($19/mo) for 3 models per day or Team ($49/mo) for 10 models per day.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <a
+                    href="/#pricing"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-xs font-semibold hover:brightness-110 transition"
+                  >
+                    Upgrade to Pro
+                  </a>
+                  <a
+                    href="/#pricing"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-white/20 text-white text-xs font-semibold hover:bg-white/10 transition"
+                  >
+                    Upgrade to Team
+                  </a>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">

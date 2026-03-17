@@ -1,8 +1,9 @@
 -- Grand Studio: generated_models table for webhook / AI 3D Generator tracking
 -- Run this in Supabase SQL Editor or via Supabase migrations.
 --
--- Also create a Storage bucket named "meshy-uploads" (Public) in Supabase Dashboard
--- for image and model uploads (Image to 3D, AI Texturing).
+-- Also create Storage buckets named:
+--   - "meshy-uploads" (Public) for image/model uploads (Image to 3D, AI Texturing)
+--   - "generated-models" (Public) for mirrored GLB/thumbnail assets from Meshy
 
 CREATE TABLE IF NOT EXISTS generated_models (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
