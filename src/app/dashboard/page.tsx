@@ -6,7 +6,7 @@ import { STRIPE_PRICES } from "@/lib/stripe/config";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard } from "lucide-react";
+import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
 
@@ -172,6 +172,13 @@ export default function DashboardPage() {
           GRAND STUDIO
         </Link>
         <div className="flex-1" />
+        <Link
+          href="/generate"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#2196F3] hover:text-[#42A5F5] hover:bg-[#2196F3]/10 transition"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          AI 3D Generator
+        </Link>
         <Link
           href="/connect"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#606068] hover:text-white hover:bg-white/5 transition"

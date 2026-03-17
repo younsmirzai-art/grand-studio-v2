@@ -698,6 +698,13 @@ export function WorkspacePanel({
               </div>
             ) : (
               <div className="space-y-4">
+                <a
+                  href="/generate"
+                  className="inline-flex items-center gap-1.5 text-xs text-[#2196F3] hover:underline mb-2"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Open full AI 3D Generator
+                </a>
                 <p className="text-xs text-[#A0A0A8]">Describe what you want to create. Generation takes 1–3 minutes.</p>
                 <input
                   type="text"

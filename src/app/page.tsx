@@ -21,6 +21,7 @@ import {
   Settings,
   Rocket,
   Gamepad2,
+  Sparkles,
 } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 import { STRIPE_PRICES } from "@/lib/stripe/config";
@@ -90,6 +91,17 @@ const PILLARS = [
       "Up to 3 auto-fix rounds",
     ],
   },
+  {
+    icon: Sparkles,
+    title: "AI 3D Generator",
+    desc: "Create custom 3D models from text or images. Describe any object and Grand Studio AI builds a professional 3D model ready for UE5. Generate up to 10 models per day on Team plan.",
+    features: [
+      "Text to 3D — describe anything",
+      "Image to 3D — turn photos into models",
+      "UE5-ready GLB/FBX/OBJ export",
+      "Up to 10 models/day on Team plan",
+    ],
+  },
 ];
 
 const STEPS = [
@@ -126,6 +138,7 @@ const FREE_FEATURES = [
   "8 model imports per day",
   "2 projects",
   "5 screenshots per day",
+  "AI 3D Generator — Preview only",
   "Community support",
 ];
 
@@ -134,13 +147,14 @@ const PRO_FEATURES = [
   "Unlimited model imports",
   "10 projects",
   "Unlimited screenshots",
+  "AI 3D Generator — 3 custom 3D models per day",
   "Powered by Claude Opus 4.6",
   "Email support",
 ];
 
 const TEAM_FEATURES = [
   "Everything in Pro",
-  "AI 3D Generator — create any 3D model from text",
+  "AI 3D Generator — 10 custom 3D models per day",
   "Unlimited projects",
   "Up to 5 team members",
   "Powered by Claude Opus 4.6",
@@ -418,10 +432,10 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <p className="text-[#2196F3] text-xs uppercase tracking-[0.3em] mb-4">— CAPABILITIES</p>
-            <h2 className="text-4xl md:text-5xl font-bold text-white">Three Powerful Engines.</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-white">Powerful Engines.</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {PILLARS.map((p) => (
               <div
                 key={p.title}

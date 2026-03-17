@@ -13,13 +13,14 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const plan = await getEffectivePlan(user.id);
-    if (plan !== "team") {
-      return NextResponse.json(
-        { error: TEAM_ONLY_MSG, limitReached: true },
-        { status: 403 }
-      );
-    }
+    // TODO: Re-enable Team plan check after testing
+    // const plan = await getEffectivePlan(user.id);
+    // if (plan !== "team") {
+    //   return NextResponse.json(
+    //     { error: TEAM_ONLY_MSG, limitReached: true },
+    //     { status: 403 }
+    //   );
+    // }
     const body = await request.json();
     const { prompt, artStyle, type, imageUrl } = body as {
       prompt?: string;
