@@ -96,11 +96,18 @@ export async function getImageTo3DStatus(taskId: string): Promise<MeshyTaskStatu
     headers: getHeaders(),
   });
   if (!res.ok) throw new Error(`Meshy image-to-3d status error: ${res.status}`);
-  const data = (await res.json()) as { status?: string; progress?: number; model_urls?: { glb?: string; fbx?: string; obj?: string } };
+  const data = (await res.json()) as {
+    status?: string;
+    progress?: number;
+    model_urls?: { glb?: string; fbx?: string; obj?: string };
+    model_url?: string;
+  };
+  const model_urls =
+    data.model_urls ?? (data.model_url ? { glb: data.model_url } : undefined);
   return {
     status: (data.status ?? "PENDING") as MeshyTaskStatus,
     progress: data.progress,
-    model_urls: data.model_urls,
+    model_urls,
   };
 }
 

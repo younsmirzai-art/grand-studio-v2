@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
-import { getTaskStatus, getRetextureStatus } from "@/lib/meshy/client";
+import { getTaskStatus, getImageTo3DStatus, getRetextureStatus } from "@/lib/meshy/client";
 import { generateUE5ImportCode } from "@/lib/ue5/importCode";
 import { queueUE5Command } from "@/lib/ue5/commands";
 
@@ -16,16 +16,25 @@ export async function POST(request: NextRequest) {
     if (!taskId || !projectId) {
       return NextResponse.json({ error: "taskId and projectId required" }, { status: 400 });
     }
-    const result = mode === "texture"
-      ? await getRetextureStatus(taskId)
-      : await getTaskStatus(taskId);
-    if (result.status !== "SUCCEEDED" || !result.model_urls?.glb) {
+
+    const resolvedMode = mode === "image" ? "image" : mode === "texture" ? "texture" : "text";
+    const result =
+      resolvedMode === "image"
+        ? await getImageTo3DStatus(taskId)
+        : resolvedMode === "texture"
+          ? await getRetextureStatus(taskId)
+          : await getTaskStatus(taskId);
+
+    console.log("[meshy/import] mode:", resolvedMode, "full result:", JSON.stringify(result));
+
+    const glbUrl =
+      result.model_urls?.glb ?? (result as { model_url?: string }).model_url;
+    if (result.status !== "SUCCEEDED" || !glbUrl) {
       return NextResponse.json(
         { error: "Model not ready or generation failed" },
         { status: 400 }
       );
     }
-    const glbUrl = result.model_urls.glb;
     const label = "AIGenerated";
     const filename = `meshy-${taskId.slice(0, 8)}.glb`;
     const code = generateUE5ImportCode(glbUrl, filename, label);

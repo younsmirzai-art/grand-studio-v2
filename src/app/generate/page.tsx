@@ -347,7 +347,7 @@ export default function GeneratePage() {
         body: JSON.stringify({
           taskId,
           projectId: importProjectId,
-          ...(taskMode === "texture" ? { mode: "texture" } : {}),
+          mode: taskMode,
         }),
       });
       const data = await res.json();
