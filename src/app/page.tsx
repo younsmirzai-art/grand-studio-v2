@@ -140,6 +140,7 @@ const PRO_FEATURES = [
 
 const TEAM_FEATURES = [
   "Everything in Pro",
+  "AI 3D Generator — create any 3D model from text",
   "Unlimited projects",
   "Up to 5 team members",
   "Powered by Claude Opus 4.6",

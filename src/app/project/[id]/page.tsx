@@ -837,6 +837,7 @@ export default function ProjectPage() {
             onTemplateClick={handleTemplateClick}
             onClearScene={handleClearScene}
             projectId={projectId}
+            userPlan={usage?.plan as "free" | "pro" | "team" | undefined}
             onLimitReached={(msg) => {
               setLimitReachedMessage(msg);
               setUpgradeModalOpen(true);

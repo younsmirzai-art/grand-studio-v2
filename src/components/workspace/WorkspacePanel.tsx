@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search,
   Box,
@@ -24,11 +24,19 @@ import {
   TreePine,
   ExternalLink,
 } from "lucide-react";
-import { ASSET_CATALOG, type AssetEntry } from "@/lib/ue5/assetLibrary";
+import type { AssetEntry } from "@/lib/ue5/assetLibrary";
 import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
 import { SCENE_TEMPLATES } from "@/lib/ue5/sceneTemplates";
 import type { UE5Command, GodEyeEntry } from "@/lib/types";
 import { toast } from "sonner";
+
+const AI_ART_STYLES = [
+  { value: "realistic", label: "Realistic" },
+  { value: "cartoon", label: "Cartoon" },
+  { value: "low_poly", label: "Low Poly" },
+  { value: "sculpture", label: "Sculpture" },
+  { value: "pbr", label: "PBR" },
+] as const;
 
 interface WorkspacePanelProps {
   ue5Commands: UE5Command[];
@@ -38,16 +46,8 @@ interface WorkspacePanelProps {
   onClearScene: () => void;
   projectId: string;
   onLimitReached?: (message: string) => void;
+  userPlan?: "free" | "pro" | "team";
 }
-
-const CATEGORIES = [
-  { id: "All", icon: Shapes },
-  { id: "Architecture", icon: Box },
-  { id: "Props", icon: Lamp },
-  { id: "Materials", icon: Paintbrush },
-  { id: "BasicShapes", icon: Shapes },
-  { id: "Particles", icon: Flame },
-];
 
 const POLYHAVEN_POPULAR_IDS = [
   "ArmChair_01",
@@ -62,14 +62,6 @@ const POLYHAVEN_POPULAR_IDS = [
   "wooden_crate_01",
 ];
 
-const ASSET_ICON_MAP: Record<string, typeof Box> = {
-  Architecture: Box,
-  Props: Lamp,
-  Materials: Paintbrush,
-  BasicShapes: Shapes,
-  Particles: Flame,
-};
-
 const TEMPLATES = Object.entries(SCENE_TEMPLATES).map(([key, t]) => ({
   key,
   name: t.name,
@@ -77,7 +69,7 @@ const TEMPLATES = Object.entries(SCENE_TEMPLATES).map(([key, t]) => ({
   time: "~30s",
 }));
 
-type TabId = "starter" | "polyhaven" | "sketchfab" | "templates" | "scene" | "history";
+type TabId = "polyhaven" | "sketchfab" | "templates" | "scene" | "history" | "aigenerator";
 
 interface PHResult {
   id: string;
@@ -107,11 +99,17 @@ export function WorkspacePanel({
   onClearScene,
   projectId,
   onLimitReached,
+  userPlan,
 }: WorkspacePanelProps) {
-  const [tab, setTab] = useState<TabId>("starter");
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
+  const [tab, setTab] = useState<TabId>("polyhaven");
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiArtStyle, setAiArtStyle] = useState<string>("realistic");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiTaskId, setAiTaskId] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+  const [aiModelUrl, setAiModelUrl] = useState<string | null>(null);
+  const [aiImporting, setAiImporting] = useState(false);
   const [expandedCmd, setExpandedCmd] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -130,21 +128,6 @@ export function WorkspacePanel({
   const [sfLoading, setSfLoading] = useState(false);
   const [sfDownloading, setSfDownloading] = useState<string | null>(null);
   const [sfImportedId, setSfImportedId] = useState<string | null>(null);
-
-  const filteredAssets = useMemo(() => {
-    let list = ASSET_CATALOG;
-    if (category !== "All") list = list.filter((a) => a.category === category);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (a) =>
-          a.name.toLowerCase().includes(q) ||
-          a.description.toLowerCase().includes(q) ||
-          a.category.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [category, search]);
 
   const filteredHistory = useMemo(() => {
     if (!historyFilter) return godEyeLog.slice().reverse();
@@ -337,10 +320,83 @@ export function WorkspacePanel({
     }
   }, [projectId, onLimitReached]);
 
+  const handleAiGenerate = useCallback(async () => {
+    if (!aiPrompt.trim()) return;
+    setAiGenerating(true);
+    setAiTaskId(null);
+    setAiStatus(null);
+    setAiModelUrl(null);
+    try {
+      const res = await fetch("/api/meshy/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ prompt: aiPrompt.trim(), artStyle: aiArtStyle, type: "text" }),
+      });
+      const data = await res.json();
+      if (res.status === 403 && data.limitReached) {
+        onLimitReached?.(data.error ?? "Team plan required");
+        return;
+      }
+      if (!res.ok) throw new Error(data.error ?? "Failed to start generation");
+      setAiTaskId(data.taskId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to start generation");
+      setAiGenerating(false);
+    }
+  }, [aiPrompt, aiArtStyle, onLimitReached]);
+
+  useEffect(() => {
+    if (!aiTaskId || !aiGenerating) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/meshy/status?taskId=${encodeURIComponent(aiTaskId)}`, { credentials: "include" });
+        const data = await res.json();
+        setAiStatus(data.status);
+        if (data.status === "SUCCEEDED" && data.modelUrl) {
+          setAiModelUrl(data.modelUrl);
+          setAiGenerating(false);
+          return;
+        }
+        if (data.status === "FAILED") {
+          setAiGenerating(false);
+          toast.error("Generation failed");
+          return;
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => clearInterval(t);
+  }, [aiTaskId, aiGenerating]);
+
+  const handleAiImport = useCallback(async () => {
+    if (!aiTaskId || !projectId) return;
+    setAiImporting(true);
+    try {
+      const res = await fetch("/api/meshy/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ taskId: aiTaskId, projectId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Import failed");
+      toast.success("Importing to UE5…");
+      setAiTaskId(null);
+      setAiStatus(null);
+      setAiModelUrl(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setAiImporting(false);
+    }
+  }, [aiTaskId, projectId]);
+
   const tabs: { id: TabId; label: string; icon: typeof Box }[] = [
-    { id: "starter", label: "Built-in", icon: Box },
     { id: "polyhaven", label: "3D Models", icon: Globe },
     { id: "sketchfab", label: "Community", icon: Download },
+    { id: "aigenerator", label: "AI Generator", icon: Sparkles },
     { id: "templates", label: "Templates", icon: Shapes },
     { id: "scene", label: "Scene", icon: Terminal },
     { id: "history", label: "History", icon: Clock },
@@ -368,70 +424,6 @@ export function WorkspacePanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {/* ====== BUILT-IN ====== */}
-        {tab === "starter" && (
-          <div className="p-4">
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#606068]" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search starter content..."
-                className="w-full pl-10 pr-4 py-2.5 bg-[#1A1A1F] border border-white/5 rounded-lg text-sm text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/40 transition"
-              />
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-thin mb-3">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setCategory(c.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
-                    category === c.id
-                      ? "bg-[#2196F3] text-white"
-                      : "bg-[#1A1A1F] text-[#A0A0A8] border border-white/5 hover:border-[#2196F3]/30"
-                  }`}
-                >
-                  <c.icon className="w-3 h-3" />
-                  {c.id}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredAssets.map((asset) => {
-                const Icon = ASSET_ICON_MAP[asset.category] || Box;
-                return (
-                  <button
-                    key={asset.path}
-                    onClick={() => onAssetClick(asset)}
-                    className="group bg-[#111114] rounded-xl border border-white/5 overflow-hidden hover:border-[#2196F3]/30 transition text-left epic-card"
-                  >
-                    <div className="h-16 flex items-center justify-center bg-[#0A0A0B]">
-                      <Icon className="w-7 h-7 text-[#2196F3]/30 group-hover:text-[#2196F3]/60 transition" />
-                    </div>
-                    <div className="p-2.5">
-                      <p className="text-xs font-medium text-white truncate">{asset.name}</p>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span className="text-[10px] text-[#606068] truncate">{asset.category}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">Built-in</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-xs text-[#606068]">{filteredAssets.length} assets</p>
-              <button
-                onClick={() => onAssetClick({ name: "custom", path: "", category: "", subcategory: "", description: "" })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3]/10 text-[#2196F3] text-xs font-medium hover:bg-[#2196F3]/20 transition"
-              >
-                <Sparkles className="w-3 h-3" />
-                Ask AI to Place
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ====== 3D MODELS ====== */}
         {tab === "polyhaven" && (
           <div className="p-4">
@@ -684,6 +676,84 @@ export function WorkspacePanel({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ====== AI GENERATOR (Team only) ====== */}
+        {tab === "aigenerator" && (
+          <div className="p-4 relative">
+            {userPlan !== "team" ? (
+              <div className="rounded-xl border border-white/10 bg-[#111114]/80 p-6 text-center">
+                <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-[#2196F3]/10 flex items-center justify-center">
+                  <Sparkles className="w-6 h-6 text-[#2196F3]" />
+                </div>
+                <h3 className="text-sm font-semibold text-white mb-1">Exclusive to Team Plan</h3>
+                <p className="text-xs text-[#A0A0A8] mb-4">Create custom 3D models from text with Grand Studio AI 3D Generator. Upgrade to Team for $49/month.</p>
+                <a
+                  href="/#pricing"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-xs font-semibold hover:brightness-110 transition"
+                >
+                  Upgrade to Team
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs text-[#A0A0A8]">Describe what you want to create. Generation takes 1–3 minutes.</p>
+                <input
+                  type="text"
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  placeholder="Describe what to create… (e.g. a medieval sword, a treasure chest, a dragon)"
+                  className="w-full px-4 py-3 rounded-xl bg-[#111114] border border-white/10 text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/40 transition text-sm"
+                />
+                <div>
+                  <label className="block text-[10px] font-medium text-[#606068] uppercase tracking-wider mb-1.5">Art style</label>
+                  <select
+                    value={aiArtStyle}
+                    onChange={(e) => setAiArtStyle(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#111114] border border-white/10 text-white outline-none focus:border-[#2196F3]/40 transition text-sm"
+                  >
+                    {AI_ART_STYLES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAiGenerate}
+                  disabled={aiGenerating || !aiPrompt.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white font-semibold text-sm hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {aiGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating your 3D model…
+                    </>
+                  ) : (
+                    <>Generate 3D Model</>
+                  )}
+                </button>
+                {aiGenerating && aiStatus && (
+                  <div className="rounded-lg bg-[#1A1A1F] px-3 py-2 text-xs text-[#A0A0A8]">
+                    Status: {aiStatus}
+                  </div>
+                )}
+                {aiModelUrl && !aiGenerating && (
+                  <div className="rounded-xl border border-[#2196F3]/20 bg-[#111114] p-4">
+                    <p className="text-xs text-emerald-400 mb-2">Model ready!</p>
+                    <button
+                      type="button"
+                      onClick={handleAiImport}
+                      disabled={aiImporting}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#2196F3] text-white text-sm font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50"
+                    >
+                      {aiImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      Import to UE5
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
