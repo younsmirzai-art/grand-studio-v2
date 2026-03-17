@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTaskStatus, getRetextureStatus, getTextToImageStatus } from "@/lib/meshy/client";
+import { getTaskStatus, getImageTo3DStatus, getRetextureStatus, getTextToImageStatus } from "@/lib/meshy/client";
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,6 +31,18 @@ export async function GET(request: NextRequest) {
         progress: result.progress,
         modelUrl: undefined,
         imageUrl,
+      });
+    }
+
+    if (mode === "image") {
+      const result = await getImageTo3DStatus(taskId);
+      const modelUrl = result.status === "SUCCEEDED" && result.model_urls?.glb
+        ? result.model_urls.glb
+        : undefined;
+      return NextResponse.json({
+        status: result.status,
+        progress: result.progress,
+        modelUrl,
       });
     }
 

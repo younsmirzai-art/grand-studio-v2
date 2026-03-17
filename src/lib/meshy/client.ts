@@ -1,5 +1,4 @@
-const MESHY_BASE = "https://api.meshy.ai/v2";
-const MESHY_OPENAPI = "https://api.meshy.ai/openapi/v1";
+const MESHY_BASE = "https://api.meshy.ai/openapi/v1";
 
 function getHeaders(): HeadersInit {
   const key = process.env.MESHY_API_KEY;
@@ -72,7 +71,7 @@ export interface MeshyTaskStatusResult {
 }
 
 /**
- * Get status of a Text to 3D or Image to 3D task.
+ * Get status of a Text to 3D task.
  */
 export async function getTaskStatus(taskId: string): Promise<MeshyTaskStatusResult> {
   const res = await fetch(`${MESHY_BASE}/text-to-3d/${taskId}`, {
@@ -89,6 +88,23 @@ export async function getTaskStatus(taskId: string): Promise<MeshyTaskStatusResu
 }
 
 /**
+ * Get status of an Image to 3D task.
+ */
+export async function getImageTo3DStatus(taskId: string): Promise<MeshyTaskStatusResult> {
+  const res = await fetch(`${MESHY_BASE}/image-to-3d/${taskId}`, {
+    method: "GET",
+    headers: getHeaders(),
+  });
+  if (!res.ok) throw new Error(`Meshy image-to-3d status error: ${res.status}`);
+  const data = (await res.json()) as { status?: string; progress?: number; model_urls?: { glb?: string; fbx?: string; obj?: string } };
+  return {
+    status: (data.status ?? "PENDING") as MeshyTaskStatus,
+    progress: data.progress,
+    model_urls: data.model_urls,
+  };
+}
+
+/**
  * Create a Retexture (AI Texturing) task. Returns task ID.
  */
 export async function createRetexture(
@@ -96,7 +112,7 @@ export async function createRetexture(
   textStylePrompt: string,
   options?: { enablePbr?: boolean }
 ): Promise<string> {
-  const res = await fetch(`${MESHY_OPENAPI}/retexture`, {
+  const res = await fetch(`${MESHY_BASE}/text-to-texture`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
@@ -118,7 +134,7 @@ export async function createRetexture(
  * Get status of a Retexture task.
  */
 export async function getRetextureStatus(taskId: string): Promise<MeshyTaskStatusResult> {
-  const res = await fetch(`${MESHY_OPENAPI}/retexture/${taskId}`, {
+  const res = await fetch(`${MESHY_BASE}/text-to-texture/${taskId}`, {
     method: "GET",
     headers: getHeaders(),
   });
@@ -138,7 +154,7 @@ export async function createTextToImage(
   prompt: string,
   options?: { aiModel?: "nano-banana" | "nano-banana-pro"; aspectRatio?: string }
 ): Promise<string> {
-  const res = await fetch(`${MESHY_OPENAPI}/text-to-image`, {
+  const res = await fetch(`${MESHY_BASE}/text-to-image`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
@@ -166,7 +182,7 @@ export interface TextToImageStatusResult {
  * Get status of a Text to Image task.
  */
 export async function getTextToImageStatus(taskId: string): Promise<TextToImageStatusResult> {
-  const res = await fetch(`${MESHY_OPENAPI}/text-to-image/${taskId}`, {
+  const res = await fetch(`${MESHY_BASE}/text-to-image/${taskId}`, {
     method: "GET",
     headers: getHeaders(),
   });

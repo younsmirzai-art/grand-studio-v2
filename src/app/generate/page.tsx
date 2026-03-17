@@ -292,7 +292,7 @@ export default function GeneratePage() {
 
   useEffect(() => {
     if (!taskId || !generating) return;
-    const modeParam = taskMode === "texture" ? "texture" : taskMode === "text-to-image" ? "text-to-image" : undefined;
+    const modeParam = taskMode === "texture" ? "texture" : taskMode === "text-to-image" ? "text-to-image" : taskMode === "image" ? "image" : undefined;
     const url = modeParam
       ? `/api/meshy/status?taskId=${encodeURIComponent(taskId)}&mode=${modeParam}`
       : `/api/meshy/status?taskId=${encodeURIComponent(taskId)}`;
