@@ -151,9 +151,9 @@ export default function ConnectPage() {
               2
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-sm font-semibold text-white mb-1">Open UE5 and enable Web Remote Control</h2>
+              <h2 className="text-sm font-semibold text-white mb-1">Open UE5 and enable plugins</h2>
               <p className="text-xs text-[#A0A0A8]">
-                In Unreal Engine 5: Edit → Plugins → search &quot;Web Remote Control&quot; → enable it, then restart UE5.
+                In Unreal Engine 5: Edit → Plugins, then enable both: (1) <strong>Web Remote Control</strong> — for relay connection; (2) <strong>glTF Importer</strong> — for importing 3D models with materials and textures. Restart UE5 after enabling both.
                 The relay will connect to UE5 at <code className="bg-white/5 px-1 rounded">localhost:30010</code>.
               </p>
             </div>

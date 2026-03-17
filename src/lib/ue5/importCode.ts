@@ -23,6 +23,22 @@ task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
 task.set_editor_property('automated', True)
 task.set_editor_property('save', True)
 task.set_editor_property('replace_existing', True)
+task.set_editor_property('import_materials', True)
+task.set_editor_property('import_textures', True)
+if local_path.lower().endswith('.fbx'):
+    fbx_import_ui = unreal.FbxImportUI()
+    fbx_import_ui.set_editor_property('import_materials', True)
+    fbx_import_ui.set_editor_property('import_textures', True)
+    fbx_import_ui.set_editor_property('import_as_skeletal', False)
+    try:
+        fbx_import_ui.texture_import_data.set_editor_property('material_search_location', unreal.MaterialSearchLocation.LOCAL)
+    except Exception:
+        pass
+    try:
+        fbx_import_ui.static_mesh_import_data.set_editor_property('combine_meshes', True)
+    except Exception:
+        pass
+    task.set_editor_property('options', fbx_import_ui)
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 imported_paths = task.get_editor_property('imported_object_paths')
 if imported_paths and len(imported_paths) > 0:
@@ -55,6 +71,7 @@ import urllib.request
 import os
 import zipfile
 import glob
+import shutil
 os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
 zip_path = '${zipPath}'
 extract_dir = '${extractDir}'
@@ -74,12 +91,35 @@ if not model_file:
     unreal.log_error('No 3D model file found in ZIP')
 else:
     unreal.log(f'Found model: {model_file}')
+    model_dir = os.path.dirname(model_file)
+    texture_extensions = ['.png', '.jpg', '.jpeg', '.tga', '.bmp']
+    for tex_ext in texture_extensions:
+        for tex_file in glob.glob(os.path.join(extract_dir, '**', '*' + tex_ext), recursive=True):
+            dest = os.path.join(model_dir, os.path.basename(tex_file))
+            if not os.path.exists(dest):
+                shutil.copy2(tex_file, dest)
     task = unreal.AssetImportTask()
     task.set_editor_property('filename', model_file)
     task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
     task.set_editor_property('automated', True)
     task.set_editor_property('save', True)
     task.set_editor_property('replace_existing', True)
+    task.set_editor_property('import_materials', True)
+    task.set_editor_property('import_textures', True)
+    if model_file.lower().endswith('.fbx'):
+        fbx_import_ui = unreal.FbxImportUI()
+        fbx_import_ui.set_editor_property('import_materials', True)
+        fbx_import_ui.set_editor_property('import_textures', True)
+        fbx_import_ui.set_editor_property('import_as_skeletal', False)
+        try:
+            fbx_import_ui.texture_import_data.set_editor_property('material_search_location', unreal.MaterialSearchLocation.LOCAL)
+        except Exception:
+            pass
+        try:
+            fbx_import_ui.static_mesh_import_data.set_editor_property('combine_meshes', True)
+        except Exception:
+            pass
+        task.set_editor_property('options', fbx_import_ui)
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
     imported_paths = task.get_editor_property('imported_object_paths')
     if imported_paths and len(imported_paths) > 0:
