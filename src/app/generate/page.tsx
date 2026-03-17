@@ -50,6 +50,19 @@ export default function GeneratePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [importProjectId, setImportProjectId] = useState("");
   const [importing, setImporting] = useState(false);
+  const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeModalMessage, setUpgradeModalMessage] = useState("");
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setUsage(data.meshy_generate ?? { used: 0, limit: 3 });
+      }
+    } catch {}
+  }, []);
 
   // TODO: Re-enable plan check after testing
   useEffect(() => {
@@ -73,6 +86,10 @@ export default function GeneratePage() {
       .then(({ data }) => setProjects((data as Project[]) ?? []));
   }, [user]);
 
+  useEffect(() => {
+    if (user) fetchUsage();
+  }, [user, fetchUsage]);
+
   const startGeneration = useCallback(async (m: Mode) => {
     if (m === "text") {
       if (!textPrompt.trim()) return;
@@ -90,8 +107,15 @@ export default function GeneratePage() {
           body: JSON.stringify({ prompt: textPrompt.trim(), artStyle, type: "text" }),
         });
         const data = await res.json();
+        if (res.status === 403 && data.limitReached) {
+          setUpgradeModalMessage(data.error ?? "Daily limit reached.");
+          setUpgradeModalOpen(true);
+          setGenerating(false);
+          return;
+        }
         if (!res.ok) throw new Error(data.error ?? "Failed to start");
         setTaskId(data.taskId);
+        fetchUsage();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Failed to start");
         setGenerating(false);
@@ -115,14 +139,21 @@ export default function GeneratePage() {
           body: JSON.stringify({ type: "image", imageUrl: imageUrl.trim() }),
         });
         const data = await res.json();
+        if (res.status === 403 && data.limitReached) {
+          setUpgradeModalMessage(data.error ?? "Daily limit reached.");
+          setUpgradeModalOpen(true);
+          setGenerating(false);
+          return;
+        }
         if (!res.ok) throw new Error(data.error ?? "Failed to start");
         setTaskId(data.taskId);
+        fetchUsage();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Failed to start");
         setGenerating(false);
       }
     }
-  }, [textPrompt, artStyle, imageUrl]);
+  }, [textPrompt, artStyle, imageUrl, fetchUsage]);
 
   useEffect(() => {
     if (!taskId || !generating) return;
@@ -142,6 +173,7 @@ export default function GeneratePage() {
             { taskId, label: label.slice(0, 60), modelUrl: data.modelUrl, createdAt: Date.now() },
             ...prev.slice(0, 19),
           ]);
+          fetchUsage();
         }
         if (data.status === "FAILED") {
           setGenerating(false);
@@ -152,7 +184,7 @@ export default function GeneratePage() {
     poll();
     const t = setInterval(poll, 5000);
     return () => clearInterval(t);
-  }, [taskId, generating, mode, textPrompt]);
+  }, [taskId, generating, mode, textPrompt, fetchUsage]);
 
   const handleImport = useCallback(async () => {
     if (!taskId || !importProjectId) {
@@ -215,7 +247,36 @@ export default function GeneratePage() {
             AI 3D Generator
           </h1>
           <p className="text-lg text-[#A0A0A8]">Create any 3D model with AI</p>
+          {usage !== null && (
+            <p className="text-sm text-[#606068] mt-2">
+              Models generated today: <span className="text-white font-medium">{usage.used}/{usage.limit}</span>
+            </p>
+          )}
         </div>
+
+        {upgradeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setUpgradeModalOpen(false)}>
+            <div className="rounded-2xl border border-white/10 bg-[#111114] p-6 max-w-md w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-white mb-2">Daily limit reached</h3>
+              <p className="text-sm text-[#A0A0A8] mb-4">{upgradeModalMessage}</p>
+              <div className="flex gap-3">
+                <a
+                  href="/#pricing"
+                  className="flex-1 text-center py-2.5 rounded-lg bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white text-sm font-semibold hover:brightness-110 transition"
+                >
+                  Upgrade
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setUpgradeModalOpen(false)}
+                  className="px-4 py-2.5 rounded-lg border border-white/20 text-white text-sm font-medium hover:bg-white/10 transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
           {/* MODE 1 — Text to 3D */}

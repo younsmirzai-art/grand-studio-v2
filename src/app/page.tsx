@@ -138,7 +138,7 @@ const FREE_FEATURES = [
   "8 model imports per day",
   "2 projects",
   "5 screenshots per day",
-  "AI 3D Generator — Preview only",
+  "AI 3D Generator — 3 models per day",
   "Community support",
 ];
 
@@ -147,14 +147,14 @@ const PRO_FEATURES = [
   "Unlimited model imports",
   "10 projects",
   "Unlimited screenshots",
-  "AI 3D Generator — 3 custom 3D models per day",
+  "AI 3D Generator — 3 models per day",
   "Powered by Claude Opus 4.6",
   "Email support",
 ];
 
 const TEAM_FEATURES = [
   "Everything in Pro",
-  "AI 3D Generator — 10 custom 3D models per day",
+  "AI 3D Generator — 10 models per day",
   "Unlimited projects",
   "Up to 5 team members",
   "Powered by Claude Opus 4.6",
@@ -170,15 +170,18 @@ export default function HomePage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const handleUpgradePro = async () => {
+    const priceId = STRIPE_PRICES.pro;
+    console.log("[Pricing] Pro plan clicked, priceId:", priceId);
     setCheckoutLoading(true);
     try {
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
+        body: JSON.stringify({ priceId }),
       });
       const data = await res.json();
+      console.log("[Pricing] Pro checkout response:", res.status, data);
       if (data.url) {
         window.location.href = data.url;
         return;
@@ -194,15 +197,18 @@ export default function HomePage() {
   };
 
   const handleUpgradeTeam = async () => {
+    const priceId = STRIPE_PRICES.team ?? "price_1TB7k1FNUGc8wt3GjUdT9A4V";
+    console.log("[Pricing] Team plan clicked, priceId:", priceId);
     setCheckoutLoading(true);
     try {
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ priceId: STRIPE_PRICES.team }),
+        body: JSON.stringify({ priceId }),
       });
       const data = await res.json();
+      console.log("[Pricing] Team checkout response:", res.status, data);
       if (data.url) {
         window.location.href = data.url;
         return;

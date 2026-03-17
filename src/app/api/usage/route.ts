@@ -11,10 +11,11 @@ export async function GET() {
     }
     const userId = user.id;
 
-    const [ai, poly, sketch] = await Promise.all([
+    const [ai, poly, sketch, meshy] = await Promise.all([
       checkUsageLimit(userId, "ai_message"),
       checkUsageLimit(userId, "polyhaven_import"),
       checkUsageLimit(userId, "sketchfab_import"),
+      checkUsageLimit(userId, "meshy_generate"),
     ]);
 
     return NextResponse.json({
@@ -22,6 +23,7 @@ export async function GET() {
       ai_message: { used: ai.used, limit: ai.limit },
       polyhaven_import: { used: poly.used, limit: poly.limit },
       sketchfab_import: { used: sketch.used, limit: sketch.limit },
+      meshy_generate: { used: meshy.used, limit: meshy.limit },
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

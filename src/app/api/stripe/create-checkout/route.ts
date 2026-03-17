@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { priceId } = body as { priceId?: string };
+    console.log("[create-checkout] body priceId:", priceId);
     if (!priceId || typeof priceId !== "string") {
       return NextResponse.json(
         { error: "Missing priceId" },
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log("[create-checkout] session created, url:", session.url ? "yes" : "no");
     return NextResponse.json({
       url: session.url,
     });

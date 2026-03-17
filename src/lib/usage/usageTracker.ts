@@ -7,6 +7,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     sketchfab_import: 3,
     screenshot: 5,
     max_projects: 2,
+    meshy_generate: 3, // temporary for testing; set to 0 later
   },
   pro: {
     ai_message: 99999,
@@ -14,6 +15,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     sketchfab_import: 99999,
     screenshot: 99999,
     max_projects: 10,
+    meshy_generate: 3,
   },
   team: {
     ai_message: 99999,
@@ -21,6 +23,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     sketchfab_import: 99999,
     screenshot: 99999,
     max_projects: 99999,
+    meshy_generate: 10,
   },
 };
 
@@ -29,7 +32,8 @@ export type UsageActionType =
   | "polyhaven_import"
   | "sketchfab_import"
   | "screenshot"
-  | "max_projects";
+  | "max_projects"
+  | "meshy_generate";
 
 export interface UsageLimitResult {
   allowed: boolean;

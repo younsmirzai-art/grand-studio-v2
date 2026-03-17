@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
-import { getEffectivePlan } from "@/lib/usage/usageTracker";
+import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import { createTextTo3D, createImageTo3D } from "@/lib/meshy/client";
 
-const TEAM_ONLY_MSG =
-  "AI 3D Generator is exclusive to Team plan. Upgrade to Team for $49/month to create custom 3D models with AI.";
+const LIMIT_MSG =
+  "You have used all your AI 3D Generator credits for today. Free plan: 3/day, Pro: 3/day, Team: 10/day. Upgrade for more!";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,14 +13,14 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    // TODO: Re-enable Team plan check after testing
-    // const plan = await getEffectivePlan(user.id);
-    // if (plan !== "team") {
-    //   return NextResponse.json(
-    //     { error: TEAM_ONLY_MSG, limitReached: true },
-    //     { status: 403 }
-    //   );
-    // }
+    // TODO: Re-enable Team plan check after testing (optional - limits apply to all plans now)
+    const limitResult = await checkUsageLimit(user.id, "meshy_generate");
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        { error: LIMIT_MSG, limitReached: true },
+        { status: 403 }
+      );
+    }
     const body = await request.json();
     const { prompt, artStyle, type, imageUrl } = body as {
       prompt?: string;
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "imageUrl required for image-to-3d" }, { status: 400 });
       }
       const taskId = await createImageTo3D(imageUrl);
+      await recordUsage(user.id, "meshy_generate");
       return NextResponse.json({ taskId });
     }
     if (!prompt?.trim()) {
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
       prompt.trim(),
       artStyle as "realistic" | "cartoon" | "low_poly" | "sculpture" | "pbr" | undefined
     );
+    await recordUsage(user.id, "meshy_generate");
     return NextResponse.json({ taskId });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
