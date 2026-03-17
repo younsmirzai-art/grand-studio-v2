@@ -38,7 +38,14 @@ export async function POST(request: NextRequest) {
     const label = "AIGenerated";
     const filename = `meshy-${taskId.slice(0, 8)}.glb`;
     const code = generateUE5ImportCode(glbUrl, filename, label);
-    const commandId = await queueUE5Command(projectId, code);
+    const commandId = await queueUE5Command(projectId, code, {
+      commandType: "import",
+      importContext: {
+        source_provider: "meshy",
+        source_url: glbUrl,
+        file_type: "glb",
+      },
+    });
     return NextResponse.json({ success: true, commandId });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

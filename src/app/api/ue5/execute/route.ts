@@ -21,7 +21,15 @@ export async function POST(request: NextRequest) {
     const rl = await rateLimitExecute(ip);
     if (rl.limited) return rl.response!;
 
-    const { projectId, code, agentName, submittedByEmail, submittedByName } = await request.json();
+    const {
+      projectId,
+      code,
+      agentName,
+      submittedByEmail,
+      submittedByName,
+      commandType,
+      importContext,
+    } = await request.json();
 
     if (!projectId || !code) {
       return NextResponse.json(
@@ -63,6 +71,11 @@ export async function POST(request: NextRequest) {
         status: "pending",
         ...(submittedByEmail && { submitted_by_email: submittedByEmail }),
         ...(submittedByName && { submitted_by_name: submittedByName }),
+        ...(commandType === "import" && { command_type: "import" }),
+        ...(importContext &&
+          typeof importContext === "object" && {
+            import_context: importContext,
+          }),
       })
       .select()
       .single();

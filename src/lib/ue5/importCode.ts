@@ -1,3 +1,54 @@
+/** Import status classification for post-import validation. */
+export type ImportStatus = "textured" | "materials_only" | "mesh_only" | "failed";
+
+/**
+ * Python snippet: validates import result (material/texture count, status) and prints IMPORT_RESULT line.
+ * Expects: task (AssetImportTask), _import_file_type (str e.g. 'fbx').
+ */
+const VALIDATION_SNIPPET = `
+import json
+_import_imported_paths = task.get_editor_property('imported_object_paths')
+_ue_asset_path = str(_import_imported_paths[0]) if _import_imported_paths and len(_import_imported_paths) > 0 else ''
+_material_count = 0
+_texture_count = 0
+_import_status = 'failed'
+if _import_imported_paths and len(_import_imported_paths) > 0:
+    unreal.log('Import completed. Validating asset...')
+    _asset = unreal.EditorAssetLibrary.load_asset(_ue_asset_path)
+    if _asset:
+        try:
+            _static_mats = _asset.get_editor_property('static_materials')
+        except Exception:
+            try:
+                _static_mats = getattr(_asset, 'static_materials', [])
+            except Exception:
+                _static_mats = []
+        _material_count = len(_static_mats)
+        for _sm in _static_mats:
+            try:
+                _mat = _sm.get_editor_property('material_interface') if hasattr(_sm, 'get_editor_property') else getattr(_sm, 'material_interface', None)
+                if _mat:
+                    try:
+                        _refd = _mat.get_editor_property('referenced_textures')
+                        if _refd:
+                            _texture_count += len(_refd)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        if _material_count >= 1 and _texture_count >= 1:
+            _import_status = 'textured'
+        elif _material_count >= 1:
+            _import_status = 'materials_only'
+        else:
+            _import_status = 'mesh_only'
+    unreal.log(f'material_count={_material_count} texture_count={_texture_count} status={_import_status}')
+else:
+    unreal.log('Import completed but no imported paths (failed).')
+_result = {'ue_asset_path': _ue_asset_path, 'material_count': _material_count, 'texture_count': _texture_count, 'import_status': _import_status, 'import_error': None}
+unreal.log('IMPORT_RESULT:' + json.dumps(_result))
+`;
+
 /**
  * Direct file import (Poly Haven FBX/GLB, etc.). Single file downloaded and imported.
  */
@@ -8,6 +59,7 @@ export function generateUE5ImportCode(
 ): string {
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
   const localPath = `C:/GrandStudio/Downloads/${filename}`;
+  const fileType = filename.includes(".") ? filename.split(".").pop()!.toLowerCase() : "glb";
 
   return `import unreal
 import urllib.request
@@ -15,8 +67,10 @@ import os
 os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
 url = '${downloadUrl.replace(/'/g, "\\'")}'
 local_path = '${localPath}'
+unreal.log('Download started.')
 urllib.request.urlretrieve(url, local_path)
 unreal.log(f'Downloaded: {local_path}')
+unreal.log('Import started.')
 task = unreal.AssetImportTask()
 task.set_editor_property('filename', local_path)
 task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
@@ -49,6 +103,8 @@ if imported_paths and len(imported_paths) > 0:
         if actor:
             actor.set_actor_label('${safeLabel}')
             unreal.log('Asset placed in level!')
+_import_file_type = '${fileType}'
+${VALIDATION_SNIPPET.trim()}
 `;
 }
 
@@ -72,9 +128,11 @@ import os
 import zipfile
 import glob
 import shutil
+import json
 os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
 zip_path = '${zipPath}'
 extract_dir = '${extractDir}'
+unreal.log('Download started.')
 urllib.request.urlretrieve('${escapedUrl}', zip_path)
 unreal.log(f'Downloaded ZIP: {zip_path}')
 os.makedirs(extract_dir, exist_ok=True)
@@ -89,8 +147,11 @@ for ext in ['.glb', '.fbx', '.gltf', '.obj']:
         break
 if not model_file:
     unreal.log_error('No 3D model file found in ZIP')
+    task = unreal.AssetImportTask()
+    unreal.log('IMPORT_RESULT:' + json.dumps({'ue_asset_path': '', 'material_count': 0, 'texture_count': 0, 'import_status': 'failed', 'import_error': 'No 3D model file in ZIP'}))
 else:
     unreal.log(f'Found model: {model_file}')
+    unreal.log('Import started.')
     model_dir = os.path.dirname(model_file)
     texture_extensions = ['.png', '.jpg', '.jpeg', '.tga', '.bmp']
     for tex_ext in texture_extensions:
@@ -129,5 +190,7 @@ else:
             if actor:
                 actor.set_actor_label('${safeLabel}')
                 unreal.log('Sketchfab model placed in level!')
+    _import_file_type = model_file.split('.')[-1].lower() if '.' in model_file else 'glb'
+${VALIDATION_SNIPPET.trim().split("\n").map((l) => "    " + l).join("\n")}
 `;
 }

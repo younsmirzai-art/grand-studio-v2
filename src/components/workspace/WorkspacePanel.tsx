@@ -91,6 +91,21 @@ interface SFResult {
   faceCount: number;
 }
 
+export type ImportStatusDisplay = "textured" | "materials_only" | "mesh_only" | "failed";
+
+interface ImportResultRow {
+  id: string;
+  source_provider: string;
+  source_url: string | null;
+  file_type: string | null;
+  ue_asset_path: string | null;
+  material_count: number;
+  texture_count: number;
+  import_status: ImportStatusDisplay;
+  import_error: string | null;
+  created_at: string;
+}
+
 export function WorkspacePanel({
   ue5Commands,
   godEyeLog,
@@ -128,6 +143,28 @@ export function WorkspacePanel({
   const [sfLoading, setSfLoading] = useState(false);
   const [sfDownloading, setSfDownloading] = useState<string | null>(null);
   const [sfImportedId, setSfImportedId] = useState<string | null>(null);
+
+  // Recent imports (from ue5_import_assets) for badges + UE path
+  const [importResults, setImportResults] = useState<ImportResultRow[]>([]);
+  const fetchImportResults = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await fetch(`/api/ue5/import-results?projectId=${encodeURIComponent(projectId)}`);
+      const data = await res.json().catch(() => ({}));
+      setImportResults(data.imports ?? []);
+    } catch {
+      setImportResults([]);
+    }
+  }, [projectId]);
+  useEffect(() => {
+    fetchImportResults();
+  }, [fetchImportResults]);
+  // Refetch after a successful import (when user clicks import we don't have commandId here; poll briefly)
+  useEffect(() => {
+    if (!phImportedId && !sfImportedId) return;
+    const t = setTimeout(fetchImportResults, 3000);
+    return () => clearTimeout(t);
+  }, [phImportedId, sfImportedId, fetchImportResults]);
 
   const filteredHistory = useMemo(() => {
     if (!historyFilter) return godEyeLog.slice().reverse();
@@ -216,7 +253,16 @@ export function WorkspacePanel({
       const execRes = await fetch("/api/ue5/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, code }),
+        body: JSON.stringify({
+          projectId,
+          code,
+          commandType: "import",
+          importContext: {
+            source_provider: "polyhaven",
+            source_url: data.url,
+            file_type: ext,
+          },
+        }),
       });
       const execData = await execRes.json().catch(() => ({}));
       if (!execRes.ok || !execData.commandId) {
@@ -297,7 +343,16 @@ export function WorkspacePanel({
       const execRes = await fetch("/api/ue5/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, code }),
+        body: JSON.stringify({
+          projectId,
+          code,
+          commandType: "import",
+          importContext: {
+            source_provider: "sketchfab",
+            source_url: data.url,
+            file_type: "zip",
+          },
+        }),
       });
       const execData = await execRes.json().catch(() => ({}));
       if (!execRes.ok || !execData.commandId) {
@@ -424,6 +479,46 @@ export function WorkspacePanel({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {/* Recent imports: badges + UE path (visible on asset tabs) */}
+        {(tab === "polyhaven" || tab === "sketchfab") && importResults.length > 0 && (
+          <div className="px-4 pt-3 pb-2 border-b border-white/5">
+            <p className="text-[10px] font-medium text-[#606068] uppercase tracking-wider mb-2">Recent imports</p>
+            <ul className="space-y-1.5 max-h-32 overflow-y-auto scrollbar-thin">
+              {importResults.slice(0, 10).map((row) => (
+                <li key={row.id} className="flex items-center gap-2 flex-wrap text-xs">
+                  <span
+                    className={`shrink-0 px-1.5 py-0.5 rounded font-medium ${
+                      row.import_status === "textured"
+                        ? "bg-emerald-500/20 text-emerald-400"
+                        : row.import_status === "materials_only" || row.import_status === "mesh_only"
+                          ? "bg-amber-500/20 text-amber-400"
+                          : "bg-red-500/20 text-red-400"
+                    }`}
+                    title={`Materials: ${row.material_count}, Textures: ${row.texture_count}`}
+                  >
+                    {row.import_status === "textured"
+                      ? "Textured ✅"
+                      : row.import_status === "materials_only"
+                        ? "Materials only ⚠️"
+                        : row.import_status === "mesh_only"
+                          ? "Mesh only ⚠️"
+                          : "Failed ❌"}
+                  </span>
+                  <span className="text-[#606068] shrink-0">{row.source_provider}</span>
+                  {row.ue_asset_path && (
+                    <code
+                      className="flex-1 min-w-0 truncate text-[10px] bg-white/5 px-1.5 py-0.5 rounded text-[#A0A0A8]"
+                      title={row.ue_asset_path}
+                    >
+                      {row.ue_asset_path}
+                    </code>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* ====== 3D MODELS ====== */}
         {tab === "polyhaven" && (
           <div className="p-4">

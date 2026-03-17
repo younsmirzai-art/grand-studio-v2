@@ -4,9 +4,16 @@ import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
 
+export interface ImportContext {
+  source_provider: string;
+  source_url: string;
+  file_type: string;
+}
+
 export async function queueUE5Command(
   projectId: string,
-  code: string
+  code: string,
+  options?: { commandType?: "import"; importContext?: ImportContext }
 ): Promise<string> {
   const supabase = createServerClient();
 
@@ -16,6 +23,8 @@ export async function queueUE5Command(
       project_id: projectId,
       code,
       status: "pending",
+      ...(options?.commandType === "import" && { command_type: "import" }),
+      ...(options?.importContext && { import_context: options.importContext }),
     })
     .select("id")
     .single();

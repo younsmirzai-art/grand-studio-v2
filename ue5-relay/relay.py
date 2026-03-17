@@ -122,6 +122,59 @@ unreal.log(f'Screenshot saved: {filename}')
     return execute_in_ue5(code)
 
 
+def extract_import_result_from_ue5_response(ue5_result):
+    """Parse UE5 ExecutePythonCommand response for IMPORT_RESULT: {...} line."""
+    if not ue5_result:
+        return None
+    text = None
+    if isinstance(ue5_result, str):
+        text = ue5_result
+    elif isinstance(ue5_result, dict):
+        for v in ue5_result.values():
+            found = extract_import_result_from_ue5_response(v)
+            if found:
+                return found
+        if "Output" in ue5_result:
+            text = ue5_result.get("Output") or ue5_result.get("OutputLog")
+        if not text and "ReturnValue" in ue5_result:
+            text = str(ue5_result.get("ReturnValue"))
+    if not text or "IMPORT_RESULT:" not in text:
+        return None
+    try:
+        prefix = "IMPORT_RESULT:"
+        idx = text.rfind(prefix)
+        if idx == -1:
+            return None
+        json_str = text[idx + len(prefix) :].strip()
+        return json.loads(json_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
+    """Upsert one row into ue5_import_assets from parsed IMPORT_RESULT + command import_context."""
+    if not import_context or not import_result:
+        return
+    try:
+        row = {
+            "project_id": project_id,
+            "ue5_command_id": cmd_id,
+            "source_provider": import_context.get("source_provider") or "unknown",
+            "source_url": import_context.get("source_url"),
+            "file_type": import_context.get("file_type"),
+            "ue_asset_path": import_result.get("ue_asset_path"),
+            "material_count": import_result.get("material_count", 0),
+            "texture_count": import_result.get("texture_count", 0),
+            "import_status": import_result.get("import_status") or "failed",
+            "import_error": import_result.get("import_error"),
+            "preview_image_url": import_result.get("preview_image_url"),
+        }
+        supabase.table("ue5_import_assets").insert(row).execute()
+        print(f"         Import result saved: {row['import_status']} (materials={row['material_count']}, textures={row['texture_count']})")
+    except Exception as e:
+        print(f"         Failed to save import result: {e}")
+
+
 def poll_commands():
     """Main polling loop - checks Supabase for pending UE5 commands"""
     print("")
@@ -201,6 +254,19 @@ def poll_commands():
                     supabase.table("ue5_commands").update(update_data).eq(
                         "id", cmd_id
                     ).execute()
+                    # Post-import: parse IMPORT_RESULT and save to ue5_import_assets
+                    import_ctx = cmd.get("import_context")
+                    if import_ctx or cmd_type == "import":
+                        parsed = extract_import_result_from_ue5_response(
+                            ue5_result.get("result")
+                        )
+                        if parsed:
+                            save_import_result_to_db(
+                                cmd_id,
+                                project_id,
+                                import_ctx or {},
+                                parsed,
+                            )
                 else:
                     print(f"         Error: {ue5_result['error']}")
                     supabase.table("ue5_commands").update(
