@@ -3,12 +3,15 @@ import { createServerAuthClient, createServerClient } from "@/lib/supabase/serve
 import { checkUsageLimit, recordUsage, getEffectivePlan } from "@/lib/usage/usageTracker";
 import { generateMusic } from "@/lib/music/client";
 
-const LIMIT_MSG = "You have used all your AI Music tracks for today. Free: 3, Pro: 10, Team: 30. Upgrade for more!";
+const LIMIT_MSG =
+  "You have used all your AI Music tracks for today. Free: 3, Pro: 10, Team: 30. Upgrade for more!";
 
 export async function POST(request: NextRequest) {
   try {
     const supabaseAuth = await createServerAuthClient();
-    const { data: { user } } = await supabaseAuth.auth.getUser();
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -33,17 +36,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    const durationMap: Record<string, number> = {
-      "30": 30,
-      "60": 60,
-      "120": 120,
-    };
-    const durationSeconds = durationMap[duration ?? "60"] ?? 60;
-
-    const taskId = await generateMusic(
+    const audioUrl = await generateMusic(
+      user.id,
       prompt.trim(),
-      style ?? "cinematic",
-      durationSeconds
+      style ?? "cinematic"
     );
 
     await recordUsage(user.id, "music_generate");
@@ -51,14 +47,16 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient();
     await supabase.from("generated_music").insert({
       user_id: user.id,
-      task_id: taskId,
+      task_id: null,
       prompt: prompt.trim(),
       style: style ?? null,
-      duration: duration ?? "1 minute",
-      status: "pending",
+      duration: duration ?? null,
+      status: "completed",
+      audio_url: audioUrl,
+      completed_at: new Date().toISOString(),
     });
 
-    return NextResponse.json({ taskId });
+    return NextResponse.json({ audioUrl });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("[music/generate] Error:", message);

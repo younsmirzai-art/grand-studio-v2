@@ -1,24 +1,26 @@
 /**
- * Grand Studio AI Music — client for Suno-based music generation API (sunoapi.org).
- * Uses MUSIC_API_KEY from environment. Do not expose provider name in UI.
+ * Grand Studio AI Music — client using Hugging Face MusicGen (facebook/musicgen-small).
+ * No provider names are exposed in the UI.
  *
- * API docs (sunoapi.org simple generate API):
- * - Base URL: https://api.sunoapi.org
- * - Create:   POST /api/v1/generate
- * - Status:   GET  /api/v1/generate/record?taskId={TASK_ID}
- * - Auth:     Authorization: Bearer MUSIC_API_KEY
+ * API:
+ * - Base URL: https://api-inference.huggingface.co/models/facebook/musicgen-small
+ * - Generate: POST with JSON body { inputs: "<prompt>" }
+ * - Response: binary audio (wav/flac)
  */
 
-const BASE_URL =
-  process.env.MUSIC_API_BASE_URL?.replace(/\/$/, "") || "https://api.sunoapi.org";
+const HF_BASE_URL =
+  process.env.MUSIC_API_BASE_URL?.replace(/\/$/, "") ||
+  "https://api-inference.huggingface.co/models/facebook/musicgen-small";
 
 function getHeaders(): HeadersInit {
-  const key = process.env.MUSIC_API_KEY;
-  if (!key) throw new Error("MUSIC_API_KEY is not set");
-  return {
-    Authorization: `Bearer ${key}`,
+  const headers: HeadersInit = {
     "Content-Type": "application/json",
   };
+  const token = process.env.HF_API_TOKEN;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 export type MusicStyle =
@@ -43,108 +45,59 @@ const STYLE_TO_SOUND: Record<string, string> = {
 };
 
 /**
- * Create a music generation task. Returns task_id for polling.
+ * Generate music once (no polling) and upload to Supabase Storage.
+ * Returns a public audio URL.
  */
 export async function generateMusic(
+  userId: string,
   prompt: string,
-  style: string,
-  durationSeconds: number
+  style: string
 ): Promise<string> {
   const sound = STYLE_TO_SOUND[style] || style;
-  const body = {
-    customMode: false,
-    instrumental: true,
-    model: "V4_5",
-    prompt: `${prompt.slice(0, 400)}. Style: ${sound}`.slice(0, 500),
-  };
+  const promptText = `${prompt} ${sound}`.trim();
 
-  // Debug logging for troubleshooting 401 / endpoint issues
-  // NOTE: This logs only high-level info, not secrets.
   // eslint-disable-next-line no-console
   console.log("[music/client] generateMusic request", {
-    url: `${BASE_URL}/api/v1/generate`,
+    url: HF_BASE_URL,
   });
 
-  const res = await fetch(`${BASE_URL}/api/v1/generate`, {
+  const res = await fetch(HF_BASE_URL, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify(body),
+    body: JSON.stringify({ inputs: promptText }),
   });
   if (!res.ok) {
-    const err = await res.text();
+    const err = await res.text().catch(() => "");
     // eslint-disable-next-line no-console
     console.log("[music/client] generateMusic error", {
       status: res.status,
       body: err.slice(0, 500),
     });
-    throw new Error(`Music API error: ${res.status}. ${err.slice(0, 200)}`);
+    throw new Error(`Music API error: ${res.status}`);
   }
-  const data = (await res.json()) as
-    | { task_id?: string }
-    | { data?: { task_id?: string } }
-    | { songs?: Array<{ id?: string }> };
 
-  // eslint-disable-next-line no-console
-  console.log("[music/client] FULL API response:", JSON.stringify(data));
+  const arrayBuffer = await res.arrayBuffer();
 
-  let taskId: string | undefined;
-  if ("task_id" in data && data.task_id) {
-    taskId = data.task_id;
-  } else if ("data" in data && data.data?.task_id) {
-    taskId = data.data.task_id;
-  } else if ("songs" in data && Array.isArray(data.songs) && data.songs[0]?.id) {
-    taskId = data.songs[0].id;
-  }
-  if (!taskId) throw new Error("No task_id in music API response");
-  return String(taskId);
-}
+  const { createServerClient } = await import("@/lib/supabase/server");
+  const supabase = createServerClient();
 
-export interface MusicTaskStatus {
-  status: "pending" | "running" | "succeeded" | "failed";
-  progress?: number;
-  audioUrl?: string;
-  error?: string;
-}
+  const timestamp = Date.now();
+  const path = `${userId}/${timestamp}.wav`;
 
-/**
- * Get task status. When status is succeeded, audioUrl is set.
- */
-export async function getTaskStatus(taskId: string): Promise<MusicTaskStatus> {
-  // eslint-disable-next-line no-console
-  console.log("[music/client] getTaskStatus request", {
-    url: `${BASE_URL}/api/v1/generate/record?taskId=${taskId}`,
-  });
-
-  const res = await fetch(`${BASE_URL}/api/v1/generate/record?taskId=${encodeURIComponent(taskId)}`, {
-    method: "GET",
-    headers: getHeaders(),
-  });
-  if (!res.ok) {
-    const err = await res.text().catch(() => "");
-    // eslint-disable-next-line no-console
-    console.log("[music/client] getTaskStatus error", {
-      status: res.status,
-      body: err.slice(0, 500),
+  const { data: uploadData, error } = await supabase.storage
+    .from("generated-music")
+    .upload(path, arrayBuffer, {
+      contentType: "audio/wav",
+      upsert: true,
     });
-    return { status: "failed", error: `Request failed: ${res.status}` };
+
+  if (error || !uploadData?.path) {
+    throw new Error(`Failed to upload generated music: ${error?.message ?? "unknown error"}`);
   }
-  const raw = await res.json();
-  const songs: Array<{ state?: string; audio_url?: string; image_url?: string }> | undefined =
-    Array.isArray(raw?.songs) ? raw.songs : Array.isArray(raw) ? raw : undefined;
-  if (songs && songs.length > 0) {
-    const first = songs[0];
-    const state = (first.state || "").toLowerCase(); // queued | streaming | succeeded | failed
-    const audioUrl = first.audio_url ?? undefined;
-    if (state === "succeeded" && audioUrl) {
-      return { status: "succeeded", audioUrl };
-    }
-    if (state === "failed") {
-      return { status: "failed", error: "Generation failed" };
-    }
-    return {
-      status: state === "running" ? "running" : "pending",
-      progress: state === "running" ? 50 : undefined,
-    };
-  }
-  return { status: "pending" };
+
+  const { data: publicData } = supabase.storage
+    .from("generated-music")
+    .getPublicUrl(uploadData.path);
+
+  return publicData.publicUrl;
 }

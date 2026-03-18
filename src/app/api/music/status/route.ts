@@ -1,46 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient, createServerClient } from "@/lib/supabase/server";
-import { getTaskStatus } from "@/lib/music/client";
 
+// Simple status endpoint: reads audio URL from generated_music (no polling).
 export async function GET(request: NextRequest) {
   try {
     const supabaseAuth = await createServerAuthClient();
-    const { data: { user } } = await supabaseAuth.auth.getUser();
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const taskId = request.nextUrl.searchParams.get("taskId");
-    if (!taskId) {
-      return NextResponse.json({ error: "taskId required" }, { status: 400 });
+    const trackId = request.nextUrl.searchParams.get("id");
+
+    const supabase = createServerClient();
+
+    const query = supabase
+      .from("generated_music")
+      .select("id, status, audio_url")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const { data, error } = trackId
+      ? await supabase
+          .from("generated_music")
+          .select("id, status, audio_url")
+          .eq("user_id", user.id)
+          .eq("id", trackId)
+          .maybeSingle()
+      : await query.maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const statusResult = await getTaskStatus(taskId);
-
-    if (statusResult.status === "succeeded" && statusResult.audioUrl) {
-      const supabase = createServerClient();
-      await supabase
-        .from("generated_music")
-        .update({
-          status: "completed",
-          audio_url: statusResult.audioUrl,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("task_id", taskId)
-        .eq("user_id", user.id);
-    } else if (statusResult.status === "failed") {
-      const supabase = createServerClient();
-      await supabase
-        .from("generated_music")
-        .update({ status: "failed" })
-        .eq("task_id", taskId)
-        .eq("user_id", user.id);
+    if (!data) {
+      return NextResponse.json({ status: "not_found", audioUrl: null }, { status: 404 });
     }
 
     return NextResponse.json({
-      status: statusResult.status,
-      progress: statusResult.progress,
-      audioUrl: statusResult.audioUrl ?? null,
+      status: data.status ?? "completed",
+      audioUrl: data.audio_url ?? null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

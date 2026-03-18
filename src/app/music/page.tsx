@@ -50,8 +50,6 @@ export default function MusicPage() {
   const [style, setStyle] = useState("cinematic");
   const [duration, setDuration] = useState("60");
   const [generating, setGenerating] = useState(false);
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
@@ -102,40 +100,12 @@ export default function MusicPage() {
     }
   }, [user, fetchUsage, fetchTracks]);
 
-  useEffect(() => {
-    if (!taskId || !generating) return;
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/music/status?taskId=${encodeURIComponent(taskId)}`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        setProgress(data.progress ?? (data.status === "running" ? 50 : 0));
-        if (data.status === "succeeded" && data.audioUrl) {
-          setAudioUrl(data.audioUrl);
-          setGenerating(false);
-          fetchUsage();
-          fetchTracks();
-        }
-        if (data.status === "failed") {
-          setGenerating(false);
-          toast.error("Music generation failed");
-        }
-      } catch {}
-    };
-    poll();
-    const t = setInterval(poll, 4000);
-    return () => clearInterval(t);
-  }, [taskId, generating, fetchUsage, fetchTracks]);
-
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) {
       toast.error("Describe the music you want");
       return;
     }
     setGenerating(true);
-    setTaskId(null);
-    setProgress(null);
     setAudioUrl(null);
     try {
       const res = await fetch("/api/music/generate", {
@@ -151,12 +121,15 @@ export default function MusicPage() {
         return;
       }
       if (!res.ok) throw new Error(data.error ?? "Failed to start");
-      setTaskId(data.taskId);
+      setAudioUrl(data.audioUrl ?? null);
+      setGenerating(false);
+      fetchUsage();
+      fetchTracks();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to start");
       setGenerating(false);
     }
-  }, [prompt, style, duration]);
+  }, [prompt, style, duration, fetchUsage, fetchTracks]);
 
   if (user === null) {
     return (
@@ -260,13 +233,13 @@ export default function MusicPage() {
           </button>
         </div>
 
-        {generating && taskId && (
+        {generating && (
           <div className="rounded-2xl border border-[#2196F3]/20 bg-[#111114]/80 p-6 mb-8">
-            <p className="text-sm font-medium text-white mb-2">Creating your track… This usually takes 30–60 seconds.</p>
+            <p className="text-sm font-medium text-white mb-2">Creating your track… This usually takes a few seconds.</p>
             <div className="h-2 rounded-full bg-[#1A1A1F] overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-[#2196F3] to-[#1976D2] transition-all duration-500"
-                style={{ width: `${progress ?? 20}%` }}
+                style={{ width: "60%" }}
               />
             </div>
           </div>
