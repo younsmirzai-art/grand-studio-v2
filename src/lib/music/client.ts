@@ -1,16 +1,16 @@
 /**
- * Grand Studio AI Music — client for music generation API.
+ * Grand Studio AI Music — client for Suno-based music generation API (sunoapi.org).
  * Uses MUSIC_API_KEY from environment. Do not expose provider name in UI.
  *
- * API docs (musicapi.ai Sonic API):
- * - Base URL: https://api.musicapi.ai
- * - Create:   POST /api/v1/sonic/create
- * - Status:   GET  /api/v1/sonic/task/{TASK_ID}
+ * API docs (sunoapi.org gateway):
+ * - Base URL: https://api.sunoapi.org
+ * - Create:   POST /api/v1/gateway/generate/music
+ * - Status:   GET  /api/v1/gateway/query?ids={TASK_ID}
  * - Auth:     Authorization: Bearer MUSIC_API_KEY
  */
 
 const BASE_URL =
-  process.env.MUSIC_API_BASE_URL?.replace(/\/$/, "") || "https://api.musicapi.ai";
+  process.env.MUSIC_API_BASE_URL?.replace(/\/$/, "") || "https://api.sunoapi.org";
 
 function getHeaders(): HeadersInit {
   const key = process.env.MUSIC_API_KEY;
@@ -52,11 +52,10 @@ export async function generateMusic(
 ): Promise<string> {
   const sound = STYLE_TO_SOUND[style] || style;
   const body = {
-    custom_mode: false,
-    mv: "sonic-v4-5",
     title: prompt.slice(0, 80) || "Grand Studio track",
     tags: sound.slice(0, 120),
     gpt_description_prompt: prompt.slice(0, 500),
+    mv: "sonic-v4-5",
     instrumental: true,
   };
 
@@ -64,11 +63,11 @@ export async function generateMusic(
   // NOTE: This logs only high-level info, not secrets.
   // eslint-disable-next-line no-console
   console.log("[music/client] generateMusic request", {
-    url: `${BASE_URL}/api/v1/sonic/create`,
+    url: `${BASE_URL}/api/v1/gateway/generate/music`,
     mv: body.mv,
   });
 
-  const res = await fetch(`${BASE_URL}/api/v1/sonic/create`, {
+  const res = await fetch(`${BASE_URL}/api/v1/gateway/generate/music`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(body),
@@ -82,8 +81,12 @@ export async function generateMusic(
     });
     throw new Error(`Music API error: ${res.status}. ${err.slice(0, 200)}`);
   }
-  const data = (await res.json()) as { task_id?: string; data?: { task_id?: string } };
-  const taskId = data.task_id ?? data.data?.task_id;
+  const data = (await res.json()) as { task_id?: string; ids?: string[]; data?: { task_id?: string; ids?: string[] } };
+  const taskId =
+    data.task_id ??
+    data.data?.task_id ??
+    (Array.isArray(data.ids) && data.ids[0]) ??
+    (Array.isArray(data.data?.ids) && data.data!.ids![0]);
   if (!taskId) throw new Error("No task_id in music API response");
   return String(taskId);
 }
@@ -101,10 +104,10 @@ export interface MusicTaskStatus {
 export async function getTaskStatus(taskId: string): Promise<MusicTaskStatus> {
   // eslint-disable-next-line no-console
   console.log("[music/client] getTaskStatus request", {
-    url: `${BASE_URL}/api/v1/sonic/task/${taskId}`,
+    url: `${BASE_URL}/api/v1/gateway/query?ids=${taskId}`,
   });
 
-  const res = await fetch(`${BASE_URL}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
+  const res = await fetch(`${BASE_URL}/api/v1/gateway/query?ids=${encodeURIComponent(taskId)}`, {
     method: "GET",
     headers: getHeaders(),
   });
@@ -117,14 +120,12 @@ export async function getTaskStatus(taskId: string): Promise<MusicTaskStatus> {
     });
     return { status: "failed", error: `Request failed: ${res.status}` };
   }
-  const data = (await res.json()) as {
-    data?: Array<{ state?: string; audio_url?: string }>;
-    code?: number;
-  };
-  const items = data.data;
+  const raw = await res.json();
+  const items: Array<{ state?: string; audio_url?: string; image_url?: string }> | undefined =
+    Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : undefined;
   if (items && items.length > 0) {
     const first = items[0];
-    const state = (first.state || "").toLowerCase();
+    const state = (first.state || "").toLowerCase(); // queued | running | succeeded | failed
     const audioUrl = first.audio_url ?? undefined;
     if (state === "succeeded" && audioUrl) {
       return { status: "succeeded", audioUrl };
