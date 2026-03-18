@@ -23,6 +23,7 @@ import {
   Gamepad2,
   Sparkles,
   Music,
+  Globe2,
 } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 import { STRIPE_PRICES } from "@/lib/stripe/config";
@@ -114,6 +115,17 @@ const PILLARS = [
       "Up to 30 tracks/day on Team plan",
     ],
   },
+  {
+    icon: Globe2,
+    title: "World Explorer",
+    desc: "Import real-world cities and terrain. Explore Paris, Tokyo, New York and thousands of locations in 3D inside UE5.",
+    features: [
+      "Search any location",
+      "One-click import into UE5",
+      "Real-world cities and terrain",
+      "Up to 30 imports/day on Team plan",
+    ],
+  },
 ];
 
 const STEPS = [
@@ -152,6 +164,7 @@ const FREE_FEATURES = [
   "5 screenshots per day",
   "AI 3D Generator — Preview only",
   "AI Music Studio — 3 tracks per day",
+  "World Explorer — 3 imports per day",
   "Community support",
 ];
 
@@ -162,6 +175,7 @@ const PRO_FEATURES = [
   "Unlimited screenshots",
   "AI 3D Generator — 3 models per day",
   "AI Music Studio — 10 tracks per day",
+  "World Explorer — 10 imports per day",
   "Powered by Claude Opus 4.6",
   "Email support",
 ];
@@ -170,6 +184,7 @@ const TEAM_FEATURES = [
   "Everything in Pro",
   "AI 3D Generator — 10 models per day",
   "AI Music Studio — 30 tracks per day",
+  "World Explorer — 30 imports per day",
   "Unlimited projects",
   "Up to 5 team members",
   "Powered by Claude Opus 4.6",

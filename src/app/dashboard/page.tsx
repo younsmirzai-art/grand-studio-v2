@@ -6,7 +6,7 @@ import { STRIPE_PRICES } from "@/lib/stripe/config";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard, Sparkles, Music } from "lucide-react";
+import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard, Sparkles, Music, Globe2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
 
@@ -203,6 +203,13 @@ export default function DashboardPage() {
         >
           <Music className="w-3.5 h-3.5" />
           AI Music
+        </Link>
+        <Link
+          href="/world-explorer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#2196F3] hover:text-[#42A5F5] hover:bg-[#2196F3]/10 transition"
+        >
+          <Globe2 className="w-3.5 h-3.5" />
+          World Explorer
         </Link>
         <Link
           href="/connect"

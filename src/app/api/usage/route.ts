@@ -11,12 +11,13 @@ export async function GET() {
     }
     const userId = user.id;
 
-    const [ai, poly, sketch, meshy, music] = await Promise.all([
+    const [ai, poly, sketch, meshy, music, world] = await Promise.all([
       checkUsageLimit(userId, "ai_message"),
       checkUsageLimit(userId, "polyhaven_import"),
       checkUsageLimit(userId, "sketchfab_import"),
       checkUsageLimit(userId, "meshy_generate"),
       checkUsageLimit(userId, "music_generate"),
+      checkUsageLimit(userId, "world_import"),
     ]);
 
     return NextResponse.json({
@@ -26,6 +27,7 @@ export async function GET() {
       sketchfab_import: { used: sketch.used, limit: sketch.limit },
       meshy_generate: { used: meshy.used, limit: meshy.limit },
       music_generate: { used: music.used, limit: music.limit },
+      world_import: { used: world.used, limit: world.limit },
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

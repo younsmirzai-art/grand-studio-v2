@@ -9,6 +9,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     max_projects: 2,
     meshy_generate: 0,
     music_generate: 3,
+    world_import: 3,
   },
   pro: {
     ai_message: 99999,
@@ -18,6 +19,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     max_projects: 10,
     meshy_generate: 3,
     music_generate: 10,
+    world_import: 10,
   },
   team: {
     ai_message: 99999,
@@ -27,6 +29,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     max_projects: 99999,
     meshy_generate: 10,
     music_generate: 30,
+    world_import: 30,
   },
 };
 
@@ -37,7 +40,8 @@ export type UsageActionType =
   | "screenshot"
   | "max_projects"
   | "meshy_generate"
-  | "music_generate";
+  | "music_generate"
+  | "world_import";
 
 export interface UsageLimitResult {
   allowed: boolean;
