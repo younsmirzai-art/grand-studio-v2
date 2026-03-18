@@ -10,7 +10,7 @@
 
 const HF_BASE_URL =
   process.env.MUSIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "https://api-inference.huggingface.co/models/facebook/musicgen-small";
+  "https://router.huggingface.co/hf-inference/models/facebook/musicgen-small";
 
 function getHeaders(): HeadersInit {
   const headers: HeadersInit = {
