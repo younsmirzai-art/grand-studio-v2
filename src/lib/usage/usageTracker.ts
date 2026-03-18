@@ -8,6 +8,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     screenshot: 5,
     max_projects: 2,
     meshy_generate: 0,
+    music_generate: 3,
   },
   pro: {
     ai_message: 99999,
@@ -16,6 +17,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     screenshot: 99999,
     max_projects: 10,
     meshy_generate: 3,
+    music_generate: 10,
   },
   team: {
     ai_message: 99999,
@@ -24,6 +26,7 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     screenshot: 99999,
     max_projects: 99999,
     meshy_generate: 10,
+    music_generate: 30,
   },
 };
 
@@ -33,7 +36,8 @@ export type UsageActionType =
   | "sketchfab_import"
   | "screenshot"
   | "max_projects"
-  | "meshy_generate";
+  | "meshy_generate"
+  | "music_generate";
 
 export interface UsageLimitResult {
   allowed: boolean;

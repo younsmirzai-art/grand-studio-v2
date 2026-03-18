@@ -22,6 +22,7 @@ import {
   Rocket,
   Gamepad2,
   Sparkles,
+  Music,
 } from "lucide-react";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 import { STRIPE_PRICES } from "@/lib/stripe/config";
@@ -102,6 +103,17 @@ const PILLARS = [
       "Up to 10 models/day on Team plan",
     ],
   },
+  {
+    icon: Music,
+    title: "AI Music Studio",
+    desc: "Create custom soundtracks and sound effects with AI for your UE5 scenes. Epic, ambient, cinematic, horror and more. Free: 3 tracks/day, Pro: 10, Team: 30.",
+    features: [
+      "Describe the music you want",
+      "Multiple styles: orchestral, ambient, cinematic",
+      "Download and add to your project",
+      "Up to 30 tracks/day on Team plan",
+    ],
+  },
 ];
 
 const STEPS = [
@@ -139,6 +151,7 @@ const FREE_FEATURES = [
   "2 projects",
   "5 screenshots per day",
   "AI 3D Generator — Preview only",
+  "AI Music Studio — 3 tracks per day",
   "Community support",
 ];
 
@@ -148,6 +161,7 @@ const PRO_FEATURES = [
   "10 projects",
   "Unlimited screenshots",
   "AI 3D Generator — 3 models per day",
+  "AI Music Studio — 10 tracks per day",
   "Powered by Claude Opus 4.6",
   "Email support",
 ];
@@ -155,6 +169,7 @@ const PRO_FEATURES = [
 const TEAM_FEATURES = [
   "Everything in Pro",
   "AI 3D Generator — 10 models per day",
+  "AI Music Studio — 30 tracks per day",
   "Unlimited projects",
   "Up to 5 team members",
   "Powered by Claude Opus 4.6",

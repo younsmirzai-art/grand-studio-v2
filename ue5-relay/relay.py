@@ -172,18 +172,6 @@ def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
         }
         supabase.table("ue5_import_assets").insert(row).execute()
         print(f"         Import result saved: {row['import_status']} (materials={row['material_count']}, textures={row['texture_count']})")
-        # Sync back to generated_3d_assets so UI can show import status/badges
-        try:
-            supabase.table("generated_3d_assets").update({
-                "ue_asset_path": row["ue_asset_path"],
-                "import_status": row["import_status"],
-                "material_count": row["material_count"],
-                "texture_count": row["texture_count"],
-                "import_error": row["import_error"],
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("ue5_command_id", cmd_id).execute()
-        except Exception:
-            pass
     except Exception as e:
         print(f"         Failed to save import result: {e}")
 
