@@ -84,6 +84,9 @@ export async function generateMusic(
     | { data?: { task_id?: string } }
     | { songs?: Array<{ id?: string }> };
 
+  // eslint-disable-next-line no-console
+  console.log("[music/client] FULL API response:", JSON.stringify(data));
+
   let taskId: string | undefined;
   if ("task_id" in data && data.task_id) {
     taskId = data.task_id;
