@@ -2,10 +2,10 @@
  * Grand Studio AI Music — client for Suno-based music generation API (sunoapi.org).
  * Uses MUSIC_API_KEY from environment. Do not expose provider name in UI.
  *
- * API docs (sunoapi.org gateway):
+ * API docs (sunoapi.org simple generate API):
  * - Base URL: https://api.sunoapi.org
- * - Create:   POST /api/v1/gateway/generate/music
- * - Status:   GET  /api/v1/gateway/query?ids={TASK_ID}
+ * - Create:   POST /api/v1/generate
+ * - Status:   GET  /api/v1/generate/record?taskId={TASK_ID}
  * - Auth:     Authorization: Bearer MUSIC_API_KEY
  */
 
@@ -52,22 +52,20 @@ export async function generateMusic(
 ): Promise<string> {
   const sound = STYLE_TO_SOUND[style] || style;
   const body = {
-    title: prompt.slice(0, 80) || "Grand Studio track",
-    tags: sound.slice(0, 120),
-    gpt_description_prompt: prompt.slice(0, 500),
-    mv: "sonic-v4-5",
+    customMode: false,
     instrumental: true,
+    model: "V4_5",
+    prompt: `${prompt.slice(0, 400)}. Style: ${sound}`.slice(0, 500),
   };
 
   // Debug logging for troubleshooting 401 / endpoint issues
   // NOTE: This logs only high-level info, not secrets.
   // eslint-disable-next-line no-console
   console.log("[music/client] generateMusic request", {
-    url: `${BASE_URL}/api/v1/gateway/generate/music`,
-    mv: body.mv,
+    url: `${BASE_URL}/api/v1/generate`,
   });
 
-  const res = await fetch(`${BASE_URL}/api/v1/gateway/generate/music`, {
+  const res = await fetch(`${BASE_URL}/api/v1/generate`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(body),
@@ -81,12 +79,19 @@ export async function generateMusic(
     });
     throw new Error(`Music API error: ${res.status}. ${err.slice(0, 200)}`);
   }
-  const data = (await res.json()) as { task_id?: string; ids?: string[]; data?: { task_id?: string; ids?: string[] } };
-  const taskId =
-    data.task_id ??
-    data.data?.task_id ??
-    (Array.isArray(data.ids) && data.ids[0]) ??
-    (Array.isArray(data.data?.ids) && data.data!.ids![0]);
+  const data = (await res.json()) as
+    | { task_id?: string }
+    | { data?: { task_id?: string } }
+    | { songs?: Array<{ id?: string }> };
+
+  let taskId: string | undefined;
+  if ("task_id" in data && data.task_id) {
+    taskId = data.task_id;
+  } else if ("data" in data && data.data?.task_id) {
+    taskId = data.data.task_id;
+  } else if ("songs" in data && Array.isArray(data.songs) && data.songs[0]?.id) {
+    taskId = data.songs[0].id;
+  }
   if (!taskId) throw new Error("No task_id in music API response");
   return String(taskId);
 }
@@ -104,10 +109,10 @@ export interface MusicTaskStatus {
 export async function getTaskStatus(taskId: string): Promise<MusicTaskStatus> {
   // eslint-disable-next-line no-console
   console.log("[music/client] getTaskStatus request", {
-    url: `${BASE_URL}/api/v1/gateway/query?ids=${taskId}`,
+    url: `${BASE_URL}/api/v1/generate/record?taskId=${taskId}`,
   });
 
-  const res = await fetch(`${BASE_URL}/api/v1/gateway/query?ids=${encodeURIComponent(taskId)}`, {
+  const res = await fetch(`${BASE_URL}/api/v1/generate/record?taskId=${encodeURIComponent(taskId)}`, {
     method: "GET",
     headers: getHeaders(),
   });
@@ -121,11 +126,11 @@ export async function getTaskStatus(taskId: string): Promise<MusicTaskStatus> {
     return { status: "failed", error: `Request failed: ${res.status}` };
   }
   const raw = await res.json();
-  const items: Array<{ state?: string; audio_url?: string; image_url?: string }> | undefined =
-    Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : undefined;
-  if (items && items.length > 0) {
-    const first = items[0];
-    const state = (first.state || "").toLowerCase(); // queued | running | succeeded | failed
+  const songs: Array<{ state?: string; audio_url?: string; image_url?: string }> | undefined =
+    Array.isArray(raw?.songs) ? raw.songs : Array.isArray(raw) ? raw : undefined;
+  if (songs && songs.length > 0) {
+    const first = songs[0];
+    const state = (first.state || "").toLowerCase(); // queued | streaming | succeeded | failed
     const audioUrl = first.audio_url ?? undefined;
     if (state === "succeeded" && audioUrl) {
       return { status: "succeeded", audioUrl };
