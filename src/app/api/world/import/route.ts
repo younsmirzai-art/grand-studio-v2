@@ -27,11 +27,12 @@ LONGITUDE = ${lon}
 LOCATION_NAME = '${safeName}'
 CESIUM_TOKEN = '${safeToken}'
 LABEL_TERRAIN = 'GS_WE_WorldTerrain'
-LABEL_BUILDINGS = 'GS_WE_OSMBuildings'
+LABEL_GOOGLE_3D = 'GS_WE_Google3DTiles'
 LABEL_IMAGERY = 'GS_WE_BingImagery'
 ION_TERRAIN = 1
 ION_BING_AERIAL = 2
-ION_OSM_BUILDINGS = 96188
+# Google Photorealistic 3D Tiles (textured cities; replaces plain OSM building geometry)
+ION_GOOGLE_PHOTOREALISTIC_3D = 2275207
 # WGS84 ellipsoid height (meters) — must be non-negative; negative values invert globe alignment
 BASE_ORIGIN_HEIGHT = 300.0
 ORIGIN_HEIGHT = max(0.0, abs(float(BASE_ORIGIN_HEIGHT)))
@@ -381,6 +382,12 @@ def try_cesium_subsystem(world):
 
 
 wlog('=== Import started: ' + LOCATION_NAME + ' @ (' + str(LATITUDE) + ', ' + str(LONGITUDE) + ') ===')
+wlog(
+    'Data sources: World Terrain Ion=' + str(ION_TERRAIN)
+    + ', Google Photorealistic 3D Tiles Ion=' + str(ION_GOOGLE_PHOTOREALISTIC_3D)
+    + ', Bing aerial overlay Ion=' + str(ION_BING_AERIAL)
+)
+wlog('CESIUM_TOKEN set on tilesets (length=' + str(len(CESIUM_TOKEN)) + ' chars)')
 
 if not hasattr(unreal, 'CesiumGeoreference') or not hasattr(unreal, 'Cesium3DTileset'):
     werr('Required Cesium for Unreal classes missing. Enable plugin and restart UE5.')
@@ -438,7 +445,7 @@ else:
         geo_ref = None
 
     terrain = None
-    buildings = None
+    google_3d = None
     try:
         terrains = find_tileset_by_labels([LABEL_TERRAIN, 'WorldTerrain'])
         if terrains:
@@ -448,13 +455,15 @@ else:
         else:
             terrain = spawn_tileset(LABEL_TERRAIN)
 
-        buildings_list = find_tileset_by_labels([LABEL_BUILDINGS, 'Buildings'])
-        if buildings_list:
-            buildings = buildings_list[0]
-            wlog('Reuse buildings tileset label=' + buildings.get_actor_label())
-            log_actor_transform(buildings, 'Buildings (reused, before configure)')
+        google_list = find_tileset_by_labels(
+            [LABEL_GOOGLE_3D, 'GS_WE_OSMBuildings', 'Buildings']
+        )
+        if google_list:
+            google_3d = google_list[0]
+            wlog('Reuse Google 3D tileset label=' + google_3d.get_actor_label())
+            log_actor_transform(google_3d, 'Google3DTiles (reused, before configure)')
         else:
-            buildings = spawn_tileset(LABEL_BUILDINGS)
+            google_3d = spawn_tileset(LABEL_GOOGLE_3D)
     except Exception:
         log_exc('tileset find/spawn')
 
@@ -474,20 +483,24 @@ else:
         except Exception:
             log_exc('terrain configure')
 
-    if buildings:
+    if google_3d:
         try:
-            link_georeference(buildings, geo_ref, 'Buildings')
-            configure_ion_tileset(buildings, ION_OSM_BUILDINGS, 'Buildings')
+            link_georeference(google_3d, geo_ref, 'Google3DTiles')
+            configure_ion_tileset(
+                google_3d,
+                ION_GOOGLE_PHOTOREALISTIC_3D,
+                'Google3DTiles',
+            )
             try:
-                buildings.set_editor_property('maximum_screen_space_error', 8.0)
-                wlog('Buildings: maximum_screen_space_error=8 (show finer detail)')
+                google_3d.set_editor_property('maximum_screen_space_error', 8.0)
+                wlog('Google3DTiles: maximum_screen_space_error=8')
             except Exception as e:
-                wlog('Buildings: MSE property: ' + str(e))
-            invalidate_georef_cache(buildings, 'Buildings')
-            call_tileset_refresh(buildings, 'Buildings')
-            log_actor_transform(buildings, 'Buildings')
+                wlog('Google3DTiles: MSE property: ' + str(e))
+            invalidate_georef_cache(google_3d, 'Google3DTiles')
+            call_tileset_refresh(google_3d, 'Google3DTiles')
+            log_actor_transform(google_3d, 'Google3DTiles')
         except Exception:
-            log_exc('buildings configure')
+            log_exc('google 3d tiles configure')
 
     if hasattr(unreal, 'CesiumSunSky'):
         try:
@@ -538,11 +551,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { locationName, latitude, longitude, projectId } = body as {
+    const { locationName, latitude, longitude, projectId, cesiumIonToken } = body as {
       locationName?: string;
       latitude?: number;
       longitude?: number;
       projectId?: string;
+      /** User's Cesium Ion token (preferred). Falls back to server env for demo/testing only. */
+      cesiumIonToken?: string;
     };
 
     if (!projectId) {
@@ -555,11 +570,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "latitude and longitude required" }, { status: 400 });
     }
 
-    const token = process.env.CESIUM_ION_TOKEN;
+    const userToken =
+      typeof cesiumIonToken === "string" ? cesiumIonToken.trim() : "";
+    const envToken = process.env.CESIUM_ION_TOKEN?.trim() ?? "";
+    const token = userToken || envToken;
     if (!token) {
       return NextResponse.json(
-        { error: "CESIUM_ION_TOKEN is not configured" },
-        { status: 500 }
+        {
+          error:
+            "Cesium Ion access token required. Add your token in World Explorer (Beta), or set CESIUM_ION_TOKEN for server-side demo use.",
+        },
+        { status: 400 }
       );
     }
 

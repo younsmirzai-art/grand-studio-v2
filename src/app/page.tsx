@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
+import type { LucideIcon } from "lucide-react";
 import {
   Zap,
   CheckCircle,
@@ -59,7 +60,15 @@ function Section({
 /* ------------------------------------------------------------------ */
 /*  Data                                                               */
 /* ------------------------------------------------------------------ */
-const PILLARS = [
+type Pillar = {
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+  features: string[];
+  beta?: boolean;
+};
+
+const PILLARS: Pillar[] = [
   {
     icon: MessageSquare,
     title: "AI Co-Pilot",
@@ -118,11 +127,12 @@ const PILLARS = [
   {
     icon: Globe2,
     title: "World Explorer",
+    beta: true,
     desc: "Import real-world cities and terrain. Explore Paris, Tokyo, New York and thousands of locations in 3D inside UE5.",
     features: [
       "Search any location",
       "One-click import into UE5",
-      "Real-world cities and terrain",
+      "Photorealistic 3D cities and terrain",
       "Up to 30 imports/day on Team plan",
     ],
   },
@@ -475,7 +485,14 @@ export default function HomePage() {
                   <p.icon className="w-6 h-6 text-[#2196F3]" />
                 </div>
 
-                <h3 className="text-lg font-bold text-white mb-2">{p.title}</h3>
+                <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2 flex-wrap">
+                  {p.title}
+                  {p.beta ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      Beta
+                    </span>
+                  ) : null}
+                </h3>
                 <p className="text-sm text-[#A0A0A8] leading-relaxed mb-6">{p.desc}</p>
 
                 {/* Feature list */}
