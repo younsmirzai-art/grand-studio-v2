@@ -32,6 +32,11 @@ LABEL_IMAGERY = 'GS_WE_BingImagery'
 ION_TERRAIN = 1
 ION_BING_AERIAL = 2
 ION_OSM_BUILDINGS = 96188
+# WGS84 ellipsoid height (meters) — must be non-negative; negative values invert globe alignment
+BASE_ORIGIN_HEIGHT = 300.0
+ORIGIN_HEIGHT = max(0.0, abs(float(BASE_ORIGIN_HEIGHT)))
+if ORIGIN_HEIGHT < 1.0:
+    ORIGIN_HEIGHT = 300.0
 
 
 def wlog(msg):
@@ -61,6 +66,68 @@ def log_exc(context):
         werr(traceback.format_exc())
     except Exception:
         pass
+
+
+def log_actor_transform(actor, context):
+    """Debug: final placement (we do not apply rotations/scales — Cesium drives globe alignment)."""
+    if actor is None:
+        return
+    try:
+        loc = actor.get_actor_location()
+    except Exception as e:
+        wwarn(context + ': get_actor_location failed: ' + str(e))
+        return
+    try:
+        rot = actor.get_actor_rotation()
+    except Exception:
+        rot = None
+    try:
+        scale = actor.get_actor_scale3d()
+    except Exception:
+        scale = None
+    try:
+        rtxt = 'None' if rot is None else (
+            'P=' + str(rot.pitch) + ' Y=' + str(rot.yaw) + ' R=' + str(rot.roll)
+        )
+        stxt = 'None' if scale is None else (
+            '(' + str(scale.x) + ',' + str(scale.y) + ',' + str(scale.z) + ')'
+        )
+        wlog(
+            context + ' FINAL transform: loc=('
+            + str(loc.x) + ',' + str(loc.y) + ',' + str(loc.z)
+            + ') rot=' + rtxt + ' scale=' + stxt
+        )
+        if scale is not None and (
+            float(scale.x) < 0 or float(scale.y) < 0 or float(scale.z) < 0
+        ):
+            wwarn(context + ': actor has negative scale component (unexpected for Cesium)')
+    except Exception as e:
+        wwarn(context + ': log_actor_transform failed: ' + str(e))
+
+
+def identity_actor_transform_for_spawn():
+    """Explicit identity: position 0, rotation 0, scale 1 (no inversion)."""
+    return unreal.Transform(
+        unreal.Vector(0, 0, 0),
+        unreal.Rotator(0, 0, 0),
+        unreal.Vector(1, 1, 1),
+    )
+
+
+def spawn_actor_identity(cls, debug_name):
+    """
+    Spawn with default world placement only — no custom actor rotation or scale.
+    Uses explicit zero rotator when the Python API supports it.
+    """
+    loc = unreal.Vector(0, 0, 0)
+    rot = unreal.Rotator(0, 0, 0)
+    try:
+        a = unreal.EditorLevelLibrary.spawn_actor_from_class(cls, loc, rot)
+        wlog('spawn_actor_from_class ' + debug_name + ' (loc + zero rotator)')
+    except TypeError:
+        a = unreal.EditorLevelLibrary.spawn_actor_from_class(cls, loc)
+        wlog('spawn_actor_from_class ' + debug_name + ' (loc only; API has no rot arg)')
+    return a
 
 
 def try_editor_props(obj, prop_value_pairs, context):
@@ -131,10 +198,7 @@ def find_georeference():
 
 def spawn_georeference():
     wlog('Spawning new CesiumGeoreference')
-    return unreal.EditorLevelLibrary.spawn_actor_from_class(
-        unreal.CesiumGeoreference,
-        unreal.Vector(0, 0, 0),
-    )
+    return spawn_actor_identity(unreal.CesiumGeoreference, 'CesiumGeoreference')
 
 
 def find_tileset_by_labels(labels):
@@ -156,15 +220,13 @@ def find_tileset_by_labels(labels):
 
 def spawn_tileset(label):
     wlog('Spawning Cesium3DTileset, label will be ' + label)
-    t = unreal.EditorLevelLibrary.spawn_actor_from_class(
-        unreal.Cesium3DTileset,
-        unreal.Vector(0, 0, 0),
-    )
+    t = spawn_actor_identity(unreal.Cesium3DTileset, 'Cesium3DTileset')
     try:
         t.set_actor_label(label)
         wlog('Tileset spawned: internal_name=' + str(t.get_name()) + ' label=' + str(t.get_actor_label()))
     except Exception as e:
         wwarn('set_actor_label failed: ' + str(e))
+    log_actor_transform(t, 'Tileset[' + label + '] (after spawn)')
     return t
 
 
@@ -262,7 +324,7 @@ def add_bing_imagery_overlay(terrain, context):
         overlay = terrain.add_component_by_class(
             unreal.CesiumIonRasterOverlay,
             False,
-            unreal.Transform(),
+            identity_actor_transform_for_spawn(),
             False,
         )
         wlog(context + ': overlay component created class=' + overlay.get_class().get_name())
@@ -337,19 +399,40 @@ else:
 
     geo_ref = None
     try:
+        wlog('CesiumGeoreference: using origin_height=' + str(ORIGIN_HEIGHT) + ' m (enforced positive)')
         geo_ref = find_georeference()
         if geo_ref is None:
             geo_ref = spawn_georeference()
+        log_actor_transform(geo_ref, 'CesiumGeoreference (before origin props)')
+        # Only geographic origin — do not set actor rotation/scale/transform here
         try_editor_props(
             geo_ref,
             [
                 ('origin_latitude', float(LATITUDE)),
                 ('origin_longitude', float(LONGITUDE)),
-                ('origin_height', 300.0),
+                ('origin_height', float(ORIGIN_HEIGHT)),
             ],
             'CesiumGeoreference',
         )
-        wlog('Georeference origin set (lat/lon/height).')
+        for hprop in ('origin_height', 'OriginHeight'):
+            try:
+                hv = geo_ref.get_editor_property(hprop)
+            except Exception:
+                continue
+            if hv is None:
+                continue
+            if float(hv) < 0:
+                wwarn('Georeference ' + hprop + ' was negative (' + str(hv) + '); re-applying abs')
+                try_editor_props(
+                    geo_ref,
+                    [('origin_height', abs(float(hv)))],
+                    'CesiumGeoreference [height fix]',
+                )
+            else:
+                wlog('Georeference read-back ' + hprop + '=' + str(hv))
+            break
+        wlog('Georeference origin set (lat/lon/height only).')
+        log_actor_transform(geo_ref, 'CesiumGeoreference (after origin props)')
     except Exception:
         log_exc('georeference setup')
         geo_ref = None
@@ -361,6 +444,7 @@ else:
         if terrains:
             terrain = terrains[0]
             wlog('Reuse terrain tileset label=' + terrain.get_actor_label())
+            log_actor_transform(terrain, 'Terrain (reused, before configure)')
         else:
             terrain = spawn_tileset(LABEL_TERRAIN)
 
@@ -368,6 +452,7 @@ else:
         if buildings_list:
             buildings = buildings_list[0]
             wlog('Reuse buildings tileset label=' + buildings.get_actor_label())
+            log_actor_transform(buildings, 'Buildings (reused, before configure)')
         else:
             buildings = spawn_tileset(LABEL_BUILDINGS)
     except Exception:
@@ -385,6 +470,7 @@ else:
             invalidate_georef_cache(terrain, 'Terrain')
             add_bing_imagery_overlay(terrain, 'Terrain')
             call_tileset_refresh(terrain, 'Terrain')
+            log_actor_transform(terrain, 'Terrain')
         except Exception:
             log_exc('terrain configure')
 
@@ -399,6 +485,7 @@ else:
                 wlog('Buildings: MSE property: ' + str(e))
             invalidate_georef_cache(buildings, 'Buildings')
             call_tileset_refresh(buildings, 'Buildings')
+            log_actor_transform(buildings, 'Buildings')
         except Exception:
             log_exc('buildings configure')
 
@@ -413,14 +500,12 @@ else:
                 except Exception:
                     pass
             if sun is None:
-                sun = unreal.EditorLevelLibrary.spawn_actor_from_class(
-                    unreal.CesiumSunSky,
-                    unreal.Vector(0, 0, 0),
-                )
+                sun = spawn_actor_identity(unreal.CesiumSunSky, 'CesiumSunSky')
                 sun.set_actor_label('GS_WE_SunSky')
                 wlog('Spawned CesiumSunSky')
             else:
                 wlog('Found existing CesiumSunSky label=' + str(sun.get_actor_label()))
+            log_actor_transform(sun, 'CesiumSunSky')
         except Exception:
             log_exc('SunSky')
 
