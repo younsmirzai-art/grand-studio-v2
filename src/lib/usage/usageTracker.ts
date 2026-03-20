@@ -9,7 +9,8 @@ const PLAN_LIMITS: Record<string, Record<string, number>> = {
     max_projects: 2,
     meshy_generate: 0,
     music_generate: 3,
-    world_import: 3,
+    // TODO: Change back to 3 after testing.
+    world_import: 50,
   },
   pro: {
     ai_message: 99999,
