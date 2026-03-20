@@ -29,6 +29,7 @@ const PRESETS = [
 ] as const;
 
 const CESIUM_TOKEN_STORAGE_KEY = "cesium_ion_token";
+type QualityMode = "performance" | "balanced" | "ultra";
 
 export default function WorldExplorerPage() {
   const router = useRouter();
@@ -40,6 +41,7 @@ export default function WorldExplorerPage() {
   const [importing, setImporting] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
+  const [quality, setQuality] = useState<QualityMode>("balanced");
 
   const [tokenInput, setTokenInput] = useState("");
   const [hasSavedToken, setHasSavedToken] = useState(false);
@@ -140,6 +142,7 @@ export default function WorldExplorerPage() {
           latitude: coords.lat,
           longitude: coords.lon,
           cesiumIonToken,
+          quality,
         }),
       });
       const data = await res.json();
@@ -156,7 +159,7 @@ export default function WorldExplorerPage() {
     } finally {
       setImporting(false);
     }
-  }, [coords, selectedName, projectId, router]);
+  }, [coords, selectedName, projectId, quality, router]);
 
   if (user === null) {
     return (
@@ -285,6 +288,27 @@ export default function WorldExplorerPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-[10px] font-medium text-[#606068] uppercase tracking-wider mb-2">
+                  Quality
+                </label>
+                <select
+                  value={quality}
+                  onChange={(e) => setQuality(e.target.value as QualityMode)}
+                  className="w-full sm:w-[360px] px-3 py-2 rounded-lg bg-[#0A0A0B] border border-white/10 text-white text-sm outline-none focus:border-[#2196F3]/50"
+                >
+                  <option value="performance">
+                    Performance (SSE 8, Frustum Culling On, 1GB Cache)
+                  </option>
+                  <option value="balanced">
+                    Balanced (SSE 2, Frustum Culling On, 2GB Cache)
+                  </option>
+                  <option value="ultra">
+                    Ultra (SSE 0.5, Frustum Culling Off, 4GB Cache, 50 loads)
+                  </option>
+                </select>
               </div>
             </div>
 

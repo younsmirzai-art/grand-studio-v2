@@ -13,11 +13,34 @@ function buildWorldExplorerPython(params: {
   longitude: number;
   locationName: string;
   cesiumToken: string;
+  quality: "performance" | "balanced" | "ultra";
 }): string {
   const safeName = escapePyString(params.locationName.trim());
   const safeToken = escapePyString(params.cesiumToken);
   const lat = params.latitude;
   const lon = params.longitude;
+  const quality = params.quality;
+  const qualitySettings =
+    quality === "ultra"
+      ? {
+          sse: 0.5,
+          frustumCulling: false,
+          cacheBytes: 4 * 1024 * 1024 * 1024,
+          simultaneousLoads: 50,
+        }
+      : quality === "performance"
+        ? {
+            sse: 8,
+            frustumCulling: true,
+            cacheBytes: 1 * 1024 * 1024 * 1024,
+            simultaneousLoads: 10,
+          }
+        : {
+            sse: 2,
+            frustumCulling: true,
+            cacheBytes: 2 * 1024 * 1024 * 1024,
+            simultaneousLoads: 20,
+          };
 
   return `import unreal
 import traceback
@@ -38,6 +61,11 @@ BASE_ORIGIN_HEIGHT = 300.0
 ORIGIN_HEIGHT = max(0.0, abs(float(BASE_ORIGIN_HEIGHT)))
 if ORIGIN_HEIGHT < 1.0:
     ORIGIN_HEIGHT = 300.0
+QUALITY_NAME = '${quality}'
+QUALITY_MAX_SSE = ${qualitySettings.sse}
+QUALITY_FRUSTUM_CULLING = ${qualitySettings.frustumCulling ? "True" : "False"}
+QUALITY_CACHE_BYTES = ${qualitySettings.cacheBytes}
+QUALITY_SIMULTANEOUS_LOADS = ${qualitySettings.simultaneousLoads}
 
 
 def wlog(msg):
@@ -152,7 +180,13 @@ def try_editor_props(obj, prop_value_pairs, context):
         if prop == 'origin_height':
             variants.extend(['OriginHeight', 'originHeight'])
         if prop == 'maximum_screen_space_error':
-            variants.extend(['MaximumScreenSpaceError', 'maximumScreenSpaceError'])
+            variants.extend([
+                'MaximumScreenSpaceError',
+                'maximumScreenSpaceError',
+                'ScreenSpaceError',
+                'screenSpaceError',
+                'MaxSSE',
+            ])
         if prop == 'maximum_cached_bytes':
             variants.extend(['MaximumCachedBytes', 'CacheBytes'])
         if prop == 'maximum_simultaneous_tile_loads':
@@ -167,6 +201,18 @@ def try_editor_props(obj, prop_value_pairs, context):
             variants.extend(['PreloadAncestors'])
         if prop == 'preload_siblings':
             variants.extend(['PreloadSiblings'])
+        if prop == 'enforce_culled_screen_space_error':
+            variants.extend(['EnforceCulledScreenSpaceError'])
+        if prop == 'culled_screen_space_error':
+            variants.extend(['CulledScreenSpaceError'])
+        if prop == 'enable_frustum_culling':
+            variants.extend([
+                'EnableFrustumCulling',
+                'FrustumCulling',
+                'bEnableFrustumCulling',
+            ])
+        if prop == 'enable_fog_culling':
+            variants.extend(['EnableFogCulling'])
         seen = set()
         unique_variants = []
         for v in variants:
@@ -321,22 +367,29 @@ def configure_ion_tileset(tileset, ion_asset_id, label_ctx):
 
 def apply_tileset_quality_settings(tileset, label_ctx):
     """Force high visual quality and reduce aggressive LOD behavior."""
-    # 2 GB in bytes
-    cache_bytes_2gb = 2048 * 1024 * 1024
-    wlog(label_ctx + ': applying quality settings')
+    wlog(label_ctx + ': applying quality profile=' + QUALITY_NAME)
+    wlog(
+        label_ctx + ': targets: '
+        + 'sse=' + str(QUALITY_MAX_SSE)
+        + ', frustum_culling=' + str(QUALITY_FRUSTUM_CULLING)
+        + ', cache_bytes=' + str(QUALITY_CACHE_BYTES)
+        + ', simultaneous_loads=' + str(QUALITY_SIMULTANEOUS_LOADS)
+    )
     try_editor_props(
         tileset,
         [
-            ('maximum_screen_space_error', 1.0),
+            ('maximum_screen_space_error', float(QUALITY_MAX_SSE)),
+            ('enforce_culled_screen_space_error', False),
+            ('culled_screen_space_error', float(QUALITY_MAX_SSE)),
+            ('enable_frustum_culling', bool(QUALITY_FRUSTUM_CULLING)),
+            ('enable_fog_culling', False),
             ('preload_ancestors', True),
             ('preload_siblings', True),
-            # user-requested names:
             ('loading_descriptor_low', 0),
             ('loading_descriptor_high', 0),
-            # actual Cesium runtime property in many versions:
             ('loading_descendant_limit', 0),
-            ('maximum_cached_bytes', cache_bytes_2gb),
-            ('maximum_simultaneous_tile_loads', 20),
+            ('maximum_cached_bytes', int(QUALITY_CACHE_BYTES)),
+            ('maximum_simultaneous_tile_loads', int(QUALITY_SIMULTANEOUS_LOADS)),
         ],
         label_ctx + ' [quality]',
     )
@@ -436,6 +489,7 @@ def try_cesium_subsystem(world):
 
 
 wlog('=== Import started: ' + LOCATION_NAME + ' @ (' + str(LATITUDE) + ', ' + str(LONGITUDE) + ') ===')
+wlog('Quality profile selected: ' + QUALITY_NAME)
 wlog(
     'Data sources: World Terrain Ion=' + str(ION_TERRAIN)
     + ', Google Photorealistic 3D Tiles Ion=' + str(ION_GOOGLE_PHOTOREALISTIC_3D)
@@ -570,8 +624,13 @@ else:
             log_exc('SunSky')
 
     if world:
-        try_run_console(None, 'r.Streaming.PoolSize 4096', 'quality')
-        try_run_console(None, 'r.Streaming.MaxTempMemoryAllowed 4096', 'quality')
+        try_run_console(None, 'r.Streaming.PoolSize 8192', 'quality')
+        try_run_console(None, 'r.Streaming.MaxTempMemoryAllowed 8192', 'quality')
+        try_run_console(None, 'r.Streaming.FullyLoadedTriggersTimelimit 0', 'quality')
+        try_run_console(None, 'r.Streaming.HLODStrategy 2', 'quality')
+        try_run_console(None, 'r.Streaming.DefragDatabaseCacheMb 2048', 'quality')
+        try_run_console(None, 'grass.FlushCache 0', 'quality')
+        try_run_console(None, 'r.ViewDistanceScale 10', 'quality')
         try_run_console(world, 'log LogTemp Display GrandStudio WorldExplorer Python finished', 'info')
 
     wlog('=== Import finished for ' + LOCATION_NAME + ' ===')
@@ -600,13 +659,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { locationName, latitude, longitude, projectId, cesiumIonToken } = body as {
+    const { locationName, latitude, longitude, projectId, cesiumIonToken, quality } = body as {
       locationName?: string;
       latitude?: number;
       longitude?: number;
       projectId?: string;
       /** User's Cesium Ion token (preferred). Falls back to server env for demo/testing only. */
       cesiumIonToken?: string;
+      quality?: "performance" | "balanced" | "ultra";
     };
 
     if (!projectId) {
@@ -633,11 +693,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const selectedQuality =
+      quality === "performance" || quality === "ultra" || quality === "balanced"
+        ? quality
+        : "balanced";
+
     const python = buildWorldExplorerPython({
       latitude,
       longitude,
       locationName: locationName.trim(),
       cesiumToken: token,
+      quality: selectedQuality,
     });
 
     const commandId = await queueUE5Command(projectId, python);
