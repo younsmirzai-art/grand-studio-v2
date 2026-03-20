@@ -302,6 +302,12 @@ export default function WorldExplorerPage() {
               </button>
             </div>
 
+            <div className="mb-6 rounded-xl border border-[#2196F3]/25 bg-[#0E1620]/70 px-4 py-3">
+              <p className="text-xs text-[#BFDFFF]">
+                Tip: For best quality, wait 30-60 seconds after import for all tiles to fully load. Move camera slowly for tiles to stream in.
+              </p>
+            </div>
+
             {(loadingCoords || coords) && (
               <div className="rounded-2xl border border-[#2196F3]/20 bg-[#111114]/80 p-6 mb-8">
                 <h3 className="text-sm font-semibold text-white mb-3">Preview</h3>

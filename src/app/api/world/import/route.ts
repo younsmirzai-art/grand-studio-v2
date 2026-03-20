@@ -151,6 +151,22 @@ def try_editor_props(obj, prop_value_pairs, context):
             variants.extend(['OriginLongitude', 'originLongitude'])
         if prop == 'origin_height':
             variants.extend(['OriginHeight', 'originHeight'])
+        if prop == 'maximum_screen_space_error':
+            variants.extend(['MaximumScreenSpaceError', 'maximumScreenSpaceError'])
+        if prop == 'maximum_cached_bytes':
+            variants.extend(['MaximumCachedBytes', 'CacheBytes'])
+        if prop == 'maximum_simultaneous_tile_loads':
+            variants.extend(['MaximumSimultaneousTileLoads'])
+        if prop == 'loading_descriptor_low':
+            variants.extend(['LoadingDescriptorLow', 'loadingDescriptorLow'])
+        if prop == 'loading_descriptor_high':
+            variants.extend(['LoadingDescriptorHigh', 'loadingDescriptorHigh'])
+        if prop == 'loading_descendant_limit':
+            variants.extend(['LoadingDescendantLimit', 'loadingDescendantLimit'])
+        if prop == 'preload_ancestors':
+            variants.extend(['PreloadAncestors'])
+        if prop == 'preload_siblings':
+            variants.extend(['PreloadSiblings'])
         seen = set()
         unique_variants = []
         for v in variants:
@@ -303,6 +319,44 @@ def configure_ion_tileset(tileset, ion_asset_id, label_ctx):
     except Exception as e:
         wlog(label_ctx + ': read-back token failed: ' + str(e))
 
+def apply_tileset_quality_settings(tileset, label_ctx):
+    """Force high visual quality and reduce aggressive LOD behavior."""
+    # 2 GB in bytes
+    cache_bytes_2gb = 2048 * 1024 * 1024
+    wlog(label_ctx + ': applying quality settings')
+    try_editor_props(
+        tileset,
+        [
+            ('maximum_screen_space_error', 1.0),
+            ('preload_ancestors', True),
+            ('preload_siblings', True),
+            # user-requested names:
+            ('loading_descriptor_low', 0),
+            ('loading_descriptor_high', 0),
+            # actual Cesium runtime property in many versions:
+            ('loading_descendant_limit', 0),
+            ('maximum_cached_bytes', cache_bytes_2gb),
+            ('maximum_simultaneous_tile_loads', 20),
+        ],
+        label_ctx + ' [quality]',
+    )
+
+def apply_georeference_quality_settings(geo_ref):
+    """Best-effort quality/detail knobs when exposed by plugin version."""
+    if geo_ref is None:
+        return
+    wlog('CesiumGeoreference: applying best-effort quality/detail settings')
+    try_editor_props(
+        geo_ref,
+        [
+            ('detail_level', 5),
+            ('quality_level', 5),
+            ('maximum_detail_level', 5),
+            ('max_detail_level', 5),
+        ],
+        'CesiumGeoreference [quality]',
+    )
+
 
 def add_bing_imagery_overlay(terrain, context):
     if not hasattr(unreal, 'CesiumIonRasterOverlay'):
@@ -439,6 +493,7 @@ else:
                 wlog('Georeference read-back ' + hprop + '=' + str(hv))
             break
         wlog('Georeference origin set (lat/lon/height only).')
+        apply_georeference_quality_settings(geo_ref)
         log_actor_transform(geo_ref, 'CesiumGeoreference (after origin props)')
     except Exception:
         log_exc('georeference setup')
@@ -471,11 +526,7 @@ else:
         try:
             link_georeference(terrain, geo_ref, 'Terrain')
             configure_ion_tileset(terrain, ION_TERRAIN, 'Terrain')
-            try:
-                terrain.set_editor_property('maximum_screen_space_error', 16.0)
-                wlog('Terrain: maximum_screen_space_error=16')
-            except Exception as e:
-                wlog('Terrain: MSE property: ' + str(e))
+            apply_tileset_quality_settings(terrain, 'Terrain')
             invalidate_georef_cache(terrain, 'Terrain')
             add_bing_imagery_overlay(terrain, 'Terrain')
             call_tileset_refresh(terrain, 'Terrain')
@@ -491,11 +542,7 @@ else:
                 ION_GOOGLE_PHOTOREALISTIC_3D,
                 'Google3DTiles',
             )
-            try:
-                google_3d.set_editor_property('maximum_screen_space_error', 8.0)
-                wlog('Google3DTiles: maximum_screen_space_error=8')
-            except Exception as e:
-                wlog('Google3DTiles: MSE property: ' + str(e))
+            apply_tileset_quality_settings(google_3d, 'Google3DTiles')
             invalidate_georef_cache(google_3d, 'Google3DTiles')
             call_tileset_refresh(google_3d, 'Google3DTiles')
             log_actor_transform(google_3d, 'Google3DTiles')
@@ -523,6 +570,8 @@ else:
             log_exc('SunSky')
 
     if world:
+        try_run_console(None, 'r.Streaming.PoolSize 4096', 'quality')
+        try_run_console(None, 'r.Streaming.MaxTempMemoryAllowed 4096', 'quality')
         try_run_console(world, 'log LogTemp Display GrandStudio WorldExplorer Python finished', 'info')
 
     wlog('=== Import finished for ' + LOCATION_NAME + ' ===')
