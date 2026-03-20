@@ -14,7 +14,7 @@ export interface ImportContext {
 export async function queueUE5Command(
   projectId: string,
   code: string,
-  options?: { commandType?: "import"; importContext?: ImportContext }
+  options?: { commandType?: "import" | "scan_assets"; importContext?: ImportContext }
 ): Promise<string> {
   const supabase = createServerClient();
 
@@ -24,7 +24,7 @@ export async function queueUE5Command(
       project_id: projectId,
       code,
       status: "pending",
-      ...(options?.commandType === "import" && { command_type: "import" }),
+      ...(options?.commandType && { command_type: options.commandType }),
       ...(options?.importContext && { import_context: options.importContext }),
     })
     .select("id")

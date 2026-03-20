@@ -9,6 +9,7 @@ import {
   Settings,
   Sparkles,
   Camera,
+  ScanSearch,
 } from "lucide-react";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
@@ -79,6 +80,7 @@ export default function ProjectPage() {
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [limitReachedMessage, setLimitReachedMessage] = useState("");
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [scanningAssets, setScanningAssets] = useState(false);
 
   const autoBuildStartedRef = useRef(false);
   const seenSuccessIdsRef = useRef<Set<string>>(new Set());
@@ -643,7 +645,7 @@ export default function ProjectPage() {
       setCopilotOpen(true);
       return;
     }
-    setPrefillMessage(`Place a ${asset.name} in my scene`);
+    setPrefillMessage(`Place asset "${asset.name}" from path "${asset.path}" in my scene`);
     setCopilotOpen(true);
   }, []);
 
@@ -675,6 +677,43 @@ export default function ProjectPage() {
       setUpgradeLoading(false);
     }
   }, []);
+
+  const handleScanAssets = useCallback(async () => {
+    try {
+      setScanningAssets(true);
+      const res = await fetch("/api/ue5/scan-assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to start scan");
+        setScanningAssets(false);
+        return;
+      }
+      toast.info("Scanning your UE5 project...");
+      setTimeout(async () => {
+        try {
+          const resultsRes = await fetch(`/api/ue5/scan-results?projectId=${encodeURIComponent(projectId)}`, {
+            credentials: "include",
+          });
+          const resultsData = await resultsRes.json().catch(() => ({}));
+          if (resultsRes.ok) {
+            toast.success(`Found ${resultsData.count ?? 0} assets in your project`);
+          }
+        } catch {
+          // ignore follow-up fetch errors
+        } finally {
+          setScanningAssets(false);
+        }
+      }, 10000);
+    } catch {
+      setScanningAssets(false);
+      toast.error("Failed to start asset scan");
+    }
+  }, [projectId]);
 
   // Save project name
   const handleSaveName = useCallback(async () => {
@@ -777,6 +816,15 @@ export default function ProjectPage() {
           >
             <Settings className="w-4 h-4" />
           </Link>
+          <button
+            onClick={handleScanAssets}
+            disabled={scanningAssets}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1A1A1F] border border-white/5 text-xs text-[#A0A0A8] hover:text-white hover:border-[#2196F3]/40 transition disabled:opacity-50"
+            title="Scan UE5 project assets"
+          >
+            {scanningAssets ? <Camera className="w-3.5 h-3.5 animate-pulse" /> : <ScanSearch className="w-3.5 h-3.5" />}
+            {scanningAssets ? "Scanning..." : "Scan Assets"}
+          </button>
 
           {/* AI Co-Pilot Button */}
           <button
@@ -842,6 +890,8 @@ export default function ProjectPage() {
               setLimitReachedMessage(msg);
               setUpgradeModalOpen(true);
             }}
+            onScanAssets={handleScanAssets}
+            scanningAssets={scanningAssets}
           />
         </div>
 

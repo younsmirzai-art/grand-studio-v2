@@ -23,6 +23,7 @@ import {
   Loader2,
   TreePine,
   ExternalLink,
+  ScanSearch,
 } from "lucide-react";
 import type { AssetEntry } from "@/lib/ue5/assetLibrary";
 import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
@@ -47,6 +48,8 @@ interface WorkspacePanelProps {
   projectId: string;
   onLimitReached?: (message: string) => void;
   userPlan?: "free" | "pro" | "team";
+  onScanAssets?: () => Promise<void> | void;
+  scanningAssets?: boolean;
 }
 
 const POLYHAVEN_POPULAR_IDS = [
@@ -115,6 +118,8 @@ export function WorkspacePanel({
   projectId,
   onLimitReached,
   userPlan,
+  onScanAssets,
+  scanningAssets = false,
 }: WorkspacePanelProps) {
   const [tab, setTab] = useState<TabId>("polyhaven");
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
@@ -128,6 +133,8 @@ export function WorkspacePanel({
   const [expandedCmd, setExpandedCmd] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [scannedAssets, setScannedAssets] = useState<Array<{ path?: string; name?: string; type?: string }>>([]);
+  const [scanSearch, setScanSearch] = useState("");
 
   // Poly Haven state
   const [phQuery, setPhQuery] = useState("");
@@ -165,6 +172,22 @@ export function WorkspacePanel({
     const t = setTimeout(fetchImportResults, 3000);
     return () => clearTimeout(t);
   }, [phImportedId, sfImportedId, fetchImportResults]);
+
+  const fetchScannedAssets = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await fetch(`/api/ue5/scan-results?projectId=${encodeURIComponent(projectId)}`);
+      const data = await res.json().catch(() => ({}));
+      setScannedAssets(Array.isArray(data.assets) ? data.assets : []);
+    } catch {
+      setScannedAssets([]);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (tab !== "scene") return;
+    fetchScannedAssets();
+  }, [tab, fetchScannedAssets]);
 
   const filteredHistory = useMemo(() => {
     if (!historyFilter) return godEyeLog.slice().reverse();
@@ -456,6 +479,25 @@ export function WorkspacePanel({
     { id: "scene", label: "Scene", icon: Terminal },
     { id: "history", label: "History", icon: Clock },
   ];
+
+  const scannedGrouped = useMemo(() => {
+    const q = scanSearch.trim().toLowerCase();
+    const filtered = scannedAssets.filter((a) => {
+      if (!q) return true;
+      return (
+        (a.name ?? "").toLowerCase().includes(q) ||
+        (a.path ?? "").toLowerCase().includes(q) ||
+        (a.type ?? "").toLowerCase().includes(q)
+      );
+    });
+    const groups = new Map<string, Array<{ path?: string; name?: string; type?: string }>>();
+    for (const a of filtered) {
+      const key = a.type || "Unknown";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(a);
+    }
+    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [scannedAssets, scanSearch]);
 
   return (
     <div className="flex flex-col h-full bg-[#0A0A0B] border-r border-white/5">
@@ -905,22 +947,85 @@ export function WorkspacePanel({
               <h3 className="text-sm font-semibold text-white">
                 Scene Commands ({ue5Commands.length})
               </h3>
-              {ue5Commands.length > 0 && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    if (confirmClear) { onClearScene(); setConfirmClear(false); }
-                    else { setConfirmClear(true); setTimeout(() => setConfirmClear(false), 3000); }
+                  onClick={async () => {
+                    await onScanAssets?.();
+                    await fetchScannedAssets();
                   }}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition ${
-                    confirmClear
-                      ? "bg-red-500/20 text-red-400 border border-red-500/30"
-                      : "bg-[#1A1A1F] text-[#A0A0A8] border border-white/5 hover:border-red-500/30 hover:text-red-400"
-                  }`}
+                  disabled={scanningAssets}
+                  className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-[#1A1A1F] text-[#A0A0A8] border border-white/5 hover:border-[#2196F3]/40 hover:text-white transition disabled:opacity-50"
                 >
-                  <Trash2 className="w-3 h-3" />
-                  {confirmClear ? "Confirm Clear?" : "Clear Scene"}
+                  {scanningAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <ScanSearch className="w-3 h-3" />}
+                  {scanningAssets ? "Scanning..." : "Scan Assets"}
                 </button>
-              )}
+                {ue5Commands.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (confirmClear) { onClearScene(); setConfirmClear(false); }
+                      else { setConfirmClear(true); setTimeout(() => setConfirmClear(false), 3000); }
+                    }}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition ${
+                      confirmClear
+                        ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                        : "bg-[#1A1A1F] text-[#A0A0A8] border border-white/5 hover:border-red-500/30 hover:text-red-400"
+                    }`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    {confirmClear ? "Confirm Clear?" : "Clear Scene"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-white/5 bg-[#111114] p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs text-[#A0A0A8]">
+                  Scanned Assets ({scannedAssets.length})
+                </p>
+              </div>
+              <div className="relative mb-2">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#606068]" />
+                <input
+                  value={scanSearch}
+                  onChange={(e) => setScanSearch(e.target.value)}
+                  placeholder="Search scanned assets..."
+                  className="w-full pl-8 pr-2 py-1.5 bg-[#0A0A0B] border border-white/5 rounded text-xs text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/40"
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto scrollbar-thin space-y-2">
+                {scannedGrouped.length === 0 ? (
+                  <p className="text-[11px] text-[#606068]">No scanned assets yet. Click Scan Assets.</p>
+                ) : (
+                  scannedGrouped.map(([type, items]) => (
+                    <div key={type}>
+                      <p className="text-[10px] text-[#606068] uppercase tracking-wider mb-1">
+                        {type} ({items.length})
+                      </p>
+                      <div className="space-y-1">
+                        {items.slice(0, 30).map((a, i) => (
+                          <button
+                            key={`${a.path ?? a.name ?? type}-${i}`}
+                            onClick={() =>
+                              onAssetClick({
+                                name: a.name ?? a.path ?? "Asset",
+                                category: "Scanned",
+                                subcategory: type,
+                                description: `Scanned ${type} asset`,
+                                path: a.path ?? "",
+                              } as AssetEntry)
+                            }
+                            className="w-full text-left px-2 py-1 rounded bg-[#0A0A0B] border border-white/5 hover:border-[#2196F3]/30 text-[11px] text-[#A0A0A8] hover:text-white transition"
+                            title={a.path}
+                          >
+                            {(a.name ?? "Unnamed")} <span className="text-[#606068]">· {a.path}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
             {ue5Commands.length === 0 ? (
               <div className="text-center py-12">

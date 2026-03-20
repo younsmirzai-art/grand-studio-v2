@@ -24,6 +24,8 @@ from supabase import create_client
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 UE5_URL = os.getenv("UE5_REMOTE_CONTROL_URL", "http://localhost:30010")
+WEB_APP_URL = os.getenv("NEXT_PUBLIC_SITE_URL", "http://localhost:3000").rstrip("/")
+SCAN_FILE_PATH = "C:/GrandStudio/asset_scan.json"
 POLL_INTERVAL = int(os.getenv("RELAY_POLL_INTERVAL", "2"))
 
 supabase = None
@@ -175,6 +177,57 @@ def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
     except Exception as e:
         print(f"         Failed to save import result: {e}")
 
+def get_project_owner_user_id(project_id):
+    """Best-effort lookup of project owner user id for scanned_assets table."""
+    try:
+        if not project_id:
+            return None
+        r = (
+            supabase.table("projects")
+            .select("user_id")
+            .eq("id", project_id)
+            .limit(1)
+            .execute()
+        )
+        if r.data and len(r.data) > 0:
+            return r.data[0].get("user_id")
+    except Exception as e:
+        print(f"         Could not resolve project owner for scan upload: {e}")
+    return None
+
+def upload_scan_results_if_present(project_id):
+    """If UE wrote C:/GrandStudio/asset_scan.json, upload to web API and delete file."""
+    if not os.path.exists(SCAN_FILE_PATH):
+        return
+    try:
+        with open(SCAN_FILE_PATH, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        assets = payload.get("assets", []) if isinstance(payload, dict) else []
+        user_id = get_project_owner_user_id(project_id)
+        if not user_id:
+            print("         Scan file found but no project owner user_id; skipping upload")
+            return
+        url = f"{WEB_APP_URL}/api/ue5/scan-results-upload"
+        body = {
+            "userId": user_id,
+            "projectId": project_id,
+            "assets": assets,
+        }
+        resp = requests.post(url, json=body, timeout=20)
+        if resp.status_code >= 200 and resp.status_code < 300:
+            print(f"         Asset scan uploaded ({len(assets)} assets)")
+        else:
+            print(f"         Asset scan upload failed: {resp.status_code} {resp.text[:200]}")
+            return
+    except Exception as e:
+        print(f"         Failed reading/uploading scan file: {e}")
+        return
+    try:
+        os.remove(SCAN_FILE_PATH)
+        print("         Asset scan file deleted after upload")
+    except Exception as e:
+        print(f"         Failed deleting scan file: {e}")
+
 
 def poll_commands():
     """Main polling loop - checks Supabase for pending UE5 commands"""
@@ -277,6 +330,8 @@ def poll_commands():
                             "executed_at": completed_at,
                         }
                     ).eq("id", cmd_id).execute()
+                # Post-scan: after executing any command, upload scan file if it exists.
+                upload_scan_results_if_present(project_id)
 
         except KeyboardInterrupt:
             print("\n\nRelay stopped by user. Goodbye!")

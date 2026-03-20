@@ -3,7 +3,7 @@ import { askGrandStudioAIStream, isGreetingOrQuestion } from "@/lib/ai/grandStud
 import { handleAssetRequest, detectAssetImportRequest } from "@/lib/asset/assetRequestHandler";
 import { queueUE5Command } from "@/lib/ue5/commands";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
-import { createServerAuthClient } from "@/lib/supabase/server";
+import { createServerAuthClient, createServerClient } from "@/lib/supabase/server";
 
 const UPGRADE_MSG_AI = "You've used all 10 free AI messages today. Upgrade to Pro for unlimited messages!";
 const UPGRADE_MSG_IMPORT = "You've reached your daily import limit. Upgrade to Pro for unlimited imports!";
@@ -17,6 +17,23 @@ function streamJsonError(message: string): Response {
   return new Response(new ReadableStream({ start: body }), {
     headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
   });
+}
+
+function buildScannedAssetsSummary(assets: Array<{ name?: string; path?: string; type?: string }>): string {
+  const grouped = new Map<string, Array<{ name?: string; path?: string }>>();
+  for (const a of assets) {
+    const t = (a.type || "Unknown").trim();
+    if (!grouped.has(t)) grouped.set(t, []);
+    grouped.get(t)!.push({ name: a.name, path: a.path });
+  }
+  const lines: string[] = [];
+  for (const [type, items] of [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    lines.push(`${type} (${items.length})`);
+    for (const item of items.slice(0, 20)) {
+      lines.push(`- ${item.name || "Unnamed"} | ${item.path || ""}`);
+    }
+  }
+  return lines.slice(0, 300).join("\n");
 }
 
 export async function POST(request: NextRequest) {
@@ -106,9 +123,31 @@ export async function POST(request: NextRequest) {
       ? `The user is greeting you or asking a question. Respond with friendly text only. Do NOT write any Python code.\n\nUser: ${trimmed}`
       : trimmed;
 
+    let scannedAssetsContext = "";
+    if (projectId && !isGreetingOrQuestion(trimmed)) {
+      try {
+        const supabase = createServerClient();
+        const { data } = await supabase
+          .from("scanned_assets")
+          .select("assets")
+          .eq("user_id", userId)
+          .eq("project_id", projectId)
+          .order("scanned_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const assets = (data?.assets as Array<{ name?: string; path?: string; type?: string }>) ?? [];
+        if (assets.length > 0) {
+          scannedAssetsContext = `Available assets in user's UE5 project:\n${buildScannedAssetsSummary(assets)}`;
+        }
+      } catch {
+        // best effort only
+      }
+    }
+
     await recordUsage(userId, "ai_message");
 
-    const stream = await askGrandStudioAIStream(finalPrompt, projectContext);
+    const enrichedContext = [projectContext, scannedAssetsContext].filter(Boolean).join("\n\n");
+    const stream = await askGrandStudioAIStream(finalPrompt, enrichedContext || undefined);
 
     return new Response(stream, {
       headers: {
