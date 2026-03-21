@@ -196,13 +196,23 @@ def get_project_owner_user_id(project_id):
     return None
 
 def upload_scan_results_if_present(project_id):
-    """If UE wrote C:/GrandStudio/asset_scan.json, upload to web API and delete file."""
+    """If UE wrote C:/GrandStudio/asset_scan.json, upload to web API and delete file.
+    Called after EVERY command execution (success or error) so we never miss a scan file."""
+    print(f"         Checking for scan file at {SCAN_FILE_PATH}")
     if not os.path.exists(SCAN_FILE_PATH):
+        print("         Scan file not present (this is normal if no scan ran).")
         return
+    try:
+        sz = os.path.getsize(SCAN_FILE_PATH)
+        print(f"         Scan file found! Size: {sz} bytes")
+    except Exception as e:
+        print(f"         Scan file exists but could not stat size: {e}")
     try:
         with open(SCAN_FILE_PATH, "r", encoding="utf-8") as f:
             payload = json.load(f)
         assets = payload.get("assets", []) if isinstance(payload, dict) else []
+        if not isinstance(assets, list):
+            assets = []
         user_id = get_project_owner_user_id(project_id)
         if not user_id:
             print("         Scan file found but no project owner user_id; skipping upload")
@@ -213,14 +223,15 @@ def upload_scan_results_if_present(project_id):
             "projectId": project_id,
             "assets": assets,
         }
+        print(f"         Uploading scan results… ({len(assets)} assets) → {url}")
         resp = requests.post(url, json=body, timeout=20)
         if resp.status_code >= 200 and resp.status_code < 300:
-            print(f"         Asset scan uploaded ({len(assets)} assets)")
+            print(f"         Upload successful ({len(assets)} assets)")
         else:
-            print(f"         Asset scan upload failed: {resp.status_code} {resp.text[:200]}")
+            print(f"         Upload failed: HTTP {resp.status_code} {resp.text[:500]}")
             return
     except Exception as e:
-        print(f"         Failed reading/uploading scan file: {e}")
+        print(f"         Upload failed: {e}")
         return
     try:
         os.remove(SCAN_FILE_PATH)
@@ -330,7 +341,7 @@ def poll_commands():
                             "executed_at": completed_at,
                         }
                     ).eq("id", cmd_id).execute()
-                # Post-scan: after executing any command, upload scan file if it exists.
+                # Post-scan: after EVERY command (success or error), check for scan JSON and upload.
                 upload_scan_results_if_present(project_id)
 
         except KeyboardInterrupt:

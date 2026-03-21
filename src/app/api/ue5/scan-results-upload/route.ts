@@ -29,20 +29,27 @@ export async function POST(request: NextRequest) {
         ? assets.assets
         : [];
 
+    console.log(
+      `[scan-results-upload] Received scan upload: userId=${userId} projectId=${projectId ?? "null"} assets=${normalizedAssets.length}`
+    );
+
     const supabase = createServerClient();
     const { error } = await supabase.from("scanned_assets").insert({
       user_id: userId,
       project_id: projectId ?? null,
       assets: normalizedAssets,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error(`[scan-results-upload] Error: ${error.message}`);
+      throw new Error(error.message);
+    }
 
+    console.log(`[scan-results-upload] Saved to database (${normalizedAssets.length} assets)`);
     return NextResponse.json({ success: true, count: normalizedAssets.length });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[scan-results-upload] Error: ${msg}`);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
