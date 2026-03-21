@@ -19,93 +19,162 @@ function streamJsonError(message: string): Response {
   });
 }
 
-const MAX_STATIC_MESH_IN_PROMPT = 400;
+const MAX_ASSETS_IN_PROMPT = 1200;
+const MAX_PER_CATEGORY = 220;
 const LOG_CONTEXT_MAX = 120_000;
 
-function isStaticMeshType(type: string | undefined): boolean {
-  if (!type || typeof type !== "string") return false;
-  const t = type.trim();
-  const collapsed = t.replace(/\s+/g, "").toLowerCase();
-  if (collapsed.includes("staticmesh")) return true;
-  const short = t.includes(".") ? t.split(".").pop()!.trim() : t;
-  const norm = short.replace(/\s+/g, "").toLowerCase();
-  return norm === "staticmesh";
+type ScanAsset = { name?: string; path?: string; type?: string };
+type CategoryKey =
+  | "BUILDINGS"
+  | "LANDSCAPES"
+  | "CHARACTERS"
+  | "WALLS AND DECORATIONS"
+  | "VEHICLES"
+  | "TREES AND PLANTS"
+  | "MATERIALS"
+  | "OTHER";
+
+type CategoryRule = {
+  key: CategoryKey;
+  roots: string[];
+  keywords: string[];
+};
+
+const CATEGORY_RULES: CategoryRule[] = [
+  {
+    key: "LANDSCAPES",
+    roots: ["/Game/MWLandscapeAutoMaterial/"],
+    keywords: ["landscape", "terrain", "mountain", "island", "desert", "ground", "heightmap", "map"],
+  },
+  {
+    key: "BUILDINGS",
+    roots: ["/Game/Fab/", "/Game/ProceduralBuildingGenerator/"],
+    keywords: ["building", "house", "village", "town", "city", "roof", "floor", "window", "door", "cockpit", "tower"],
+  },
+  {
+    key: "CHARACTERS",
+    roots: ["/Game/Survival_Character/", "/Game/Characters/", "/Game/ThirdPerson/"],
+    keywords: ["character", "player", "npc", "human", "mannequin", "skeletal", "anim"],
+  },
+  {
+    key: "WALLS AND DECORATIONS",
+    roots: ["/Game/Sankoolarts_CompoundWall_Kit/"],
+    keywords: ["wall", "fence", "gate", "pillar", "compound", "decoration", "decor", "ornament"],
+  },
+  {
+    key: "VEHICLES",
+    roots: [],
+    keywords: ["vehicle", "car", "truck", "van", "bus", "bike", "motorcycle", "boat", "ship", "plane", "aircraft", "helicopter", "tank"],
+  },
+  {
+    key: "TREES AND PLANTS",
+    roots: [],
+    keywords: ["tree", "plant", "foliage", "bush", "grass", "leaf", "forest", "nature", "flower"],
+  },
+  {
+    key: "MATERIALS",
+    roots: [],
+    keywords: ["material", "mat_", "mi_", "texture", "albedo", "normal", "roughness", "metallic"],
+  },
+];
+
+function classifyAsset(path: string, type: string): CategoryKey {
+  const p = path.toLowerCase();
+  const t = type.toLowerCase();
+  for (const rule of CATEGORY_RULES) {
+    if (rule.roots.some((r) => p.startsWith(r.toLowerCase()))) return rule.key;
+  }
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.some((k) => p.includes(k) || t.includes(k))) return rule.key;
+  }
+  return "OTHER";
 }
 
-/** e.g. /Game/Fab/foo/bar -> "Fab" (first folder under /Game) */
-function gameSubfolderLabel(path: string): string {
-  const parts = path.split("/").filter(Boolean);
-  if (parts[0]?.toLowerCase() !== "game") return "Other";
-  return parts[1] || "Game";
-}
-
-/**
- * StaticMesh only, grouped by first /Game subfolder. Caps list for token limits.
- */
-function buildStaticMeshScanForPrompt(assets: Array<{ name?: string; path?: string; type?: string }>): {
+function buildCategorizedAssetSummary(assets: ScanAsset[]): {
   block: string;
-  staticMeshTotal: number;
+  totalAssets: number;
   includedInPrompt: number;
   truncated: boolean;
+  categoryCounts: Record<string, number>;
 } {
-  const staticMeshes = assets.filter((a) => isStaticMeshType(a.type));
-  if (staticMeshes.length === 0 && assets.length > 0) {
-    const sample = assets
-      .slice(0, 60)
-      .map((a) => `\t∙\t${(a.path || a.name || "").trim()} (${(a.type || "Unknown").trim()})`)
-      .join("\n");
-    return {
-      block: [
-        "USER'S AVAILABLE ASSETS (from UE5 scan):",
-        `No rows are typed as StaticMesh in the DB (${assets.length} assets scanned with other type strings).`,
-        "Still prefer unreal.EditorAssetLibrary.load_asset() + spawn_actor_from_object() for paths below that are meshes; sample rows:",
-        sample,
-      ].join("\n"),
-      staticMeshTotal: 0,
-      includedInPrompt: Math.min(60, assets.length),
-      truncated: false,
-    };
+  const normalized = assets
+    .map((a) => ({
+      path: (a.path || "").trim(),
+      name: (a.name || "").trim(),
+      type: (a.type || "Unknown").trim() || "Unknown",
+    }))
+    .filter((a) => a.path.startsWith("/Game/"));
+
+  const byPath = new Map<string, { path: string; name: string; type: string }>();
+  for (const a of normalized) {
+    if (!byPath.has(a.path)) byPath.set(a.path, a);
+  }
+  const unique = [...byPath.values()];
+
+  const categorized = new Map<CategoryKey, Array<{ path: string; name: string; type: string }>>();
+  const rootsSeen = new Map<CategoryKey, Set<string>>();
+  for (const k of ["BUILDINGS", "LANDSCAPES", "CHARACTERS", "WALLS AND DECORATIONS", "VEHICLES", "TREES AND PLANTS", "MATERIALS", "OTHER"] as CategoryKey[]) {
+    categorized.set(k, []);
+    rootsSeen.set(k, new Set<string>());
+  }
+  for (const asset of unique) {
+    const cat = classifyAsset(asset.path, asset.type);
+    categorized.get(cat)!.push(asset);
+    const firstRoot = asset.path.split("/").slice(0, 3).join("/") + "/";
+    rootsSeen.get(cat)!.add(firstRoot);
   }
 
-  const truncated = staticMeshes.length > MAX_STATIC_MESH_IN_PROMPT;
-  const list = truncated ? staticMeshes.slice(0, MAX_STATIC_MESH_IN_PROMPT) : staticMeshes;
+  const lines: string[] = [`YOUR SCANNED ASSETS (${unique.length} total):`, ""];
+  let included = 0;
+  const categoryCounts: Record<string, number> = {};
 
-  const byFolder = new Map<string, Array<{ name?: string; path?: string; type?: string }>>();
-  for (const a of list) {
-    const p = (a.path || "").trim();
-    const label = gameSubfolderLabel(p || "/Game/Unknown");
-    if (!byFolder.has(label)) byFolder.set(label, []);
-    byFolder.get(label)!.push(a);
-  }
-
-  const lines: string[] = [
-    "USER'S AVAILABLE ASSETS (from UE5 scan):",
-    "Below are StaticMesh assets you can place with unreal.EditorAssetLibrary.load_asset(PATH) and unreal.EditorLevelLibrary.spawn_actor_from_object(mesh, location).",
+  const ordered: CategoryKey[] = [
+    "BUILDINGS",
+    "LANDSCAPES",
+    "CHARACTERS",
+    "WALLS AND DECORATIONS",
+    "VEHICLES",
+    "TREES AND PLANTS",
+    "MATERIALS",
+    "OTHER",
   ];
-  if (truncated) {
-    lines.push(
-      `(Showing ${MAX_STATIC_MESH_IN_PROMPT} of ${staticMeshes.length} StaticMesh assets — prefer these paths; more exist in the project.)`
-    );
-  }
 
-  const folders = [...byFolder.keys()].sort((a, b) => a.localeCompare(b));
-  for (const folder of folders) {
-    const items = (byFolder.get(folder) || []).sort((x, y) =>
-      (x.path || "").localeCompare(y.path || "", undefined, { sensitivity: "base" })
-    );
+  for (const cat of ordered) {
+    const items = (categorized.get(cat) || []).sort((a, b) => a.path.localeCompare(b.path));
+    categoryCounts[cat] = items.length;
+    const roots = [...(rootsSeen.get(cat) || new Set<string>())].sort();
+    const rootText = roots.length ? ` (found in ${roots.join(", ")})` : "";
+    lines.push(`${cat}${rootText}:`);
+    if (items.length === 0) {
+      lines.push("\t∙\t(no matching assets found)");
+      lines.push("");
+      continue;
+    }
+    const remainingBudget = Math.max(0, MAX_ASSETS_IN_PROMPT - included);
+    const cap = Math.min(MAX_PER_CATEGORY, remainingBudget);
+    const toShow = items.slice(0, cap);
+    for (const item of toShow) {
+      lines.push(`\t∙\t${item.path} (${item.type})`);
+    }
+    included += toShow.length;
+    if (toShow.length < items.length) {
+      lines.push(`\t∙\t... and ${items.length - toShow.length} more in this category`);
+    }
     lines.push("");
-    lines.push(`${folder}:`);
-    for (const item of items) {
-      const path = (item.path || item.name || "").trim();
-      lines.push(`\t∙\t${path} (StaticMesh)`);
+    if (included >= MAX_ASSETS_IN_PROMPT) {
+      lines.push(`Prompt asset cap reached at ${MAX_ASSETS_IN_PROMPT} entries. Additional scanned assets omitted for token safety.`);
+      break;
     }
   }
 
+  const truncated = included < unique.length;
+
   return {
     block: lines.join("\n"),
-    staticMeshTotal: staticMeshes.length,
-    includedInPrompt: list.length,
+    totalAssets: unique.length,
+    includedInPrompt: included,
     truncated,
+    categoryCounts,
   };
 }
 
@@ -231,10 +300,11 @@ export async function POST(request: NextRequest) {
         const supabase = createServerClient();
         const assets = await fetchLatestScannedAssetsForUserAndProject(supabase, userId, projectId);
         if (assets.length > 0) {
-          const formatted = buildStaticMeshScanForPrompt(assets);
+          const formatted = buildCategorizedAssetSummary(assets);
           console.log(
-            `[BUILD STREAM] Scanned assets found: ${assets.length} total rows in DB snapshot | StaticMesh: ${formatted.staticMeshTotal} (sending ${formatted.includedInPrompt} in prompt${formatted.truncated ? ", truncated" : ""})`
+            `[BUILD STREAM] Scanned assets found: ${formatted.totalAssets} | sending ${formatted.includedInPrompt} categorized assets${formatted.truncated ? " (truncated)" : ""}`
           );
+          console.log("[BUILD STREAM] Category counts:", JSON.stringify(formatted.categoryCounts));
           const preview = assets.slice(0, 10).map((a) => ({
             name: a.name ?? "",
             path: a.path ?? "",
