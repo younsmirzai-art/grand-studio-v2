@@ -8,6 +8,7 @@ import {
   detectEnvironment,
   type ScannedAsset,
 } from "@/lib/ai/assetResolver2";
+import { isRelayOnline } from "@/lib/ue5/relayStatus";
 
 export type AgentStepAction =
   | "load_landscape"
@@ -52,6 +53,11 @@ type RunAgentLoopArgs = {
   assetSource: AgentAssetSource;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 };
+
+const WAIT_AFTER_COMMAND_MS = 10000;
+const WAIT_EVERY_3_COMMANDS_MS = 15000;
+const RELAY_RETRY_MS = 15000;
+const RELAY_MAX_RETRIES = 10;
 
 function safeParsePlan(text: string): AgentStep[] | null {
   const trimmed = text.trim();
@@ -156,6 +162,37 @@ function defaultPlan(prompt: string): AgentStep[] {
   ];
 }
 
+function isSimpleRequest(prompt: string): boolean {
+  const p = prompt.trim().toLowerCase();
+  return /^build\s+1\s+house\.?$/.test(p) ||
+    /^add\s+3\s+trees?\.?$/.test(p) ||
+    /^place\s+a\s+car\.?$/.test(p) ||
+    /^build\s+\d+\s+house(s)?\.?$/.test(p) ||
+    /^add\s+\d+\s+trees?\.?$/.test(p);
+}
+
+function defaultSimplePlan(prompt: string): AgentStep[] {
+  const p = prompt.toLowerCase();
+  if (p.includes("tree")) {
+    return [
+      { stepNumber: 1, action: "place_trees", description: "Import requested tree models", estimatedAssetCount: 3 },
+      { stepNumber: 2, action: "place_trees", description: "Place imported trees in scene", estimatedAssetCount: 3 },
+      { stepNumber: 3, action: "add_lighting", description: "Quick lighting pass", estimatedAssetCount: 1 },
+    ];
+  }
+  if (p.includes("car")) {
+    return [
+      { stepNumber: 1, action: "place_vehicles", description: "Import requested car model", estimatedAssetCount: 1 },
+      { stepNumber: 2, action: "place_vehicles", description: "Place imported car in scene", estimatedAssetCount: 1 },
+    ];
+  }
+  return [
+    { stepNumber: 1, action: "place_buildings", description: "Import requested house model", estimatedAssetCount: 1 },
+    { stepNumber: 2, action: "place_buildings", description: "Place imported house in scene", estimatedAssetCount: 1 },
+    { stepNumber: 3, action: "add_lighting", description: "Quick lighting pass", estimatedAssetCount: 1 },
+  ];
+}
+
 function summarizeAssets(assets: ScannedAsset[]): string {
   const paths = assets
     .map((a) => (a.path || "").trim())
@@ -182,6 +219,14 @@ async function waitForCommand(
     await new Promise((r) => setTimeout(r, 3000));
   }
   return { status: "timeout", error: "Command timed out" };
+}
+
+async function waitForRelayOrTimeout(): Promise<boolean> {
+  for (let i = 0; i < RELAY_MAX_RETRIES; i++) {
+    if (await isRelayOnline()) return true;
+    await new Promise((r) => setTimeout(r, RELAY_RETRY_MS));
+  }
+  return false;
 }
 
 const SCREENSHOT_CODE = `
@@ -225,7 +270,11 @@ CRITICAL — MATCH ENVIRONMENT TO USER REQUEST (terrain + asset types MUST align
 - Beach / coastal: island or sand terrain; boats, palm trees, beach props, docks.
 - Desert: desert terrain; desert buildings, cacti, rocks, sand structures.
 
-Minimum 3 steps, maximum 10. Prefer 6–8 steps. Always include lighting/atmosphere and final_check.
+Match plan complexity to request:
+- Simple request like "build 1 house" / "add 3 trees" / "place a car" = 2-3 steps max.
+- Medium request like "small garden" = 4-5 steps.
+- Complex request like "build a village" = 6-8 steps.
+- Very complex request like "build a city" = 8-10 steps.
 
 USER REQUEST:
 ${prompt}
@@ -240,6 +289,9 @@ ${summarizeAssets(scannedAssets)}
     steps = safeParsePlan(planResp.rawResponse) ?? (assetSource === "library" ? defaultLibraryImportPlan(prompt) : defaultPlan(prompt));
   } catch {
     steps = assetSource === "library" ? defaultLibraryImportPlan(prompt) : defaultPlan(prompt);
+  }
+  if (isSimpleRequest(prompt)) {
+    steps = defaultSimplePlan(prompt);
   }
   // FIX4: minimal test — "build 3 trees" + library only runs a single tree-import step.
   if (assetSource === "library" && /^\s*build\s+3\s+trees?\s*\.?\s*$/i.test(prompt.trim())) {
@@ -259,6 +311,7 @@ ${summarizeAssets(scannedAssets)}
   let completed = 0;
   let totalLibraryImportsSucceeded = 0;
   const sceneImportTotal = { value: 0 };
+  let commandsQueued = 0;
 
   for (const step of steps) {
     await onEvent({ type: "step_start", stepNumber: step.stepNumber, description: step.description });
@@ -274,9 +327,7 @@ ${summarizeAssets(scannedAssets)}
     }
 
     if (importCount > 0 && step.action !== "final_check") {
-      console.log(
-        `AGENT: Starting library import for step ${step.stepNumber}, need ${importCount} assets of type ${step.action} (assetSource=${assetSource})`
-      );
+      console.log(`IMPORT: Starting library import for step ${step.stepNumber}, need ${importCount} assets of type ${step.action}`);
       const seq = await importSequentialLibraryAssets(
         step.action,
         prompt,
@@ -296,7 +347,7 @@ ${summarizeAssets(scannedAssets)}
         }
       );
       console.log(
-        `AGENT: Finished importSequentialLibraryAssets for step ${step.stepNumber}, imported ${seq.imported}, paths ${seq.paths.length}`
+        `IMPORT: Finished importSequentialLibraryAssets for step ${step.stepNumber}, imported ${seq.imported}, paths ${seq.paths.length}`
       );
       totalLibraryImportsSucceeded += seq.imported;
       availablePaths = [...new Set([...availablePaths, ...seq.paths])];
@@ -306,6 +357,13 @@ ${summarizeAssets(scannedAssets)}
     assetsForStep.forEach((p) => usedAssets.add(p));
 
     let success = false;
+    if ((assetSource === "library" || assetSource === "both") && /import/i.test(step.description) && assetsForStep.length === 0) {
+      await onEvent({
+        type: "error",
+        stepNumber: step.stepNumber,
+        message: "Step requires imports but no imported paths are available yet.",
+      });
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
       const execPrompt = `Focus ONLY on this step. Place MANY instances (grid/scatter) — NOT just one or two actors.
 Step action: ${step.action}
@@ -316,20 +374,68 @@ Environment hint: ${detectEnvironment(prompt)}
 Asset source mode: ${assetSource}
 Use exact /Game/... paths — spawn with unreal.EditorAssetLibrary.load_asset and unreal.EditorLevelLibrary.spawn_actor_from_object.
 Paths to use (scan + imports):
-${assetsForStep.length ? assetsForStep.map((p) => `- ${p}`).join("\n") : "- Import paths may appear after relay; if empty, use Starter Content only as last resort"}
+${assetsForStep.length ? assetsForStep.map((p) => `- ${p}`).join("\n") : "- No imported paths yet"}
+
+IMPORTANT SAFETY RULES:
+- Step output must match the step description exactly.
+- You MUST use only imported/scanned /Game paths listed above.
+- You are FORBIDDEN from using BasicShapes Cube Cylinder Plane Sphere Cone.
+- Use ONLY unreal.EditorAssetLibrary.load_asset and unreal.EditorLevelLibrary.spawn_actor_from_object for placement.
+- If no usable asset paths are available, output ONLY a Python comment: # waiting for imports.
 
 Generate complete UE5 Python for THIS STEP ONLY.`;
-      const generated = await askGrandStudioAI(execPrompt, `Agent step ${step.stepNumber} for project ${projectId}`);
-      const code = generated.code || generated.rawResponse;
+      let code = "";
+      try {
+        const generated = await askGrandStudioAI(execPrompt, `Agent step ${step.stepNumber} for project ${projectId}`);
+        code = generated.code || generated.rawResponse;
+      } catch (e) {
+        await onEvent({
+          type: "error",
+          stepNumber: step.stepNumber,
+          message: `AI generation failed attempt ${attempt + 1}: ${e instanceof Error ? e.message : String(e)}`,
+        });
+        continue;
+      }
+      if ((assetSource === "library" || assetSource === "both") && /basicshapes|\/engine\/basicshapes|spawn_actor_from_class/i.test(code)) {
+        code = "# waiting for imports";
+        await onEvent({
+          type: "error",
+          stepNumber: step.stepNumber,
+          message: "Blocked forbidden BasicShapes code; waiting for imports.",
+        });
+      }
       await onEvent({ type: "step_code", stepNumber: step.stepNumber, code });
-
-      const cmdId = await queueUE5Command(projectId, code);
+      const relayReady = await waitForRelayOrTimeout();
+      if (!relayReady) {
+        await onEvent({
+          type: "error",
+          stepNumber: step.stepNumber,
+          message: "Relay disconnected; skipped this attempt after retries.",
+        });
+        continue;
+      }
+      const cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+      commandsQueued += 1;
       const result = await waitForCommand(cmdId);
+      console.log("IMPORT: Waiting 10 seconds for UE5");
+      await new Promise((r) => setTimeout(r, WAIT_AFTER_COMMAND_MS));
+      if (commandsQueued % 3 === 0) {
+        await new Promise((r) => setTimeout(r, WAIT_EVERY_3_COMMANDS_MS));
+      }
       if (result.status === "success") {
         success = true;
-        const ssCmd = await queueUE5Command(projectId, SCREENSHOT_CODE);
-        const ssRes = await waitForCommand(ssCmd, 60000);
-        await onEvent({ type: "step_screenshot", stepNumber: step.stepNumber, screenshotUrl: ssRes.screenshotUrl ?? null });
+        const relayForScreenshot = await waitForRelayOrTimeout();
+        if (relayForScreenshot) {
+          const ssCmd = await queueUE5Command(projectId, SCREENSHOT_CODE, { commandType: "import" });
+          commandsQueued += 1;
+          const ssRes = await waitForCommand(ssCmd, 60000);
+          console.log("IMPORT: Waiting 10 seconds for UE5");
+          await new Promise((r) => setTimeout(r, WAIT_AFTER_COMMAND_MS));
+          if (commandsQueued % 3 === 0) {
+            await new Promise((r) => setTimeout(r, WAIT_EVERY_3_COMMANDS_MS));
+          }
+          await onEvent({ type: "step_screenshot", stepNumber: step.stepNumber, screenshotUrl: ssRes.screenshotUrl ?? null });
+        }
         break;
       }
       await onEvent({

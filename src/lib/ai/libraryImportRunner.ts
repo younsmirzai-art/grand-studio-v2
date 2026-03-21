@@ -8,16 +8,17 @@ import { queueUE5Command } from "@/lib/ue5/commands";
 import { getInternalSiteUrl } from "@/lib/site/internalUrl";
 import { isRelayOnline } from "@/lib/ue5/relayStatus";
 import { searchAssets as searchPolyhavenDirect, type PolyHavenAsset } from "@/lib/polyhaven/client";
-import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
-import { searchModels as searchSketchfabDirect, getDownloadUrl } from "@/lib/sketchfab/client";
+import { searchModels as searchSketchfabDirect } from "@/lib/sketchfab/client";
 import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import type { ImportProgressEvent } from "@/lib/ai/agentImportTypes";
 import { pickQueriesForAction } from "@/lib/ai/assetResolver2-queries";
 
-const WAIT_AFTER_NORMAL_MS = 8000;
+const WAIT_AFTER_NORMAL_MS = 10000;
 const WAIT_AFTER_BUILDING_MS = 20000;
 const WAIT_STABILIZE_EVERY_5_MS = 15000;
+const RELAY_RETRY_MS = 15000;
+const RELAY_MAX_RETRIES = 10;
 export const MAX_IMPORTS_PER_STEP = 5;
 export const MAX_IMPORTS_PER_SCENE = 25;
 
@@ -41,22 +42,35 @@ async function waitForCommand(
   return { status: "timeout" };
 }
 
+async function waitForRelayOrTimeout(): Promise<boolean> {
+  for (let i = 0; i < RELAY_MAX_RETRIES; i++) {
+    if (await isRelayOnline()) return true;
+    await new Promise((r) => setTimeout(r, RELAY_RETRY_MS));
+  }
+  return false;
+}
+
+async function queueWithRelayCheck(projectId: string, code: string, commandType: "import" | "scan_assets" = "import"): Promise<string | null> {
+  const relayReady = await waitForRelayOrTimeout();
+  if (!relayReady) {
+    console.warn("IMPORT: Relay disconnected after retries; skipping command queue");
+    return null;
+  }
+  return queueUE5Command(projectId, code, { commandType });
+}
+
 async function fetchPolyhavenSearchHttp(query: string, count: number): Promise<PolyHavenAsset[]> {
   const base = getInternalSiteUrl();
-  const url = `${base}/api/polyhaven/search`;
-  console.log(`AGENT: Searching Poly Haven for: ${query} (POST ${url})`);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, type: "models", count }),
-  });
+  const url = `${base}/api/polyhaven/search?q=${encodeURIComponent(query)}&type=models&count=${count}`;
+  console.log(`IMPORT: Calling Poly Haven search API for: ${query}`);
+  const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
-    console.warn(`AGENT: Poly Haven search HTTP ${res.status}, falling back to direct client`);
+    console.warn(`IMPORT: Poly Haven search HTTP ${res.status}, falling back to direct client`);
     return searchPolyhavenDirect(query, "models", count);
   }
   const data = (await res.json()) as { results?: PolyHavenAsset[] };
   const results = data.results ?? [];
-  console.log(`AGENT: Poly Haven returned N results: ${results.length}`);
+  console.log(`IMPORT: Poly Haven returned ${results.length} results`);
   return results;
 }
 
@@ -66,22 +80,48 @@ async function fetchSketchfabSearchHttp(query: string, count: number): Promise<{
 }[]> {
   const base = getInternalSiteUrl();
   const url = `${base}/api/sketchfab/search`;
-  console.log(`AGENT: Searching Sketchfab for: ${query} (POST ${url})`);
+  console.log(`IMPORT: Calling Sketchfab search API for: ${query}`);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, count }),
   });
   if (!res.ok) {
-    console.warn(`AGENT: Sketchfab search HTTP ${res.status}, falling back to direct client`);
+    console.warn(`IMPORT: Sketchfab search HTTP ${res.status}, falling back to direct client`);
     const token = process.env.SKETCHFAB_API_TOKEN;
     const results = await searchSketchfabDirect(query, { count, token: token ?? undefined });
     return results.map((r) => ({ uid: r.uid, name: r.name }));
   }
   const data = (await res.json()) as { results?: { uid: string; name: string }[] };
   const results = data.results ?? [];
-  console.log(`AGENT: Sketchfab returned N results: ${results.length}`);
+  console.log(`IMPORT: Sketchfab returned ${results.length} results`);
   return results;
+}
+
+async function fetchPolyhavenDownloadUrl(assetId: string, projectId: string): Promise<string | null> {
+  const base = getInternalSiteUrl();
+  const url = `${base}/api/polyhaven/download`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assetId, type: "model", projectId }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { url?: string };
+  return data.url ?? null;
+}
+
+async function fetchSketchfabDownloadUrl(uid: string, projectId: string): Promise<string | null> {
+  const base = getInternalSiteUrl();
+  const url = `${base}/api/sketchfab/download`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uid, projectId }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { url?: string };
+  return data.url ?? null;
 }
 
 function isBuildingStep(action: string): boolean {
@@ -130,9 +170,9 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
       break;
     }
 
-    const relayOk = await isRelayOnline();
+    const relayOk = await waitForRelayOrTimeout();
     if (!relayOk) {
-      console.warn("AGENT: Relay not connected — aborting library imports until UE5 relay is online");
+      console.warn("IMPORT: Relay not connected — skipping import after retries");
       await onProgress?.({
         asset: "(relay offline)",
         source: "none",
@@ -160,8 +200,8 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
       }
       if (!pick && results[0]?.id) pick = results[0];
       if (pick?.id) {
-        console.log(`AGENT: Downloading asset: ${pick.name} from polyhaven`, pick.id);
-        const storageUrl = await downloadPolyHavenModelToStorage(pick.id);
+        console.log(`IMPORT: Downloading model: ${pick.name} from Poly Haven`);
+        const storageUrl = await fetchPolyhavenDownloadUrl(pick.id, projectId);
         if (storageUrl) {
           usedPolyIds.add(pick.id);
           await recordUsage(userId, "polyhaven_import");
@@ -169,8 +209,9 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename = `${label}.${ext}`;
           const importCode = generateUE5ImportCode(storageUrl, filename, label);
-          console.log(`AGENT: Import command queued for asset: ${pick.name}`);
-          const commandId = await queueUE5Command(projectId, importCode, { commandType: "import" });
+          const commandId = await queueWithRelayCheck(projectId, importCode, "import");
+          if (!commandId) continue;
+          console.log("IMPORT: UE5 import code generated and queued");
           await onProgress?.({
             asset: pick.name,
             source: "polyhaven",
@@ -192,7 +233,7 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           }
           doneThisRound = true;
           const waitMs = isBuildingStep(action) ? WAIT_AFTER_BUILDING_MS : WAIT_AFTER_NORMAL_MS;
-          console.log(`AGENT: Waiting ${waitMs / 1000} seconds for UE5 to process`);
+          console.log(`IMPORT: Waiting ${waitMs / 1000} seconds for UE5`);
           await new Promise((r) => setTimeout(r, waitMs));
         }
       }
@@ -210,14 +251,15 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
       if (!pick && results[0]?.uid) pick = results[0];
       if (pick?.uid) {
         usedSfUids.add(pick.uid);
-        console.log(`AGENT: Downloading asset: ${pick.name} from sketchfab`);
-        const downloadUrl = await getDownloadUrl(pick.uid, process.env.SKETCHFAB_API_TOKEN);
+        console.log(`IMPORT: Downloading model: ${pick.name} from Sketchfab`);
+        const downloadUrl = await fetchSketchfabDownloadUrl(pick.uid, projectId);
         if (downloadUrl) {
           await recordUsage(userId, "sketchfab_import");
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
           const importCode = generateSketchfabImportCode(downloadUrl, `${pick.uid}.zip`, label);
-          console.log(`AGENT: Import command queued for asset: ${pick.name}`);
-          const commandId = await queueUE5Command(projectId, importCode, { commandType: "import" });
+          const commandId = await queueWithRelayCheck(projectId, importCode, "import");
+          if (!commandId) continue;
+          console.log("IMPORT: UE5 import code generated and queued");
           await onProgress?.({
             asset: pick.name,
             source: "sketchfab",
@@ -239,7 +281,7 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           }
           doneThisRound = true;
           const waitMs = isBuildingStep(action) ? WAIT_AFTER_BUILDING_MS : WAIT_AFTER_NORMAL_MS;
-          console.log(`AGENT: Waiting ${waitMs / 1000} seconds for UE5 to process`);
+          console.log(`IMPORT: Waiting ${waitMs / 1000} seconds for UE5`);
           await new Promise((r) => setTimeout(r, waitMs));
         }
       }
