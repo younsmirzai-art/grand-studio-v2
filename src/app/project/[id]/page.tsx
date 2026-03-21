@@ -379,7 +379,7 @@ export default function ProjectPage() {
 
   // Send message to AI
   const sendMessage = useCallback(
-    async (message: string) => {
+    async (message: string, aiMode: "ask" | "agent" = "ask") => {
       screenshotCountRef.current = 0;
       const supabase = getClient();
       await supabase.from("chat_turns").insert({
@@ -399,7 +399,7 @@ export default function ProjectPage() {
       setIsGenerating(true);
       setStreamingContent("");
 
-      const template = getTemplateForPrompt(message);
+      const template = aiMode === "ask" ? getTemplateForPrompt(message) : null;
       if (template) {
         try {
           setStreamingContent(`Using ${template.name} template...`);
@@ -449,6 +449,68 @@ export default function ProjectPage() {
       }
 
       try {
+        if (aiMode === "agent") {
+          let progressLog = "Planning your scene...\n";
+          setStreamingContent(progressLog);
+          const agentRes = await fetch("/api/build/agent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ prompt: message.trim(), projectId: id }),
+          });
+          if (!agentRes.ok) {
+            const err = await agentRes.text();
+            throw new Error(err || "Agent request failed");
+          }
+          const reader = agentRes.body?.getReader();
+          const decoder = new TextDecoder();
+          if (!reader) throw new Error("No agent response body");
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n");
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const data = line.slice(6);
+              try {
+                const ev = JSON.parse(data) as {
+                  type?: string;
+                  stepNumber?: number;
+                  description?: string;
+                  summary?: string;
+                  success?: boolean;
+                  asset?: string;
+                  source?: string;
+                  message?: string;
+                  steps?: Array<{ stepNumber: number; description: string }>;
+                };
+                if (ev.type === "plan") {
+                  progressLog += `Plan created: ${ev.steps?.length ?? 0} steps\n`;
+                } else if (ev.type === "step_start") {
+                  progressLog += `Step ${ev.stepNumber ?? "?"}: ${ev.description ?? "Starting..."}\n`;
+                } else if (ev.type === "step_complete") {
+                  progressLog += `${ev.success ? "✅" : "⚠️"} Step ${ev.stepNumber ?? "?"} complete\n`;
+                } else if (ev.type === "importing") {
+                  progressLog += `🌲 Importing ${ev.asset ?? "asset"} from ${ev.source ?? "library"}...\n`;
+                } else if (ev.type === "error") {
+                  progressLog += `⚠️ ${ev.message ?? "Step warning"}\n`;
+                } else if (ev.type === "complete") {
+                  progressLog += `🎉 ${ev.summary ?? "Build complete"}\n`;
+                }
+                setStreamingContent(progressLog);
+              } catch {
+                // ignore partial lines
+              }
+            }
+          }
+          setIsGenerating(false);
+          setStreamingContent("");
+          await refetchChat();
+          await refetchUsage();
+          return;
+        }
+
         console.log("Sending to /api/build/stream:", { prompt: message.trim(), projectId: id });
         const streamRes = await fetch("/api/build/stream", {
           method: "POST",
@@ -603,7 +665,7 @@ export default function ProjectPage() {
         await refetchUsage();
       }
     },
-    [projectId, refetchChat, refetchUsage, runVisionLoop]
+    [projectId, refetchChat, refetchUsage, runVisionLoop, id]
   );
 
   // Full project controls

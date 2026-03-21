@@ -10,6 +10,8 @@ import {
   Copy,
   Check,
   Loader2,
+  MessageCircle,
+  Bot,
 } from "lucide-react";
 import { ScreenshotPreview } from "@/components/chat/ScreenshotPreview";
 import type { ChatTurn } from "@/lib/types";
@@ -20,7 +22,7 @@ interface AICopilotPanelProps {
   chatTurns: ChatTurn[];
   isGenerating: boolean;
   streamingContent: string;
-  onSend: (message: string) => void;
+  onSend: (message: string, mode: "ask" | "agent") => void;
   disabled?: boolean;
   prefillMessage?: string | null;
   onClearPrefill?: () => void;
@@ -57,6 +59,7 @@ export function AICopilotPanel({
   onClearPrefill,
 }: AICopilotPanelProps) {
   const [input, setInput] = useState("");
+  const [aiMode, setAiMode] = useState<"ask" | "agent">("ask");
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -82,9 +85,9 @@ export function AICopilotPanel({
   const handleSend = useCallback(() => {
     const msg = input.trim();
     if (!msg || disabled) return;
-    onSend(msg);
+    onSend(msg, aiMode);
     setInput("");
-  }, [input, disabled, onSend]);
+  }, [input, disabled, onSend, aiMode]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -352,6 +355,37 @@ export function AICopilotPanel({
                   <ArrowUp className="w-4 h-4" />
                 </button>
               </div>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAiMode("ask")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition ${
+                    aiMode === "ask"
+                      ? "bg-[#2196F3]/20 border-[#2196F3]/40 text-[#B7DFFF]"
+                      : "bg-[#1A1A1F] border-white/10 text-[#A0A0A8] hover:text-white"
+                  }`}
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  Ask
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiMode("agent")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition ${
+                    aiMode === "agent"
+                      ? "bg-[#2196F3]/20 border-[#2196F3]/40 text-[#B7DFFF]"
+                      : "bg-[#1A1A1F] border-white/10 text-[#A0A0A8] hover:text-white"
+                  }`}
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  Agent
+                </button>
+              </div>
+              {aiMode === "agent" && (
+                <p className="text-[10px] text-[#72C7FF] mt-2">
+                  Agent mode: AI will plan and execute multiple steps automatically.
+                </p>
+              )}
               <p className="text-[10px] text-[#606068] mt-2 text-center">
                 Press Ctrl+Enter to send · Escape to close
               </p>
