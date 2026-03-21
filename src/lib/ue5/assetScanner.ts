@@ -12,35 +12,8 @@ LOG_PREFIX = "[GrandStudio AssetScanner]"
 OUTPUT_PATH = "C:/GrandStudio/asset_scan.json"
 ROOT = "/Game"
 
-USEFUL_TYPES = frozenset({
-    "StaticMesh",
-    "SkeletalMesh",
-    "Material",
-    "MaterialInstance",
-    "MaterialInstanceConstant",
-    "Texture2D",
-    "Texture",
-    "Blueprint",
-    "BlueprintGeneratedClass",
-    "SoundWave",
-    "SoundCue",
-    "NiagaraSystem",
-    "ParticleSystem",
-    "World",
-    "LevelSequence",
-    "AnimSequence",
-    "AnimMontage",
-    "AnimBlueprint",
-    "PhysicsAsset",
-    "Skeleton",
-    "DataAsset",
-    "CurveFloat",
-    "WidgetBlueprint",
-    "MediaSource",
-    "MediaPlayer",
-    "FoliageType",
-})
-
+# No type filter: include every asset under /Game. Frontend can filter later.
+DEBUG_CLASS_SAMPLE_COUNT = 20
 BATCH_LOG_EVERY = 500
 
 
@@ -115,15 +88,25 @@ def _normalize_class_name(raw):
         return "Unknown"
 
 
-def _get_asset_class_name(asset_path):
+def _classify_asset(asset_path):
+    """Returns (raw_class_from_ue, type_for_json). Unknown if None/empty/failed."""
+    raw = None
     try:
         try:
-            c = unreal.EditorAssetLibrary.get_asset_class(asset_path)
+            raw = unreal.EditorAssetLibrary.get_asset_class(asset_path)
         except Exception:
-            return "Unknown"
-        return _normalize_class_name(c)
+            raw = None
+        if raw is None:
+            return None, "Unknown"
+        try:
+            s = str(raw).strip()
+        except Exception:
+            return raw, "Unknown"
+        if not s:
+            return raw, "Unknown"
+        return raw, _normalize_class_name(raw)
     except Exception:
-        return "Unknown"
+        return None, "Unknown"
 
 
 def _collect_via_list_assets():
@@ -295,11 +278,10 @@ def run_scan():
 
         assets = []
         by_type_count = {}
-        skipped = 0
         errors = 0
 
         try:
-            _log("Step 4: Filtering and enriching (batch size log every " + str(BATCH_LOG_EVERY) + ")…")
+            _log("Step 4: Enriching ALL assets (no type filter). Debug: first " + str(DEBUG_CLASS_SAMPLE_COUNT) + " class names logged…")
         except Exception:
             pass
 
@@ -310,23 +292,42 @@ def run_scan():
                         _log("Step 4 progress: processed " + str(idx) + "/" + str(len(all_paths)))
                     except Exception:
                         pass
+            except Exception:
+                pass
+            ap = "/Game"
+            asset_class = "Unknown"
+            name = "asset"
+            size_bytes = None
+            raw_cls = None
+            try:
                 try:
                     ap = str(asset_path)
                 except Exception:
-                    errors += 1
-                    continue
-                try:
-                    asset_class = _get_asset_class_name(ap)
-                except Exception:
-                    asset_class = "Unknown"
+                    try:
+                        ap = repr(asset_path)
+                    except Exception:
+                        ap = "/Game/Unknown"
                     errors += 1
                 try:
-                    if asset_class not in USEFUL_TYPES:
-                        skipped += 1
-                        continue
+                    raw_cls, asset_class = _classify_asset(ap)
                 except Exception:
-                    skipped += 1
-                    continue
+                    raw_cls, asset_class = None, "Unknown"
+                    errors += 1
+                try:
+                    if idx < DEBUG_CLASS_SAMPLE_COUNT:
+                        try:
+                            if raw_cls is None:
+                                cls_dbg = "None"
+                            else:
+                                try:
+                                    cls_dbg = str(raw_cls)
+                                except Exception:
+                                    cls_dbg = "(unprintable)"
+                            _log("Step 4 debug: Asset: " + ap + " → Class: " + cls_dbg)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 try:
                     name = ap.split("/")[-1]
                     if "." in name:
@@ -337,27 +338,27 @@ def run_scan():
                     size_bytes = _safe_file_size(ap)
                 except Exception:
                     size_bytes = None
-                try:
-                    row = {
-                        "path": ap,
-                        "name": name,
-                        "type": asset_class,
-                        "size_bytes": size_bytes,
-                    }
-                    assets.append(row)
-                    by_type_count[asset_class] = by_type_count.get(asset_class, 0) + 1
-                except Exception as e:
-                    errors += 1
-                    _log_warn("Row build failed for " + ap + ": " + str(e))
             except Exception as e:
                 errors += 1
                 try:
                     _log_warn("Per-asset loop error: " + str(e))
                 except Exception:
                     pass
+            try:
+                row = {
+                    "path": ap,
+                    "name": name,
+                    "type": asset_class,
+                    "size_bytes": size_bytes,
+                }
+                assets.append(row)
+                by_type_count[asset_class] = by_type_count.get(asset_class, 0) + 1
+            except Exception as e:
+                errors += 1
+                _log_err("Could not append row: " + str(e))
 
         try:
-            _log("Step 4 done: kept " + str(len(assets)) + ", skipped " + str(skipped) + ", errors " + str(errors))
+            _log("Step 4 done: included " + str(len(assets)) + " assets (expected " + str(len(all_paths)) + "), errors " + str(errors))
         except Exception:
             pass
 
@@ -382,7 +383,7 @@ def run_scan():
                 "top_level_folders": _top_level_game_folders(),
                 "raw_path_count": len(all_paths),
                 "count": len(assets),
-                "skipped_not_in_filter": skipped,
+                "type_filter": "none",
                 "per_asset_errors": errors,
                 "by_type_count": by_type_count,
                 "assets": assets,
