@@ -217,6 +217,11 @@ export async function POST(request: NextRequest) {
     const userId = user.id;
 
     const body = await request.json();
+    console.log("[BUILD STREAM] RECEIVED:", {
+      prompt: body.prompt?.slice(0, 50),
+      projectId: body.projectId,
+      hasProjectContext: !!body.projectContext,
+    });
     const { prompt, projectContext, projectId } = body;
     console.log("[BUILD STREAM] Body keys:", Object.keys(body), "prompt length:", typeof prompt === "string" ? prompt.length : 0);
 
@@ -297,8 +302,10 @@ export async function POST(request: NextRequest) {
 
     if (projectId && !isGreetingOrQuestion(trimmed)) {
       try {
+        console.log("[BUILD STREAM] About to fetch scanned assets for userId:", userId, "projectId:", projectId);
         const supabase = createServerClient();
         const assets = await fetchLatestScannedAssetsForUserAndProject(supabase, userId, projectId);
+        console.log("[BUILD STREAM] Scanned assets result: count=", assets.length, "firstPath=", assets[0]?.path);
         if (assets.length > 0) {
           const formatted = buildCategorizedAssetSummary(assets);
           console.log(

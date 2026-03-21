@@ -45,7 +45,8 @@ export default function ProjectPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const projectId = params.id as string;
+  const id = params.id as string;
+  const projectId = id;
   const project = useProjectStore((s) => s.project);
   const {
     imageTo3DModalOpen,
@@ -448,11 +449,12 @@ export default function ProjectPage() {
       }
 
       try {
+        console.log("Sending to /api/build/stream:", { prompt: message.trim(), projectId: id });
         const streamRes = await fetch("/api/build/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ prompt: message.trim(), projectId }),
+          body: JSON.stringify({ prompt: message.trim(), projectId: id }),
         });
         if (!streamRes.ok) {
           const errText = await streamRes.text();
