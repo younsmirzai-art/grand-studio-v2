@@ -3,7 +3,7 @@ import { createServerAuthClient, createServerClient } from "@/lib/supabase/serve
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import { queueUE5Command } from "@/lib/ue5/commands";
 import { generateScanCode } from "@/lib/ue5/assetScanner";
-import { runAgentLoop, type AgentEvent } from "@/lib/ai/agentLoop";
+import { runAgentLoop, type AgentEvent, type AgentAssetSource } from "@/lib/ai/agentLoop";
 
 type ScannedAsset = { path?: string; name?: string; type?: string };
 
@@ -52,6 +52,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+  const rawSource = body?.assetSource;
+  const assetSource: AgentAssetSource =
+    rawSource === "my_assets" || rawSource === "library" || rawSource === "both" ? rawSource : "both";
   if (!prompt || !projectId) {
     return new Response(JSON.stringify({ error: "prompt and projectId required" }), { status: 400 });
   }
@@ -93,6 +96,7 @@ export async function POST(request: NextRequest) {
           projectId,
           userId: user.id,
           scannedAssets: latest.assets,
+          assetSource,
           onEvent: async (event) => emit(controller, event),
         });
 

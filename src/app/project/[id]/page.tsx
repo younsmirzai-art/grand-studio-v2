@@ -20,7 +20,7 @@ import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { getTemplateForPrompt } from "@/lib/ue5/sceneTemplates";
 import { STRIPE_PRICES } from "@/lib/stripe/config";
 
-import { AICopilotPanel } from "@/components/workspace/AICopilotPanel";
+import { AICopilotPanel, type AgentAssetSourceChoice } from "@/components/workspace/AICopilotPanel";
 import { WorkspacePanel } from "@/components/workspace/WorkspacePanel";
 import { ViewportPanel } from "@/components/workspace/ViewportPanel";
 import SmartBuildView from "@/components/build/SmartBuildView";
@@ -82,6 +82,8 @@ export default function ProjectPage() {
   const [limitReachedMessage, setLimitReachedMessage] = useState("");
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [scanningAssets, setScanningAssets] = useState(false);
+  /** Agent mode: message sent; waiting for asset source buttons. */
+  const [pendingAgentMessage, setPendingAgentMessage] = useState<string | null>(null);
 
   const autoBuildStartedRef = useRef(false);
   const seenSuccessIdsRef = useRef<Set<string>>(new Set());
@@ -377,9 +379,159 @@ export default function ProjectPage() {
     []
   );
 
+  const runAgentWithSource = useCallback(
+    async (assetSource: AgentAssetSourceChoice) => {
+      const message = pendingAgentMessage;
+      if (!message) return;
+      setPendingAgentMessage(null);
+      screenshotCountRef.current = 0;
+      const supabase = getClient();
+      setIsGenerating(true);
+      setStreamingContent("");
+      try {
+        type StepState = "pending" | "running" | "done" | "failed";
+        type PlanStep = { stepNumber: number; description: string };
+        let planSteps: PlanStep[] = [];
+        const stepStates = new Map<number, StepState>();
+        let headline = "Planning your scene...";
+        let footer = "";
+
+        const stateIcon = (s: StepState): string => {
+          if (s === "running") return "🔵";
+          if (s === "done") return "✅";
+          if (s === "failed") return "❌";
+          return "⚪";
+        };
+
+        const renderChecklist = () => {
+          const lines: string[] = [];
+          lines.push(headline);
+          lines.push("");
+          if (planSteps.length === 0) {
+            lines.push("⚪ Waiting for plan...");
+          } else {
+            lines.push(`Plan (${planSteps.length} steps):`);
+            for (const step of planSteps) {
+              const state = stepStates.get(step.stepNumber) ?? "pending";
+              lines.push(`${stateIcon(state)} Step ${step.stepNumber}/${planSteps.length}: ${step.description}`);
+            }
+          }
+          if (footer) {
+            lines.push("");
+            lines.push(footer);
+          }
+          return lines.join("\n");
+        };
+
+        setStreamingContent(renderChecklist());
+        const agentRes = await fetch("/api/build/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ prompt: message.trim(), projectId: id, assetSource }),
+        });
+        if (!agentRes.ok) {
+          const err = await agentRes.text();
+          throw new Error(err || "Agent request failed");
+        }
+        const reader = agentRes.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) throw new Error("No agent response body");
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6);
+            try {
+              const ev = JSON.parse(data) as {
+                type?: string;
+                stepNumber?: number;
+                description?: string;
+                summary?: string;
+                success?: boolean;
+                asset?: string;
+                source?: string;
+                current?: number;
+                total?: number;
+                message?: string;
+                steps?: Array<{ stepNumber: number; description: string }>;
+              };
+              if (ev.type === "plan") {
+                planSteps = (ev.steps ?? []).map((s, i) => ({
+                  stepNumber: Number(s.stepNumber ?? i + 1),
+                  description: s.description || `Step ${i + 1}`,
+                }));
+                for (const s of planSteps) stepStates.set(s.stepNumber, "pending");
+                headline = `Plan created: ${planSteps.length} steps`;
+                footer = "";
+              } else if (ev.type === "step_start") {
+                const sn = Number(ev.stepNumber ?? 0);
+                if (sn > 0) stepStates.set(sn, "running");
+                if (ev.description) {
+                  const idx = planSteps.findIndex((s) => s.stepNumber === sn);
+                  if (idx >= 0) planSteps[idx] = { ...planSteps[idx], description: ev.description };
+                }
+                headline = `Agent running: step ${sn || "?"} in progress`;
+                footer = "";
+              } else if (ev.type === "step_complete") {
+                const sn = Number(ev.stepNumber ?? 0);
+                if (sn > 0) stepStates.set(sn, ev.success ? "done" : "failed");
+                headline = ev.success
+                  ? `Step ${sn || "?"} complete`
+                  : `Step ${sn || "?"} finished with issues`;
+                footer = "";
+              } else if (ev.type === "importing") {
+                const label = ev.asset ?? "asset";
+                const src = ev.source ?? "library";
+                const n = ev.current != null && ev.total != null ? ` (${ev.current}/${ev.total})` : "";
+                footer = `🌲 Importing ${label}${n} from ${src}...`;
+              } else if (ev.type === "error") {
+                const sn = Number(ev.stepNumber ?? 0);
+                if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
+                footer = `⚠️ ${ev.message ?? "Step warning"}`;
+              } else if (ev.type === "complete") {
+                headline = "Your scene is complete!";
+                footer = `🎉 ${ev.summary ?? "Build complete"}`;
+              }
+              setStreamingContent(renderChecklist());
+            } catch {
+              /* ignore partial lines */
+            }
+          }
+        }
+        const finalAgentChecklist = renderChecklist();
+        await supabase.from("chat_turns").insert({
+          project_id: projectId,
+          agent_name: "Grand Studio",
+          agent_title: "AI Co-Pilot",
+          content: finalAgentChecklist,
+          turn_type: "direct",
+        });
+        await refetchChat();
+        setIsGenerating(false);
+        setStreamingContent("");
+        await refetchUsage();
+      } catch (err) {
+        setIsGenerating(false);
+        setStreamingContent("");
+        toast.error("Something went wrong. Try again in a moment!");
+        await refetchChat();
+        await refetchUsage();
+      }
+    },
+    [pendingAgentMessage, projectId, id, refetchChat, refetchUsage]
+  );
+
   // Send message to AI
   const sendMessage = useCallback(
     async (message: string, aiMode: "ask" | "agent" = "ask") => {
+      if (aiMode === "agent" && pendingAgentMessage !== null) {
+        toast.info("Choose an asset source below.");
+        return;
+      }
       screenshotCountRef.current = 0;
       const supabase = getClient();
       await supabase.from("chat_turns").insert({
@@ -395,6 +547,12 @@ export default function ProjectPage() {
         agent_name: "Boss",
         detail: `Command: ${message.slice(0, 100)}`,
       });
+
+      if (aiMode === "agent") {
+        setPendingAgentMessage(message.trim());
+        await refetchChat();
+        return;
+      }
 
       setIsGenerating(true);
       setStreamingContent("");
@@ -449,135 +607,6 @@ export default function ProjectPage() {
       }
 
       try {
-        if (aiMode === "agent") {
-          type StepState = "pending" | "running" | "done" | "failed";
-          type PlanStep = { stepNumber: number; description: string };
-          let planSteps: PlanStep[] = [];
-          const stepStates = new Map<number, StepState>();
-          let headline = "Planning your scene...";
-          let footer = "";
-
-          const stateIcon = (s: StepState): string => {
-            if (s === "running") return "🔵";
-            if (s === "done") return "✅";
-            if (s === "failed") return "❌";
-            return "⚪";
-          };
-
-          const renderChecklist = () => {
-            const lines: string[] = [];
-            lines.push(headline);
-            lines.push("");
-            if (planSteps.length === 0) {
-              lines.push("⚪ Waiting for plan...");
-            } else {
-              lines.push(`Plan (${planSteps.length} steps):`);
-              for (const step of planSteps) {
-                const state = stepStates.get(step.stepNumber) ?? "pending";
-                lines.push(`${stateIcon(state)} Step ${step.stepNumber}/${planSteps.length}: ${step.description}`);
-              }
-            }
-            if (footer) {
-              lines.push("");
-              lines.push(footer);
-            }
-            return lines.join("\n");
-          };
-
-          setStreamingContent(renderChecklist());
-          const agentRes = await fetch("/api/build/agent", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ prompt: message.trim(), projectId: id }),
-          });
-          if (!agentRes.ok) {
-            const err = await agentRes.text();
-            throw new Error(err || "Agent request failed");
-          }
-          const reader = agentRes.body?.getReader();
-          const decoder = new TextDecoder();
-          if (!reader) throw new Error("No agent response body");
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n");
-            for (const line of lines) {
-              if (!line.startsWith("data: ")) continue;
-              const data = line.slice(6);
-              try {
-                const ev = JSON.parse(data) as {
-                  type?: string;
-                  stepNumber?: number;
-                  description?: string;
-                  summary?: string;
-                  success?: boolean;
-                  asset?: string;
-                  source?: string;
-                  current?: number;
-                  total?: number;
-                  message?: string;
-                  steps?: Array<{ stepNumber: number; description: string }>;
-                };
-                if (ev.type === "plan") {
-                  planSteps = (ev.steps ?? []).map((s, i) => ({
-                    stepNumber: Number(s.stepNumber ?? i + 1),
-                    description: s.description || `Step ${i + 1}`,
-                  }));
-                  for (const s of planSteps) stepStates.set(s.stepNumber, "pending");
-                  headline = `Plan created: ${planSteps.length} steps`;
-                  footer = "";
-                } else if (ev.type === "step_start") {
-                  const sn = Number(ev.stepNumber ?? 0);
-                  if (sn > 0) stepStates.set(sn, "running");
-                  if (ev.description) {
-                    const idx = planSteps.findIndex((s) => s.stepNumber === sn);
-                    if (idx >= 0) planSteps[idx] = { ...planSteps[idx], description: ev.description };
-                  }
-                  headline = `Agent running: step ${sn || "?"} in progress`;
-                  footer = "";
-                } else if (ev.type === "step_complete") {
-                  const sn = Number(ev.stepNumber ?? 0);
-                  if (sn > 0) stepStates.set(sn, ev.success ? "done" : "failed");
-                  headline = ev.success
-                    ? `Step ${sn || "?"} complete`
-                    : `Step ${sn || "?"} finished with issues`;
-                  footer = "";
-                } else if (ev.type === "importing") {
-                  const label = ev.asset ?? "asset";
-                  const src = ev.source ?? "library";
-                  const n = ev.current != null && ev.total != null ? ` (${ev.current}/${ev.total})` : "";
-                  footer = `🌲 Importing ${label}${n} from ${src}...`;
-                } else if (ev.type === "error") {
-                  const sn = Number(ev.stepNumber ?? 0);
-                  if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
-                  footer = `⚠️ ${ev.message ?? "Step warning"}`;
-                } else if (ev.type === "complete") {
-                  headline = "Your scene is complete!";
-                  footer = `🎉 ${ev.summary ?? "Build complete"}`;
-                }
-                setStreamingContent(renderChecklist());
-              } catch {
-                // ignore partial lines
-              }
-            }
-          }
-          const finalAgentChecklist = renderChecklist();
-          await supabase.from("chat_turns").insert({
-            project_id: projectId,
-            agent_name: "Grand Studio",
-            agent_title: "AI Co-Pilot",
-            content: finalAgentChecklist,
-            turn_type: "direct",
-          });
-          await refetchChat();
-          setIsGenerating(false);
-          setStreamingContent("");
-          await refetchUsage();
-          return;
-        }
-
         console.log("Sending to /api/build/stream:", { prompt: message.trim(), projectId: id });
         const streamRes = await fetch("/api/build/stream", {
           method: "POST",
@@ -732,7 +761,7 @@ export default function ProjectPage() {
         await refetchUsage();
       }
     },
-    [projectId, refetchChat, refetchUsage, runVisionLoop, id]
+    [projectId, refetchChat, refetchUsage, runVisionLoop, id, pendingAgentMessage]
   );
 
   // Full project controls
@@ -1066,6 +1095,9 @@ export default function ProjectPage() {
         isGenerating={isGenerating}
         streamingContent={streamingContent}
         onSend={sendMessage}
+        pendingAgentMessage={pendingAgentMessage}
+        onAgentAssetSource={runAgentWithSource}
+        onCancelPendingAgent={() => setPendingAgentMessage(null)}
         disabled={isGenerating || isFullProjectRunning}
         prefillMessage={prefillMessage}
         onClearPrefill={() => setPrefillMessage(null)}

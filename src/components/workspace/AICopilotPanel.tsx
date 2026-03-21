@@ -12,9 +12,15 @@ import {
   Loader2,
   MessageCircle,
   Bot,
+  Folder,
+  Download,
+  GitMerge,
+  Star,
 } from "lucide-react";
 import { ScreenshotPreview } from "@/components/chat/ScreenshotPreview";
 import type { ChatTurn } from "@/lib/types";
+
+export type AgentAssetSourceChoice = "my_assets" | "library" | "both";
 
 interface AICopilotPanelProps {
   open: boolean;
@@ -23,6 +29,10 @@ interface AICopilotPanelProps {
   isGenerating: boolean;
   streamingContent: string;
   onSend: (message: string, mode: "ask" | "agent") => void;
+  /** When set, user must pick how to source assets before the agent runs. */
+  pendingAgentMessage: string | null;
+  onAgentAssetSource: (choice: AgentAssetSourceChoice) => void;
+  onCancelPendingAgent?: () => void;
   disabled?: boolean;
   prefillMessage?: string | null;
   onClearPrefill?: () => void;
@@ -57,6 +67,9 @@ export function AICopilotPanel({
   disabled,
   prefillMessage,
   onClearPrefill,
+  pendingAgentMessage,
+  onAgentAssetSource,
+  onCancelPendingAgent,
 }: AICopilotPanelProps) {
   const [input, setInput] = useState("");
   const [aiMode, setAiMode] = useState<"ask" | "agent">("ask");
@@ -79,15 +92,24 @@ export function AICopilotPanel({
   }, [prefillMessage, open, onClearPrefill]);
 
   useEffect(() => {
+    if (aiMode === "ask" && pendingAgentMessage) {
+      onCancelPendingAgent?.();
+    }
+  }, [aiMode, pendingAgentMessage, onCancelPendingAgent]);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatTurns, streamingContent]);
 
   const handleSend = useCallback(() => {
     const msg = input.trim();
     if (!msg || disabled) return;
+    if (aiMode === "agent" && pendingAgentMessage) {
+      return;
+    }
     onSend(msg, aiMode);
     setInput("");
-  }, [input, disabled, onSend, aiMode]);
+  }, [input, disabled, onSend, aiMode, pendingAgentMessage]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -314,6 +336,58 @@ export function AICopilotPanel({
                 </div>
               )}
 
+              {pendingAgentMessage && !isGenerating && (
+                <div className="flex flex-col gap-2 px-1">
+                  <p className="text-xs text-[#A0A0A8]">
+                    Choose asset source for:{" "}
+                    <span className="text-[#E0E0E0] font-medium">
+                      {pendingAgentMessage.length > 80
+                        ? `${pendingAgentMessage.slice(0, 80)}…`
+                        : pendingAgentMessage}
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onAgentAssetSource("my_assets")}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 bg-[#1A1A1F] text-xs text-[#E0E0E0] hover:border-[#2196F3]/40 hover:bg-[#2196F3]/10 transition"
+                    >
+                      <Folder className="w-3.5 h-3.5 shrink-0 text-[#90CAF9]" />
+                      Use My Assets Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAgentAssetSource("library")}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 bg-[#1A1A1F] text-xs text-[#E0E0E0] hover:border-[#00BCD4]/40 hover:bg-[#00BCD4]/10 transition"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0 text-[#4DD0E1]" />
+                      Use Library Assets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAgentAssetSource("both")}
+                      className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#2196F3]/50 bg-[#2196F3]/15 text-xs text-white hover:bg-[#2196F3]/25 transition"
+                    >
+                      <GitMerge className="w-3.5 h-3.5 shrink-0 text-[#B7DFFF]" />
+                      Use Both
+                      <span className="inline-flex items-center gap-0.5 ml-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/20 text-[10px] font-semibold text-amber-200">
+                        <Star className="w-2.5 h-2.5" />
+                        Recommended
+                      </span>
+                    </button>
+                  </div>
+                  {onCancelPendingAgent && (
+                    <button
+                      type="button"
+                      onClick={onCancelPendingAgent}
+                      className="text-[10px] text-[#606068] hover:text-white self-start"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div ref={chatEndRef} />
             </div>
 
@@ -344,12 +418,12 @@ export function AICopilotPanel({
                   onKeyDown={handleKeyDown}
                   placeholder="Describe what to build... (Ctrl+Enter to send)"
                   rows={2}
-                  disabled={disabled}
+                  disabled={disabled || (!!pendingAgentMessage && aiMode === "agent")}
                   className="w-full bg-[#0A0A0B] border border-white/10 rounded-xl px-4 py-3 pr-12 text-sm text-white placeholder:text-[#606068] resize-none outline-none focus:border-[#2196F3]/50 focus:shadow-[0_0_20px_rgba(33,150,243,0.1)] transition disabled:opacity-50"
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim() || disabled}
+                  disabled={!input.trim() || disabled || (!!pendingAgentMessage && aiMode === "agent")}
                   className="absolute right-3 bottom-3 w-8 h-8 rounded-lg bg-[#2196F3] flex items-center justify-center text-white disabled:opacity-30 hover:bg-[#2196F3]/90 transition"
                 >
                   <ArrowUp className="w-4 h-4" />
@@ -383,7 +457,9 @@ export function AICopilotPanel({
               </div>
               {aiMode === "agent" && (
                 <p className="text-[10px] text-[#72C7FF] mt-2">
-                  Agent mode: AI will plan and execute multiple steps automatically.
+                  {pendingAgentMessage
+                    ? "Pick an asset source above to start the agent."
+                    : "Agent mode: after you send, choose whether to use your project assets, libraries, or both."}
                 </p>
               )}
               <p className="text-[10px] text-[#606068] mt-2 text-center">
