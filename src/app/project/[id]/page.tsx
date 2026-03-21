@@ -515,6 +515,8 @@ export default function ProjectPage() {
                   success?: boolean;
                   asset?: string;
                   source?: string;
+                  current?: number;
+                  total?: number;
                   message?: string;
                   steps?: Array<{ stepNumber: number; description: string }>;
                 };
@@ -543,7 +545,10 @@ export default function ProjectPage() {
                     : `Step ${sn || "?"} finished with issues`;
                   footer = "";
                 } else if (ev.type === "importing") {
-                  footer = `🌲 Importing ${ev.asset ?? "asset"} from ${ev.source ?? "library"}...`;
+                  const label = ev.asset ?? "asset";
+                  const src = ev.source ?? "library";
+                  const n = ev.current != null && ev.total != null ? ` (${ev.current}/${ev.total})` : "";
+                  footer = `🌲 Importing ${label}${n} from ${src}...`;
                 } else if (ev.type === "error") {
                   const sn = Number(ev.stepNumber ?? 0);
                   if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
@@ -558,9 +563,17 @@ export default function ProjectPage() {
               }
             }
           }
+          const finalAgentChecklist = renderChecklist();
+          await supabase.from("chat_turns").insert({
+            project_id: projectId,
+            agent_name: "Grand Studio",
+            agent_title: "AI Co-Pilot",
+            content: finalAgentChecklist,
+            turn_type: "direct",
+          });
+          await refetchChat();
           setIsGenerating(false);
           setStreamingContent("");
-          await refetchChat();
           await refetchUsage();
           return;
         }

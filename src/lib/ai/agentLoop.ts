@@ -1,7 +1,13 @@
 import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
 import { queueUE5Command } from "@/lib/ue5/commands";
 import { createServerClient } from "@/lib/supabase/server";
-import { findAssetsForAction, importMissingAssets, type ScannedAsset } from "@/lib/ai/assetResolver2";
+import {
+  findAssetsForAction,
+  getImportCountForAction,
+  importSequentialLibraryAssets,
+  detectEnvironment,
+  type ScannedAsset,
+} from "@/lib/ai/assetResolver2";
 
 export type AgentStepAction =
   | "load_landscape"
@@ -26,7 +32,13 @@ export type AgentEvent =
   | { type: "step_code"; stepNumber: number; code: string }
   | { type: "step_complete"; stepNumber: number; success: boolean }
   | { type: "step_screenshot"; stepNumber: number; screenshotUrl: string | null }
-  | { type: "importing"; asset: string; source: "polyhaven" | "sketchfab" | "none" }
+  | {
+      type: "importing";
+      asset: string;
+      source: "polyhaven" | "sketchfab" | "none";
+      current?: number;
+      total?: number;
+    }
   | { type: "error"; stepNumber?: number; message: string }
   | { type: "complete"; summary: string };
 
@@ -40,10 +52,12 @@ type RunAgentLoopArgs = {
 
 function safeParsePlan(text: string): AgentStep[] | null {
   const trimmed = text.trim();
-  const raw = trimmed.startsWith("[") ? trimmed : (() => {
-    const m = trimmed.match(/\[[\s\S]*\]/);
-    return m ? m[0] : "";
-  })();
+  const raw = trimmed.startsWith("[")
+    ? trimmed
+    : (() => {
+        const m = trimmed.match(/\[[\s\S]*\]/);
+        return m ? m[0] : "";
+      })();
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as AgentStep[];
@@ -60,14 +74,24 @@ function safeParsePlan(text: string): AgentStep[] | null {
 }
 
 function defaultPlan(prompt: string): AgentStep[] {
-  const isOutdoor = /village|town|city|forest|outdoor|landscape|park/i.test(prompt);
+  const env = detectEnvironment(prompt);
+  const urban = env === "urban";
   return [
-    { stepNumber: 1, action: "load_landscape", description: "Load landscape base map", estimatedAssetCount: 1 },
-    { stepNumber: 2, action: "place_buildings", description: "Place multiple building meshes", estimatedAssetCount: 6 },
-    { stepNumber: 3, action: "place_trees", description: "Place varied trees and plants", estimatedAssetCount: 8 },
-    { stepNumber: 4, action: "place_walls", description: "Add walls / boundaries / fences", estimatedAssetCount: 4 },
-    { stepNumber: 5, action: isOutdoor ? "add_lighting" : "add_details", description: "Set lighting and atmosphere", estimatedAssetCount: 3 },
-    { stepNumber: 6, action: "final_check", description: "Final camera and polish pass", estimatedAssetCount: 1 },
+    {
+      stepNumber: 1,
+      action: "load_landscape",
+      description: urban
+        ? "Flat ground / urban base — do NOT use mountain terrain for cities"
+        : "Landscape / terrain base matched to environment",
+      estimatedAssetCount: 2,
+    },
+    { stepNumber: 2, action: "place_buildings", description: "Many buildings (10+ varied meshes)", estimatedAssetCount: 12 },
+    { stepNumber: 3, action: "place_trees", description: "Dense vegetation (15+ trees/plants)", estimatedAssetCount: 18 },
+    { stepNumber: 4, action: "place_walls", description: "Walls, fences, boundaries (5–10 segments)", estimatedAssetCount: 8 },
+    { stepNumber: 5, action: "place_vehicles", description: urban ? "Cars and street traffic props" : "Carts / rural vehicles if any", estimatedAssetCount: 6 },
+    { stepNumber: 6, action: "add_details", description: "Benches, rocks, street items, props (10+)", estimatedAssetCount: 12 },
+    { stepNumber: 7, action: "add_lighting", description: "Lighting and atmosphere", estimatedAssetCount: 3 },
+    { stepNumber: 8, action: "final_check", description: "Camera, polish, final pass", estimatedAssetCount: 1 },
   ];
 }
 
@@ -75,12 +99,15 @@ function summarizeAssets(assets: ScannedAsset[]): string {
   const paths = assets
     .map((a) => (a.path || "").trim())
     .filter((p) => p.startsWith("/Game/"))
-    .slice(0, 400);
-  if (paths.length === 0) return "No scanned assets found.";
+    .slice(0, 500);
+  if (paths.length === 0) return "No scanned assets found — plan to import EVERYTHING from Poly Haven / Sketchfab.";
   return paths.map((p) => `- ${p}`).join("\n");
 }
 
-async function waitForCommand(commandId: string, timeoutMs = 150000): Promise<{ status: string; error?: string; screenshotUrl?: string | null }> {
+async function waitForCommand(
+  commandId: string,
+  timeoutMs = 150000
+): Promise<{ status: string; error?: string; screenshotUrl?: string | null }> {
   const supabase = createServerClient();
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -113,19 +140,28 @@ except Exception as e:
 export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: string; steps: AgentStep[] }> {
   const { prompt, projectId, scannedAssets, onEvent } = args;
 
-  const planningPrompt = `You are a scene planner. Given this user request and their available assets, create a step-by-step plan.
-Return ONLY a JSON array of steps.
-Each step has: stepNumber, action (load_landscape, place_buildings, place_trees, place_walls, place_vehicles, add_lighting, add_details, final_check), description, estimatedAssetCount.
-Rules:
-- Minimum 3 steps, maximum 10.
-- Use multiple assets per step (3-10 where possible).
-- If missing assets, plan to import from library.
-- Always end with lighting/camera final pass.
+  const planningPrompt = `You are a scene planner. Given the user request and scanned asset paths, output ONLY a JSON array of steps.
+Each step: stepNumber, action (load_landscape, place_buildings, place_trees, place_walls, place_vehicles, add_lighting, add_details, final_check), description, estimatedAssetCount.
+
+CRITICAL — ASSET DENSITY (executor imports aggressively from Poly Haven + Sketchfab):
+- NEVER build a sparse scene. A complete village-style scene needs 40–60+ placed objects minimum.
+- Each step must place MANY assets: buildings at least 10; trees at least 15; details at least 10; walls/fences 5–10 segments where relevant.
+- The agent MUST import at least 5 assets per asset-heavy step; across 5–8 steps that is 25–40+ library imports minimum. If the user has zero scanned assets, plan to import almost everything from libraries.
+- NEVER deliver a scene with fewer than ~20 distinct imported assets — Poly Haven has 400+ free models; Sketchfab has millions; be generous.
+
+CRITICAL — MATCH ENVIRONMENT TO USER REQUEST (terrain + asset types MUST align):
+- City / urban / "like New York": flat ground or city base; skyscrapers, modern buildings, roads, cars, street lights from the library. DO NOT use mountain or wilderness landscape for cities.
+- Village / rural: green landscape with hills; small houses, farms, fences, animals, carts.
+- Forest / forest village: mountain or forest terrain; many different trees, rocks, paths — not urban blocks.
+- Beach / coastal: island or sand terrain; boats, palm trees, beach props, docks.
+- Desert: desert terrain; desert buildings, cacti, rocks, sand structures.
+
+Minimum 3 steps, maximum 10. Prefer 6–8 steps. Always include lighting/atmosphere and final_check.
 
 USER REQUEST:
 ${prompt}
 
-SCANNED ASSETS:
+SCANNED ASSETS (may be empty):
 ${summarizeAssets(scannedAssets)}
 `;
 
@@ -140,36 +176,51 @@ ${summarizeAssets(scannedAssets)}
 
   const usedAssets = new Set<string>();
   let completed = 0;
+  let totalLibraryImportsSucceeded = 0;
 
   for (const step of steps) {
     await onEvent({ type: "step_start", stepNumber: step.stepNumber, description: step.description });
-    const { found, missing } = findAssetsForAction(step.action, scannedAssets);
+
+    const { found } = findAssetsForAction(step.action, scannedAssets);
     let availablePaths = [...found];
 
-    if (missing.length > 0) {
-      const imported = await importMissingAssets(missing, projectId);
-      for (const imp of imported.imported) {
-        await onEvent({ type: "importing", asset: imp.asset, source: imp.source });
-      }
-      availablePaths = [...availablePaths, ...imported.newAssetPaths];
+    const importCount = getImportCountForAction(step.action);
+    if (importCount > 0 && step.action !== "final_check") {
+      const seq = await importSequentialLibraryAssets(
+        step.action,
+        prompt,
+        projectId,
+        importCount,
+        async (ev) => {
+          await onEvent({
+            type: "importing",
+            asset: ev.asset,
+            source: ev.source,
+            current: ev.current,
+            total: ev.total,
+          });
+        }
+      );
+      totalLibraryImportsSucceeded += seq.imported;
+      availablePaths = [...new Set([...availablePaths, ...seq.paths])];
     }
 
-    const assetsForStep = [...new Set(availablePaths)].slice(0, 25);
+    const assetsForStep = [...new Set(availablePaths)].slice(0, 80);
     assetsForStep.forEach((p) => usedAssets.add(p));
 
     let success = false;
-    let lastErr = "";
     for (let attempt = 0; attempt < 3; attempt++) {
-      const execPrompt = `Focus ONLY on this step.
+      const execPrompt = `Focus ONLY on this step. Place MANY instances (grid/scatter) — NOT just one or two actors.
 Step action: ${step.action}
 Step description: ${step.description}
 Attempt: ${attempt + 1}/3
 User request: ${prompt}
-Use exact asset paths when possible:
-${assetsForStep.length ? assetsForStep.map((p) => `- ${p}`).join("\n") : "- none provided"}
+Environment hint: ${detectEnvironment(prompt)}
+Use exact /Game/... paths — spawn with unreal.EditorAssetLibrary.load_asset and unreal.EditorLevelLibrary.spawn_actor_from_object.
+Paths to use (scan + imports):
+${assetsForStep.length ? assetsForStep.map((p) => `- ${p}`).join("\n") : "- Import paths may appear after relay; if empty, use Starter Content only as last resort"}
 
-Generate complete UE5 Python code for this step only.
-`;
+Generate complete UE5 Python for THIS STEP ONLY.`;
       const generated = await askGrandStudioAI(execPrompt, `Agent step ${step.stepNumber} for project ${projectId}`);
       const code = generated.code || generated.rawResponse;
       await onEvent({ type: "step_code", stepNumber: step.stepNumber, code });
@@ -183,15 +234,18 @@ Generate complete UE5 Python code for this step only.
         await onEvent({ type: "step_screenshot", stepNumber: step.stepNumber, screenshotUrl: ssRes.screenshotUrl ?? null });
         break;
       }
-      lastErr = result.error || "Unknown error";
-      await onEvent({ type: "error", stepNumber: step.stepNumber, message: `Failed attempt ${attempt + 1}: ${lastErr}` });
+      await onEvent({
+        type: "error",
+        stepNumber: step.stepNumber,
+        message: `Failed attempt ${attempt + 1}: ${result.error || "Unknown error"}`,
+      });
     }
 
     await onEvent({ type: "step_complete", stepNumber: step.stepNumber, success });
     if (success) completed += 1;
   }
 
-  const summary = `Scene agent finished ${completed}/${steps.length} steps using ${usedAssets.size} assets.`;
+  const summary = `Scene agent finished ${completed}/${steps.length} steps. Library imports succeeded: ${totalLibraryImportsSucceeded}. Unique asset paths used: ${usedAssets.size}.`;
   await onEvent({ type: "complete", summary });
   return { summary, steps };
 }
