@@ -450,8 +450,41 @@ export default function ProjectPage() {
 
       try {
         if (aiMode === "agent") {
-          let progressLog = "Planning your scene...\n";
-          setStreamingContent(progressLog);
+          type StepState = "pending" | "running" | "done" | "failed";
+          type PlanStep = { stepNumber: number; description: string };
+          let planSteps: PlanStep[] = [];
+          const stepStates = new Map<number, StepState>();
+          let headline = "Planning your scene...";
+          let footer = "";
+
+          const stateIcon = (s: StepState): string => {
+            if (s === "running") return "🔵";
+            if (s === "done") return "✅";
+            if (s === "failed") return "❌";
+            return "⚪";
+          };
+
+          const renderChecklist = () => {
+            const lines: string[] = [];
+            lines.push(headline);
+            lines.push("");
+            if (planSteps.length === 0) {
+              lines.push("⚪ Waiting for plan...");
+            } else {
+              lines.push(`Plan (${planSteps.length} steps):`);
+              for (const step of planSteps) {
+                const state = stepStates.get(step.stepNumber) ?? "pending";
+                lines.push(`${stateIcon(state)} Step ${step.stepNumber}/${planSteps.length}: ${step.description}`);
+              }
+            }
+            if (footer) {
+              lines.push("");
+              lines.push(footer);
+            }
+            return lines.join("\n");
+          };
+
+          setStreamingContent(renderChecklist());
           const agentRes = await fetch("/api/build/agent", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -486,19 +519,40 @@ export default function ProjectPage() {
                   steps?: Array<{ stepNumber: number; description: string }>;
                 };
                 if (ev.type === "plan") {
-                  progressLog += `Plan created: ${ev.steps?.length ?? 0} steps\n`;
+                  planSteps = (ev.steps ?? []).map((s, i) => ({
+                    stepNumber: Number(s.stepNumber ?? i + 1),
+                    description: s.description || `Step ${i + 1}`,
+                  }));
+                  for (const s of planSteps) stepStates.set(s.stepNumber, "pending");
+                  headline = `Plan created: ${planSteps.length} steps`;
+                  footer = "";
                 } else if (ev.type === "step_start") {
-                  progressLog += `Step ${ev.stepNumber ?? "?"}: ${ev.description ?? "Starting..."}\n`;
+                  const sn = Number(ev.stepNumber ?? 0);
+                  if (sn > 0) stepStates.set(sn, "running");
+                  if (ev.description) {
+                    const idx = planSteps.findIndex((s) => s.stepNumber === sn);
+                    if (idx >= 0) planSteps[idx] = { ...planSteps[idx], description: ev.description };
+                  }
+                  headline = `Agent running: step ${sn || "?"} in progress`;
+                  footer = "";
                 } else if (ev.type === "step_complete") {
-                  progressLog += `${ev.success ? "✅" : "⚠️"} Step ${ev.stepNumber ?? "?"} complete\n`;
+                  const sn = Number(ev.stepNumber ?? 0);
+                  if (sn > 0) stepStates.set(sn, ev.success ? "done" : "failed");
+                  headline = ev.success
+                    ? `Step ${sn || "?"} complete`
+                    : `Step ${sn || "?"} finished with issues`;
+                  footer = "";
                 } else if (ev.type === "importing") {
-                  progressLog += `🌲 Importing ${ev.asset ?? "asset"} from ${ev.source ?? "library"}...\n`;
+                  footer = `🌲 Importing ${ev.asset ?? "asset"} from ${ev.source ?? "library"}...`;
                 } else if (ev.type === "error") {
-                  progressLog += `⚠️ ${ev.message ?? "Step warning"}\n`;
+                  const sn = Number(ev.stepNumber ?? 0);
+                  if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
+                  footer = `⚠️ ${ev.message ?? "Step warning"}`;
                 } else if (ev.type === "complete") {
-                  progressLog += `🎉 ${ev.summary ?? "Build complete"}\n`;
+                  headline = "Your scene is complete!";
+                  footer = `🎉 ${ev.summary ?? "Build complete"}`;
                 }
-                setStreamingContent(progressLog);
+                setStreamingContent(renderChecklist());
               } catch {
                 // ignore partial lines
               }
