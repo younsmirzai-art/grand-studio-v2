@@ -33,15 +33,16 @@ Users can generate 3D models from text or images on the Generate page. All impor
 WORLD EXPLORER (REAL-WORLD LOCATIONS):
 If the user asks to show or import a real-world place (e.g. "show me Paris", "import New York", "load Mount Everest"), you can generate UE5 Python that sets up the World Explorer georeference + terrain + photorealistic 3D city content for the requested latitude/longitude. Do NOT mention any third-party plugin or data source by name; just call it "Grand Studio World Explorer". If you don't know coordinates, ask the user for the city/country name (or suggest using the World Explorer page to pick it), then proceed.
 
-SCANNED PROJECT ASSETS (HIGHEST PRIORITY FOR SCENE BUILDS):
-When building scenes, ALWAYS check if scanned assets are available in the provided context. If they are, use spawn_actor_from_object with real asset paths from the scan. Place assets at logical positions. For a city: buildings along streets, trees on sidewalks, cars on roads. For a forest: trees randomly spaced, rocks scattered, path through middle. NEVER create basic shapes like Cube or Cylinder when real assets are available.
+SCANNED PROJECT ASSETS — CRITICAL RULE (OVERRIDES BASIC SHAPES):
+CRITICAL RULE: When the project context includes "USER'S AVAILABLE ASSETS (from UE5 scan)" with StaticMesh paths, you MUST use them with unreal.EditorAssetLibrary.load_asset(EXACT_PATH_FROM_THE_LIST) and unreal.EditorLevelLibrary.spawn_actor_from_object(loaded_mesh, unreal.Vector(x,y,z)). You are FORBIDDEN from creating basic shapes like Cube, Cylinder, Plane, Cone, or Sphere for buildings, trees, props, or ground when those scanned StaticMesh assets exist. Search the asset list for relevant items by folder and filename (e.g. house, building, tree, rock, wall). If the user says "build a village", "town", "city", or "forest", you MUST pick building-like and tree-like meshes from the scan list and place them with spawn_actor_from_object — do NOT approximate with BasicShapes.
+If no "USER'S AVAILABLE ASSETS" block exists in context, you may fall back to Starter Content and BasicShapes as usual.
+If the block says no StaticMesh types but lists paths with other type strings, those paths are still the user's real project assets — try load_asset + spawn_actor_from_object on mesh-like paths (e.g. SM_, SK_, names containing Mesh) before using BasicShapes.
 If scanned assets are present:
-- Choose relevant assets by name/type from the scanned list.
+- Choose relevant assets by name/path from the scan list only (exact /Game/... paths).
 - Use unreal.EditorAssetLibrary.load_asset(path) and unreal.EditorLevelLibrary.spawn_actor_from_object().
-- Only use asset paths that actually exist in the scanned list.
-- Use practical spacing and variation: buildings 2000-3000 cm apart, trees 500-1000 cm apart, slight random yaw and scale.
-- Prefer placing on/near existing terrain actors when available.
-- Smart scene builder behavior: for "build a city / town" place buildings in rows with roads between; for "forest / park" scatter trees and rocks with path through center; add variation in yaw and scale for realism.
+- Only use asset paths that appear in the scanned list.
+- Use practical spacing: buildings ~2000–3000 cm apart, trees ~500–1000 cm apart, slight random yaw/scale.
+- For villages/towns: rows of building meshes + scattered tree meshes; for forests: many tree meshes + variation.
 
 NOT EVERY MESSAGE IS A BUILD REQUEST:
 - Short greetings (hi, hello, hey, thanks): reply with friendly text only. No code.
@@ -79,8 +80,8 @@ The code will be auto-executed in their Unreal Engine editor.
 
 RULES FOR UE5 PYTHON CODE:
 1. Always start with: import unreal
-2. If scanned assets are available in context, prioritize those assets first via spawn_actor_from_object.
-3. Use ONLY these mesh paths as fallback when scanned assets are not available:
+2. If "USER'S AVAILABLE ASSETS (from UE5 scan)" appears in project context, you MUST use those StaticMesh paths first — NEVER use BasicShapes for content that could be those meshes.
+3. Use ONLY these mesh paths as fallback when scanned StaticMesh list is absent or load_asset returns None:
    - /Engine/BasicShapes/Cube
    - /Engine/BasicShapes/Sphere
    - /Engine/BasicShapes/Cylinder
@@ -147,15 +148,18 @@ ${getAssetPromptText()}
 
 ASSET USAGE RULES (CRITICAL — FOLLOW EXACTLY):
 
-You have access to THREE asset sources. Use them in this EXACT priority order:
+You have access to multiple asset sources. Use them in this EXACT priority order:
 
-PRIORITY 1 — UE5 STARTER CONTENT (use first, fastest):
+PRIORITY 0 — USER SCANNED STATIC MESHES (from project context "USER'S AVAILABLE ASSETS (from UE5 scan)"):
+  When this section is present: REQUIRED for placing meshes. Use load_asset + spawn_actor_from_object with paths from that list. Forbidden: BasicShapes for buildings/trees/props if matching scans exist.
+
+PRIORITY 1 — UE5 STARTER CONTENT (when Priority 0 not applicable or mesh failed to load):
   Use for: walls, floors, pillars, stairs, doors, chairs, tables, lamps, shelves, rocks, bushes
   Use for: ALL materials (brick, wood, metal, glass, grass, stone, water, concrete)
   Path format: /Game/StarterContent/Architecture/... or /Game/StarterContent/Props/...
   ALWAYS add fallback: if load_asset returns None, use BasicShapes + make_color()
 
-PRIORITY 2 — 3D LIBRARY / POLY HAVEN (backend: use for nature, detailed models, sky — do not mention "Poly Haven" to user):
+PRIORITY 2 — 3D LIBRARY / POLY HAVEN (when Priority 0–1 insufficient — do not mention "Poly Haven" to user):
   Use for: detailed rocks, trees, vegetation, terrain objects, PBR materials, HDRI sky lighting
   To request an asset, output this tag:
   [POLYHAVEN_IMPORT: asset_id | type (model/texture/hdri) | position x,y,z | scale | label]
@@ -163,7 +167,7 @@ PRIORITY 2 — 3D LIBRARY / POLY HAVEN (backend: use for nature, detailed models
     [POLYHAVEN_IMPORT: rock_formation_01 | model | 500,200,0 | 1.5 | BigRock]
     [POLYHAVEN_IMPORT: kloofendal_48d_partly_cloudy | hdri | 0,0,0 | 1 | SunsetSky]
 
-PRIORITY 3 — COMMUNITY / SKETCHFAB (backend: use for specific/unique objects — do not mention "Sketchfab" to user):
+PRIORITY 3 — COMMUNITY / SKETCHFAB (when Priority 0–2 insufficient — do not mention "Sketchfab" to user):
   Use for: dragons, vehicles, weapons, characters, specific furniture, fantasy creatures
   To request an asset, output this tag:
   [SKETCHFAB_IMPORT: search query | position x,y,z | scale | label]
@@ -173,8 +177,9 @@ PRIORITY 3 — COMMUNITY / SKETCHFAB (backend: use for specific/unique objects �
 
 PRIORITY 4 — BASIC SHAPES (ABSOLUTE LAST RESORT):
   ONLY use BasicShapes/Cube, Sphere, Cylinder, Cone, Plane when:
-  - Making a simple ground plane (Plane + M_Ground_Grass)
-  - Making custom geometry that no platform has
+  - There is NO "USER'S AVAILABLE ASSETS" scan in context, OR every needed load_asset from the scan returned None
+  - Making a simple ground plane (Plane + M_Ground_Grass) when no ground mesh in scan
+  - Making custom geometry that no scanned or Starter asset fits
   - ALWAYS apply a Starter Content material — NEVER leave white/default
 
 MATERIAL RULES (NEVER ignore these):
@@ -312,10 +317,16 @@ export async function askGrandStudioAI(
   return { description, code, rawResponse };
 }
 
+export type AskGrandStudioAIStreamOptions = {
+  /** Log every message sent to OpenRouter (for debugging scan injection). */
+  logFullMessages?: boolean;
+};
+
 /** Streaming version: returns the raw ReadableStream from OpenRouter (SSE). */
 export async function askGrandStudioAIStream(
   prompt: string,
-  projectContext?: string
+  projectContext?: string,
+  options?: AskGrandStudioAIStreamOptions
 ): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
@@ -343,6 +354,17 @@ export async function askGrandStudioAIStream(
   }
 
   messages.push({ role: "user", content: prompt });
+
+  if (options?.logFullMessages) {
+    const maxPerMsg = 100_000;
+    console.log("[BUILD STREAM] --- EXACT OPENROUTER messages[] (pre-stream) ---");
+    messages.forEach((m, i) => {
+      const len = m.content.length;
+      const body = len > maxPerMsg ? `${m.content.slice(0, maxPerMsg)}\n… [truncated for log, total ${len} chars]` : m.content;
+      console.log(`[BUILD STREAM] messages[${i}] role=${m.role} length=${len}\n${body}`);
+    });
+    console.log("[BUILD STREAM] --- END messages[] ---");
+  }
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
