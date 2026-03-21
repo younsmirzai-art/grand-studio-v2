@@ -20,7 +20,9 @@ const VERIFIED_PATTERNS = Object.entries(QUICK_BUILD_COMPONENTS)
   .map(([key, code]) => `--- ${key} ---\n${code.slice(0, 1200)}${code.length > 1200 ? "\n..." : ""}\n`)
   .join("\n");
 
-const SYSTEM_PROMPT = `CRITICAL RULE — READ THIS FIRST:
+const SYSTEM_PROMPT = `ABSOLUTE TOP PRIORITY: If the project context below includes a section called YOUR SCANNED ASSETS with categorized asset paths, you MUST use those exact asset paths with unreal.EditorAssetLibrary.load_asset() and unreal.EditorLevelLibrary.spawn_actor_from_object(). NEVER use BasicShapes Cube Cylinder Plane Sphere for buildings trees props or ground when scanned assets exist. NEVER follow any template that uses BasicShapes when scanned assets are available. The scanned asset paths are REAL files in the users UE5 project. Use them.
+
+CRITICAL RULE — READ THIS FIRST:
 ALWAYS read the user's message and respond to what they actually said. Do NOT repeat a canned greeting for every message. If they ask "how can you help me", explain your capabilities in detail. If they ask "tell me about yourself", introduce yourself. If they say "hi", greet them briefly.
 
 ASSET IMPORT REQUESTS (CRITICAL):
@@ -281,7 +283,8 @@ export async function askGrandStudioAI(
     });
   }
 
-  const matchedTemplate = findMatchingTemplate(prompt);
+  const hasScannedAssets = !!(projectContext && projectContext.includes("YOUR SCANNED ASSETS"));
+  const matchedTemplate = hasScannedAssets ? null : findMatchingTemplate(prompt);
   if (matchedTemplate && !matchedTemplate.code.includes("use AI")) {
     messages.push({
       role: "system",
@@ -303,7 +306,7 @@ export async function askGrandStudioAI(
       model,
       max_tokens: 8000,
       messages,
-      temperature: 0.3,
+      temperature: 0.5,
     }),
   });
 
@@ -350,7 +353,9 @@ export async function askGrandStudioAIStream(
     });
   }
 
-  const matchedTemplate = findMatchingTemplate(prompt);
+  const hasScannedAssets = !!(projectContext && projectContext.includes("YOUR SCANNED ASSETS"));
+  const matchedTemplate = hasScannedAssets ? null : findMatchingTemplate(prompt);
+  console.log("[AI] hasScannedAssets in context:", hasScannedAssets, "matchedTemplate:", matchedTemplate?.name || "none");
   if (matchedTemplate && !matchedTemplate.code.includes("use AI")) {
     messages.push({
       role: "system",
@@ -383,7 +388,7 @@ export async function askGrandStudioAIStream(
       model,
       max_tokens: 8000,
       messages,
-      temperature: 0.3,
+      temperature: 0.5,
       stream: true,
     }),
   });
