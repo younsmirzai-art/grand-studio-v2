@@ -13,7 +13,7 @@ OUTPUT_PATH = "C:/GrandStudio/asset_scan.json"
 ROOT = "/Game"
 
 # No type filter: include every asset under /Game. Frontend can filter later.
-DEBUG_CLASS_SAMPLE_COUNT = 20
+DEBUG_CLASS_SAMPLE_COUNT = 50
 BATCH_LOG_EVERY = 500
 
 
@@ -89,24 +89,38 @@ def _normalize_class_name(raw):
 
 
 def _classify_asset(asset_path):
-    """Returns (raw_class_from_ue, type_for_json). Unknown if None/empty/failed."""
+    """Use loaded object class as primary; fallback to get_asset_class; then Unknown."""
     raw = None
+    loaded_class = None
+    try:
+        try:
+            obj = unreal.EditorAssetLibrary.load_asset(asset_path)
+            if obj:
+                loaded_class = obj.get_class().get_name()
+        except Exception:
+            loaded_class = None
+    except Exception:
+        loaded_class = None
     try:
         try:
             raw = unreal.EditorAssetLibrary.get_asset_class(asset_path)
         except Exception:
             raw = None
-        if raw is None:
-            return None, "Unknown"
-        try:
-            s = str(raw).strip()
-        except Exception:
-            return raw, "Unknown"
-        if not s:
-            return raw, "Unknown"
-        return raw, _normalize_class_name(raw)
     except Exception:
-        return None, "Unknown"
+        raw = None
+    try:
+        loaded_norm = _normalize_class_name(loaded_class)
+        if loaded_norm != "Unknown":
+            return raw, loaded_class, loaded_norm
+    except Exception:
+        pass
+    try:
+        raw_norm = _normalize_class_name(raw)
+        if raw_norm != "Unknown":
+            return raw, loaded_class, raw_norm
+    except Exception:
+        pass
+    return raw, loaded_class, "Unknown"
 
 
 def _collect_via_list_assets():
@@ -308,26 +322,29 @@ def run_scan():
                     except Exception:
                         ap = "/Game/Unknown"
                     errors += 1
+                raw_class = None
                 try:
-                    raw_cls, asset_class = _classify_asset(ap)
-                except Exception:
-                    raw_cls, asset_class = None, "Unknown"
-                    errors += 1
-                try:
-                    if idx < DEBUG_CLASS_SAMPLE_COUNT:
-                        try:
-                            if raw_cls is None:
-                                cls_dbg = "None"
-                            else:
-                                try:
-                                    cls_dbg = str(raw_cls)
-                                except Exception:
-                                    cls_dbg = "(unprintable)"
-                            _log("Step 4 debug: Asset: " + ap + " → Class: " + cls_dbg)
-                        except Exception:
-                            pass
+                    raw_class = str(unreal.EditorAssetLibrary.get_asset_class(ap))
                 except Exception:
                     pass
+                if idx < 50:
+                    unreal.log('[GrandStudio AssetScanner] DEBUG CLASS: path={} class={}'.format(ap, raw_class))
+
+                actual_class = None
+                try:
+                    obj = unreal.EditorAssetLibrary.load_asset(ap)
+                    if obj:
+                        actual_class = obj.get_class().get_name()
+                    if idx < 50:
+                        unreal.log('[GrandStudio AssetScanner] DEBUG CLASS2: path={} loaded_class={}'.format(ap, actual_class))
+                except Exception:
+                    pass
+
+                try:
+                    _raw_cls, _loaded_cls, asset_class = _classify_asset(ap)
+                except Exception:
+                    asset_class = "Unknown"
+                    errors += 1
                 try:
                     name = ap.split("/")[-1]
                     if "." in name:
