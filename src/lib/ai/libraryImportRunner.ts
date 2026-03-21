@@ -147,6 +147,7 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
   paths: string[];
   imported: number;
 }> {
+  console.log("AGENT LOOP: About to call library import runner (legacy path)");
   const { action, userPrompt, projectId, userId, stepNumber, onProgress, sceneImportTotal } = args;
   let count = Math.min(args.count, MAX_IMPORTS_PER_STEP, Math.max(0, MAX_IMPORTS_PER_SCENE - sceneImportTotal.value));
   if (count <= 0) {
