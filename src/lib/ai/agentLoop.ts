@@ -4,6 +4,9 @@ import { createServerClient } from "@/lib/supabase/server";
 import { findAssetsForAction, detectEnvironment, type ScannedAsset } from "@/lib/ai/assetResolver2";
 import { isRelayOnline } from "@/lib/ue5/relayStatus";
 import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
+import { searchAssets as searchPolyHaven } from "@/lib/polyhaven/client";
+import { downloadPolyHavenModelToStorage as downloadPolyHavenModel } from "@/lib/polyhaven/downloadToSupabase";
+import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 
 export type AgentStepAction =
   | "load_landscape"
@@ -48,9 +51,6 @@ type RunAgentLoopArgs = {
   assetSource: AgentAssetSource;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 };
-
-type PolySearchResult = { id: string; name: string };
-type SketchSearchResult = { uid: string; name: string };
 
 const WAIT_AFTER_COMMAND_MS = 10000;
 const WAIT_AFTER_BUILDING_IMPORT_MS = 20000;
@@ -219,9 +219,6 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
 
   await onEvent({ type: "plan", steps });
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-  console.log("AGENT: Base URL =", baseUrl);
-
   let completed = 0;
   let totalLibraryImportsSucceeded = 0;
   let commandsQueued = 0;
@@ -242,29 +239,18 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
       for (let i = 0; i < toImport; i++) {
         await onEvent({ type: "importing", asset: searchQuery, source: "none", current: i + 1, total: toImport });
 
-        console.log("AGENT: Searching Poly Haven for:", searchQuery);
-        console.log(`IMPORT: Calling Poly Haven search API for: ${searchQuery}`);
-        const searchRes = await fetch(`${baseUrl}/api/polyhaven/search?q=${encodeURIComponent(searchQuery)}`);
-        const searchData = (await searchRes.json()) as { results?: PolySearchResult[] };
-        const polyResults = searchData.results ?? [];
-        console.log("AGENT: Poly Haven returned", polyResults.length, "results");
-        console.log(`IMPORT: Poly Haven returned ${polyResults.length} results`);
+        console.log(`AGENT DIRECT: Searching Poly Haven for ${searchQuery}`);
+        const polyResults = await searchPolyHaven(searchQuery, "models", 20);
+        console.log(`AGENT DIRECT: Found ${polyResults.length} results`);
 
         let importedPath: string | null = null;
 
         if (polyResults.length > 0) {
           const asset = polyResults[0];
-          console.log("AGENT: Downloading from Poly Haven:", asset.name);
-          console.log(`IMPORT: Downloading model: ${asset.name} from Poly Haven`);
-          const dlRes = await fetch(`${baseUrl}/api/polyhaven/download`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ assetId: asset.id, type: "model", projectId }),
-          });
-          const dlData = (await dlRes.json()) as { url?: string };
-          console.log("AGENT: Download URL:", dlData.url?.slice(0, 100));
-          if (dlData.url) {
-            const importCode = generateUE5ImportCode(dlData.url, `${asset.id}.fbx`, asset.name);
+          const downloadUrl = await downloadPolyHavenModel(asset.id);
+          console.log(`AGENT DIRECT: Download URL = ${downloadUrl?.slice(0, 100) ?? "none"}`);
+          if (downloadUrl) {
+            const importCode = generateUE5ImportCode(downloadUrl, `${asset.id}.fbx`, asset.name);
             const relayReady = await waitForRelayOrTimeout();
             if (!relayReady) {
               await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected while importing." });
@@ -272,8 +258,7 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
             }
             const cmdId = await queueUE5Command(projectId, importCode, { commandType: "import" });
             commandsQueued += 1;
-            console.log("AGENT: Import command queued, waiting 10 seconds");
-            console.log("IMPORT: UE5 import code generated and queued");
+            console.log("AGENT DIRECT: Import code queued");
             const result = await waitForCommand(cmdId);
             await waitAfterQueuedCommand(commandsQueued, step.action === "place_buildings" ? WAIT_AFTER_BUILDING_IMPORT_MS : WAIT_AFTER_COMMAND_MS);
             if (result.status === "success") {
@@ -289,23 +274,19 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
             }
           }
         } else {
-          console.log("AGENT: Searching Sketchfab for:", searchQuery);
-          const sketchRes = await fetch(`${baseUrl}/api/sketchfab/search?q=${encodeURIComponent(searchQuery)}`);
-          const sketchData = (await sketchRes.json()) as { results?: SketchSearchResult[] };
-          const sketchResults = sketchData.results ?? [];
-          console.log("AGENT: Sketchfab returned", sketchResults.length, "results");
+          console.log(`AGENT DIRECT: Searching Sketchfab for ${searchQuery}`);
+          const sketchResults = await searchSketchfab(searchQuery, {
+            count: 12,
+            token: process.env.SKETCHFAB_API_TOKEN ?? undefined,
+          });
+          console.log(`AGENT DIRECT: Found ${sketchResults.length} results`);
           if (sketchResults.length > 0) {
             const skAsset = sketchResults[0];
-            console.log("AGENT: Downloading from Sketchfab:", skAsset.name);
-            const skDlRes = await fetch(`${baseUrl}/api/sketchfab/download`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ uid: skAsset.uid, projectId }),
-            });
-            const skDlData = (await skDlRes.json()) as { url?: string };
-            console.log("AGENT: Sketchfab download URL:", skDlData.url?.slice(0, 100));
-            if (skDlData.url) {
-              const importCode = generateSketchfabImportCode(skDlData.url, `${skAsset.uid}.zip`, skAsset.name);
+            const token = process.env.SKETCHFAB_API_TOKEN;
+            const sketchfabUrl = token ? await getSketchfabDownloadUrl(skAsset.uid, token) : null;
+            console.log(`AGENT DIRECT: Download URL = ${sketchfabUrl?.slice(0, 100) ?? "none"}`);
+            if (sketchfabUrl) {
+              const importCode = generateSketchfabImportCode(sketchfabUrl, `${skAsset.uid}.zip`, skAsset.name);
               const relayReady = await waitForRelayOrTimeout();
               if (!relayReady) {
                 await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected while importing." });
@@ -313,8 +294,7 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
               }
               const cmdId = await queueUE5Command(projectId, importCode, { commandType: "import" });
               commandsQueued += 1;
-              console.log("AGENT: Import command queued, waiting 10 seconds");
-              console.log("IMPORT: UE5 import code generated and queued");
+              console.log("AGENT DIRECT: Import code queued");
               const result = await waitForCommand(cmdId);
               await waitAfterQueuedCommand(commandsQueued, step.action === "place_buildings" ? WAIT_AFTER_BUILDING_IMPORT_MS : WAIT_AFTER_COMMAND_MS);
               if (result.status === "success") {
