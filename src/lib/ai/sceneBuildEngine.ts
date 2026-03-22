@@ -90,8 +90,8 @@ const NATURE_TYPES = new Set([
   "rock",
 ]);
 
-/** No artificial cap — chunked execution handles long runs */
-const MAX_IMPORTS_PER_SCENE = 9999;
+/** Hard cap: unique library imports per scene (reuse models in placement for more instances) */
+const MAX_IMPORTS_PER_SCENE = 15;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -213,6 +213,15 @@ async function waitRelayWithRetries(maxAttempts = 5): Promise<boolean> {
   return false;
 }
 
+/** Before each import: wait 20s between attempts, up to 5 times; if still offline, skip this import. */
+async function ensureRelayBeforeImport(): Promise<boolean> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (await isRelayOnline()) return true;
+    await sleep(20_000);
+  }
+  return false;
+}
+
 async function waitForCommand(commandId: string, timeoutMs = 300000): Promise<{ status: string; error?: string }> {
   const supabase = createServerClient();
   const started = Date.now();
@@ -288,6 +297,9 @@ function computeSlots(
 
     if (row.category === "buildings") {
       const i = bi++;
+      const instJitter = ((idx * 137.508) % 360) * (Math.PI / 180);
+      yaw += instJitter * 0.4;
+      sc *= 0.92 + ((idx * 73) % 17) / 100;
       if (layout === "grid") {
         const cols = Math.max(1, Math.ceil(Math.sqrt(nb)));
         const r = Math.floor(i / cols);
@@ -319,13 +331,14 @@ function computeSlots(
       const i = ti++;
       x = rand(-half * 0.95, half * 0.95);
       y = rand(-half * 0.95, half * 0.95);
-      sc = rand(0.85, 1.15);
-      yaw = rand(0, 360) * (Math.PI / 180);
+      sc = rand(0.85, 1.15) * (0.92 + ((idx * 61) % 17) / 100);
+      yaw = rand(0, 360) * (Math.PI / 180) + ((idx * 97) % 45) * (Math.PI / 180);
     } else if (row.category === "vehicles") {
       const i = vi++;
       x = i * 500 - nv * 250;
       y = -half * 0.55;
-      yaw = rand(-0.08, 0.08);
+      yaw = rand(-0.08, 0.08) + ((idx * 53) % 90) * (Math.PI / 180);
+      sc = 0.95 + ((idx * 41) % 12) / 100;
     } else if (row.category === "infrastructure") {
       const i = ii++;
       if (layout === "along_road" || layout === "grid") {
@@ -767,9 +780,12 @@ export async function buildScene(params: BuildSceneParams): Promise<{
 
       const job = toImport[i];
       const curGlobal = i + 1;
-      if (!(await waitRelayWithRetries())) {
-        await emit({ type: "error", message: "Relay disconnected; stopping imports." });
-        return { outcome: "error", sessionId };
+      if (!(await ensureRelayBeforeImport())) {
+        await emit({
+          type: "error",
+          message: `Relay offline — skipping import ${curGlobal}/${totalImports} (${job.name}). Will retry placement with other assets.`,
+        });
+        continue;
       }
 
       const destName = `${job.objectType.replace(/[^a-zA-Z0-9_]/g, "_")}_${job.source}_${String(curGlobal).padStart(3, "0")}`.slice(0, 55);
@@ -850,9 +866,9 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
       });
 
-      const baseWait = isHeavyBuildingType(job.objectType) ? 20000 : 10000;
-      await sleep(baseWait);
-      if (importedCount % 3 === 0) await sleep(15000);
+      const minGapMs = isHeavyBuildingType(job.objectType) ? 35_000 : 25_000;
+      await sleep(minGapMs);
+      if (importedCount > 0 && importedCount % 3 === 0) await sleep(15_000);
     }
   }
 

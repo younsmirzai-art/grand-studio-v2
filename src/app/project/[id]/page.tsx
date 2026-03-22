@@ -84,6 +84,10 @@ export default function ProjectPage() {
   const [scanningAssets, setScanningAssets] = useState(false);
   /** Agent mode: message sent; waiting for asset source buttons. */
   const [pendingAgentMessage, setPendingAgentMessage] = useState<string | null>(null);
+  /** Multi-chunk scene agent: header label overrides "Executing in UE5" while pausing/continuing. */
+  const [agentBarStatus, setAgentBarStatus] = useState<null | { phase: "running" | "continuing"; chunk: number }>(
+    null,
+  );
 
   const autoBuildStartedRef = useRef(false);
   const seenSuccessIdsRef = useRef<Set<string>>(new Set());
@@ -255,6 +259,20 @@ export default function ProjectPage() {
 
   // Build status for top bar
   const currentStatus = useMemo(() => {
+    if (agentBarStatus?.phase === "continuing") {
+      return {
+        label: `Continuing… chunk ${agentBarStatus.chunk}`,
+        color: "bg-[#7C4DFF]",
+        pulse: true,
+      };
+    }
+    if (agentBarStatus?.phase === "running") {
+      return {
+        label: `Scene agent (chunk ${agentBarStatus.chunk})…`,
+        color: "bg-[#2196F3]",
+        pulse: true,
+      };
+    }
     const executing = ue5Commands.some((c: UE5Command) => c.status === "executing");
     if (executing) return { label: "Executing in UE5...", color: "bg-[#00BCD4]", pulse: true };
     if (isGenerating) return { label: "AI Generating Code...", color: "bg-[#2196F3]", pulse: true };
@@ -263,7 +281,7 @@ export default function ProjectPage() {
     if (lastCmd?.status === "error") return { label: "Build Failed", color: "bg-red-500", pulse: false };
     if (lastCmd?.status === "success") return { label: "Build Complete", color: "bg-emerald-500", pulse: false };
     return { label: "Ready", color: "bg-[#606068]", pulse: false };
-  }, [ue5Commands, isGenerating, isFullProjectRunning]);
+  }, [ue5Commands, isGenerating, isFullProjectRunning, agentBarStatus]);
 
   // Capture screenshot
   const handleCaptureNow = useCallback(async () => {
@@ -388,6 +406,13 @@ export default function ProjectPage() {
       const supabase = getClient();
       setIsGenerating(true);
       setStreamingContent("");
+      let abnormalClearTimer: ReturnType<typeof setTimeout> | null = null;
+      const clearAbnormalTimer = () => {
+        if (abnormalClearTimer) {
+          clearTimeout(abnormalClearTimer);
+          abnormalClearTimer = null;
+        }
+      };
       try {
         type StepState = "pending" | "running" | "done" | "failed";
         type PlanStep = { stepNumber: number; description: string };
@@ -457,34 +482,140 @@ export default function ProjectPage() {
 
         setStreamingContent(renderChecklist());
         const initialBody = { prompt: message.trim(), projectId: id, assetSource };
-        let continueSessionId: string | undefined;
+        const MAX_AGENT_CHUNKS = 20;
+        let nextContinueSession: string | undefined;
+        let sawComplete = false;
 
-        agentChunks: for (;;) {
+        setAgentBarStatus({ phase: "running", chunk: 1 });
+
+        const applyEvent = (ev: {
+          type?: string;
+          stepNumber?: number;
+          description?: string;
+          summary?: string;
+          success?: boolean;
+          asset?: string;
+          source?: string;
+          current?: number;
+          total?: number;
+          message?: string;
+          sessionId?: string;
+          steps?: Array<{ stepNumber: number; description: string }>;
+          sceneRequest?: {
+            scene_type?: string;
+            buildings?: { type: string; count: number }[];
+            vegetation?: { type: string; count: number }[];
+            vehicles?: { type: string; count: number }[];
+            infrastructure?: { type: string; count: number }[];
+            details?: { type: string; count: number }[];
+          };
+          planSummary?: string;
+          name?: string;
+        }) => {
+          if (ev.type === "plan") {
+            if (typeof ev.planSummary === "string" && ev.planSummary) {
+              scenePlanLine = `Scene Plan: ${ev.planSummary}`;
+            } else if (ev.sceneRequest) {
+              const sr = ev.sceneRequest;
+              const b = (sr.buildings ?? []).reduce((a, x) => a + x.count, 0);
+              const t = (sr.vegetation ?? []).reduce((a, x) => a + x.count, 0);
+              const c = (sr.vehicles ?? []).reduce((a, x) => a + x.count, 0);
+              const l = (sr.infrastructure ?? []).reduce((a, x) => a + x.count, 0);
+              const d = (sr.details ?? []).reduce((a, x) => a + x.count, 0);
+              scenePlanLine = `Scene Plan: ${sr.scene_type ?? "scene"} with ${b} buildings, ${t} trees/plants, ${c} vehicles, ${l} street items, ${d} details`;
+            } else {
+              scenePlanLine = "Scene Plan: (received)";
+            }
+            planSteps = (ev.steps ?? []).map((s, i) => ({
+              stepNumber: Number(s.stepNumber ?? i + 1),
+              description: s.description || `Step ${i + 1}`,
+            }));
+            for (const s of planSteps) stepStates.set(s.stepNumber, "pending");
+            headline = "JSON scene plan ready — building in UE5…";
+            footer = "";
+          } else if (ev.type === "search") {
+            const msg = typeof ev.message === "string" ? ev.message : "";
+            if (msg) searchLines.push(`${msg} ✅`);
+            headline = "Searching asset libraries…";
+          } else if (ev.type === "importing") {
+            importCurrent = Number(ev.current ?? 0);
+            importTotal = Number(ev.total ?? 0);
+            importName = typeof ev.name === "string" ? ev.name : "";
+            importSource =
+              typeof ev.source === "string" ? ev.source : typeof ev.asset === "string" ? ev.asset : "";
+            headline = `Importing models: ${importCurrent}/${importTotal}`;
+            footer = importName
+              ? `Importing: ${importName}${importSource ? ` from ${importSource}` : ""}`
+              : "";
+          } else if (ev.type === "placing") {
+            headline = typeof ev.message === "string" ? ev.message : "Placing objects in your scene…";
+            footer = "";
+          } else if (ev.type === "step_start") {
+            const sn = Number(ev.stepNumber ?? 0);
+            if (sn > 0) stepStates.set(sn, "running");
+            if (ev.description) {
+              const idx = planSteps.findIndex((s) => s.stepNumber === sn);
+              if (idx >= 0) planSteps[idx] = { ...planSteps[idx], description: ev.description };
+            }
+            headline = `Agent running: step ${sn || "?"} in progress`;
+            footer = "";
+          } else if (ev.type === "step_complete") {
+            const sn = Number(ev.stepNumber ?? 0);
+            if (sn > 0) stepStates.set(sn, ev.success ? "done" : "failed");
+            headline = ev.success
+              ? `Step ${sn || "?"} complete`
+              : `Step ${sn || "?"} finished with issues`;
+            footer = "";
+          } else if (ev.type === "error") {
+            const sn = Number(ev.stepNumber ?? 0);
+            if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
+            footer = `⚠️ ${ev.message ?? "Step warning"}`;
+          } else if (ev.type === "complete") {
+            headline = "Your scene is complete!";
+            footer = `🎉 ${ev.summary ?? "Build complete"}`;
+          }
+          setStreamingContent(renderChecklist());
+        };
+
+        chunkLoop: for (let chunkRequestIndex = 1; chunkRequestIndex <= MAX_AGENT_CHUNKS && !sawComplete; chunkRequestIndex++) {
+          clearAbnormalTimer();
+          console.log(
+            `Sending chunk request ${chunkRequestIndex}/${MAX_AGENT_CHUNKS} with sessionId=${nextContinueSession ?? "new"}`,
+          );
+          setAgentBarStatus({ phase: "running", chunk: chunkRequestIndex });
+
           const agentRes = await fetch("/api/build/agent", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
             body: JSON.stringify(
-              continueSessionId
-                ? { continueSession: continueSessionId, projectId: id }
+              nextContinueSession
+                ? { continueSession: nextContinueSession, projectId: id }
                 : initialBody,
             ),
           });
-          continueSessionId = undefined;
+          nextContinueSession = undefined;
+
           if (!agentRes.ok) {
+            setAgentBarStatus(null);
             const err = await agentRes.text();
             throw new Error(err || "Agent request failed");
           }
           const reader = agentRes.body?.getReader();
           const decoder = new TextDecoder();
           if (!reader) throw new Error("No agent response body");
+
           let chunkPauseSession: string | undefined;
+          let sseCarry = "";
+
           readLoop: while (true) {
             const { done, value } = await reader.read();
-            if (done) break readLoop;
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n");
-            for (const line of lines) {
+            sseCarry += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+            let nl: number;
+            while ((nl = sseCarry.indexOf("\n")) >= 0) {
+              const rawLine = sseCarry.slice(0, nl);
+              sseCarry = sseCarry.slice(nl + 1);
+              const line = rawLine.replace(/\r$/, "");
               if (!line.startsWith("data: ")) continue;
               const data = line.slice(6);
               try {
@@ -512,6 +643,7 @@ export default function ProjectPage() {
                   planSummary?: string;
                   name?: string;
                 };
+
                 if (ev.type === "chunk_pause") {
                   headline = "Saving progress… continuing automatically";
                   footer =
@@ -519,85 +651,118 @@ export default function ProjectPage() {
                       ? ev.message
                       : "Saving progress, will continue automatically…";
                   chunkPauseSession = typeof ev.sessionId === "string" ? ev.sessionId : undefined;
+                  setAgentBarStatus({ phase: "continuing", chunk: chunkRequestIndex + 1 });
                   setStreamingContent(renderChecklist());
                   break readLoop;
                 }
-              if (ev.type === "plan") {
-                if (typeof ev.planSummary === "string" && ev.planSummary) {
-                  scenePlanLine = `Scene Plan: ${ev.planSummary}`;
-                } else if (ev.sceneRequest) {
-                  const sr = ev.sceneRequest;
-                  const b = (sr.buildings ?? []).reduce((a, x) => a + x.count, 0);
-                  const t = (sr.vegetation ?? []).reduce((a, x) => a + x.count, 0);
-                  const c = (sr.vehicles ?? []).reduce((a, x) => a + x.count, 0);
-                  const l = (sr.infrastructure ?? []).reduce((a, x) => a + x.count, 0);
-                  const d = (sr.details ?? []).reduce((a, x) => a + x.count, 0);
-                  scenePlanLine = `Scene Plan: ${sr.scene_type ?? "scene"} with ${b} buildings, ${t} trees/plants, ${c} vehicles, ${l} street items, ${d} details`;
-                } else {
-                  scenePlanLine = "Scene Plan: (received)";
+
+                applyEvent(ev);
+
+                if (ev.type === "complete") {
+                  sawComplete = true;
+                  setAgentBarStatus(null);
+                  clearAbnormalTimer();
+                  break readLoop;
                 }
-                planSteps = (ev.steps ?? []).map((s, i) => ({
-                  stepNumber: Number(s.stepNumber ?? i + 1),
-                  description: s.description || `Step ${i + 1}`,
-                }));
-                for (const s of planSteps) stepStates.set(s.stepNumber, "pending");
-                headline = "JSON scene plan ready — building in UE5…";
-                footer = "";
-              } else if (ev.type === "search") {
-                const msg = typeof ev.message === "string" ? ev.message : "";
-                if (msg) searchLines.push(`${msg} ✅`);
-                headline = "Searching asset libraries…";
-              } else if (ev.type === "importing") {
-                importCurrent = Number(ev.current ?? 0);
-                importTotal = Number(ev.total ?? 0);
-                importName = typeof ev.name === "string" ? ev.name : "";
-                importSource =
-                  typeof ev.source === "string" ? ev.source : typeof ev.asset === "string" ? ev.asset : "";
-                headline = `Importing models: ${importCurrent}/${importTotal}`;
-                footer = importName
-                  ? `Importing: ${importName}${importSource ? ` from ${importSource}` : ""}`
-                  : "";
-              } else if (ev.type === "placing") {
-                headline =
-                  typeof ev.message === "string" ? ev.message : "Placing objects in your scene…";
-                footer = "";
-              } else if (ev.type === "step_start") {
-                const sn = Number(ev.stepNumber ?? 0);
-                if (sn > 0) stepStates.set(sn, "running");
-                if (ev.description) {
-                  const idx = planSteps.findIndex((s) => s.stepNumber === sn);
-                  if (idx >= 0) planSteps[idx] = { ...planSteps[idx], description: ev.description };
+                if (ev.type === "error" && typeof ev.message === "string" && ev.message.includes("Session not found")) {
+                  setAgentBarStatus(null);
+                  break readLoop;
                 }
-                headline = `Agent running: step ${sn || "?"} in progress`;
-                footer = "";
-              } else if (ev.type === "step_complete") {
-                const sn = Number(ev.stepNumber ?? 0);
-                if (sn > 0) stepStates.set(sn, ev.success ? "done" : "failed");
-                headline = ev.success
-                  ? `Step ${sn || "?"} complete`
-                  : `Step ${sn || "?"} finished with issues`;
-                footer = "";
-              } else if (ev.type === "error") {
-                const sn = Number(ev.stepNumber ?? 0);
-                if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
-                footer = `⚠️ ${ev.message ?? "Step warning"}`;
-              } else if (ev.type === "complete") {
-                headline = "Your scene is complete!";
-                footer = `🎉 ${ev.summary ?? "Build complete"}`;
-              }
-                setStreamingContent(renderChecklist());
               } catch {
-                /* ignore partial lines */
+                /* ignore partial JSON */
+              }
+            }
+            if (done) break readLoop;
+          }
+
+          if (sseCarry.trim()) {
+            const tail = sseCarry.replace(/\r$/, "");
+            if (tail.startsWith("data: ")) {
+              try {
+                const ev = JSON.parse(tail.slice(6)) as {
+                  type?: string;
+                  message?: string;
+                  sessionId?: string;
+                  summary?: string;
+                  planSummary?: string;
+                  sceneRequest?: unknown;
+                  steps?: Array<{ stepNumber: number; description: string }>;
+                };
+                if (ev.type === "chunk_pause") {
+                  headline = "Saving progress… continuing automatically";
+                  footer =
+                    typeof ev.message === "string" && ev.message
+                      ? ev.message
+                      : "Saving progress, will continue automatically…";
+                  chunkPauseSession = typeof ev.sessionId === "string" ? ev.sessionId : undefined;
+                  setAgentBarStatus({ phase: "continuing", chunk: chunkRequestIndex + 1 });
+                  setStreamingContent(renderChecklist());
+                } else {
+                  applyEvent(
+                    ev as {
+                      type?: string;
+                      stepNumber?: number;
+                      description?: string;
+                      summary?: string;
+                      success?: boolean;
+                      asset?: string;
+                      source?: string;
+                      current?: number;
+                      total?: number;
+                      message?: string;
+                      sessionId?: string;
+                      steps?: Array<{ stepNumber: number; description: string }>;
+                      sceneRequest?: {
+                        scene_type?: string;
+                        buildings?: { type: string; count: number }[];
+                        vegetation?: { type: string; count: number }[];
+                        vehicles?: { type: string; count: number }[];
+                        infrastructure?: { type: string; count: number }[];
+                        details?: { type: string; count: number }[];
+                      };
+                      planSummary?: string;
+                      name?: string;
+                    },
+                  );
+                  if (ev.type === "complete") {
+                    sawComplete = true;
+                    setAgentBarStatus(null);
+                    clearAbnormalTimer();
+                  }
+                }
+              } catch {
+                /* ignore */
               }
             }
           }
+
+          if (sawComplete) break chunkLoop;
+
           if (chunkPauseSession) {
+            nextContinueSession = chunkPauseSession;
             await new Promise((r) => setTimeout(r, 2000));
-            continueSessionId = chunkPauseSession;
-            continue agentChunks;
+            continue chunkLoop;
           }
-          break agentChunks;
+
+          if (!sawComplete) {
+            abnormalClearTimer = setTimeout(() => {
+              setIsGenerating(false);
+              setAgentBarStatus(null);
+              setStreamingContent("");
+              abnormalClearTimer = null;
+            }, 30_000);
+            toast.error("Connection to scene agent ended. If the build did not finish, try again.");
+            break chunkLoop;
+          }
         }
+
+        if (!sawComplete && nextContinueSession) {
+          toast.error("Scene agent stopped: reached maximum of 20 chunks. Try a smaller scene or fewer imports.");
+          clearAbnormalTimer();
+          setAgentBarStatus(null);
+          setIsGenerating(false);
+        }
+
         const finalAgentChecklist = renderChecklist();
         await supabase.from("chat_turns").insert({
           project_id: projectId,
@@ -607,10 +772,14 @@ export default function ProjectPage() {
           turn_type: "direct",
         });
         await refetchChat();
-        setIsGenerating(false);
-        setStreamingContent("");
+        if (sawComplete || !abnormalClearTimer) {
+          setIsGenerating(false);
+          setStreamingContent("");
+        }
         await refetchUsage();
       } catch (err) {
+        clearAbnormalTimer();
+        setAgentBarStatus(null);
         setIsGenerating(false);
         setStreamingContent("");
         toast.error("Something went wrong. Try again in a moment!");

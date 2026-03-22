@@ -20,14 +20,15 @@ const SCENE_JSON_SYSTEM = `You are a scene description AI. You receive a user re
   "scale": "small" | "medium" | "large"
 }
 
+CRITICAL — FEW UNIQUE MODEL IMPORTS (the engine hard-limits to 15 unique library imports per scene):
+- Prefer FEWER object TYPES and higher "count" per type so the same imported model can be INSTANCED many times at placement (repeated positions, varied rotation/scale). Do NOT list dozens of unique types.
+- Small village / town: at most 3 buildings total (sum of counts), 4 trees/plants, 1 vehicle, 3 infrastructure, 2 details — about 13 placed instances but only ~8–10 unique asset types.
+- Large city: at most 6 buildings, 6 trees, 2 vehicles, 5 infrastructure, 3 details — about 22 placed instances but at most 15 UNIQUE imports; reuse types with count>1.
+- Forest: 0–1 building, up to 12 trees total (split types ok), 0–4 details; keep unique types low.
+- Beach / desert / other: keep totals modest; prefer repeating the same types with count.
+
 Rules:
 - Do not write any text before or after the JSON. Do not write Python. Do not explain.
-- For a village: include 5-10 buildings, 10-15 trees, 2-5 vehicles, 5-10 street lights, 3-5 benches or details
-- For a city: include 10-20 buildings, 5-10 trees, 5-10 vehicles, 10-20 street lights, 5-10 details
-- For a forest: include 0-2 buildings (cabin), 20-40 trees, 0 vehicles, 0-5 details like rocks
-- For a beach: include 2-5 buildings, 5-10 palm trees, 1-3 boats, 3-5 beach items
-- For a desert: include 2-5 buildings, 3-5 cacti, 1-2 vehicles, 2-5 rocks
-- Always include enough objects for a FULL scene
 - Match styles: village=cottage/farmhouse, city=skyscraper/office, medieval=castle/tavern
 - Match vegetation: beach=palm, forest=pine/oak, desert=cactus
 - count must be at least 1 for every object in every array
@@ -52,7 +53,98 @@ function normalizeSceneObject(o: unknown): SceneObject | null {
   if (!type || !Number.isFinite(count) || count < 1) return null;
   const style = typeof r.style === "string" ? r.style : undefined;
   const size = r.size === "small" || r.size === "medium" || r.size === "large" ? r.size : undefined;
-  return { type, count: Math.min(50, Math.floor(count)), style, size };
+  return { type, count: Math.min(30, Math.floor(count)), style, size };
+}
+
+function sumCounts(objects: SceneObject[]): number {
+  return objects.reduce((s, o) => s + o.count, 0);
+}
+
+/** Scale down counts so category total does not exceed maxTotal (min 1 per row while possible). */
+function capCategoryTotal(objects: SceneObject[], maxTotal: number): SceneObject[] {
+  if (objects.length === 0 || maxTotal <= 0) return [];
+  let out = objects.filter((o) => o.count >= 1).map((o) => ({ ...o }));
+  if (out.length === 0) return [];
+  let total = sumCounts(out);
+  if (total <= maxTotal) return out;
+  const factor = maxTotal / total;
+  out = out.map((o) => ({
+    ...o,
+    count: Math.max(1, Math.floor(o.count * factor)),
+  }));
+  total = sumCounts(out);
+  while (total > maxTotal) {
+    const idx = out.reduce((best, o, i) => (o.count > out[best].count ? i : best), 0);
+    if (out[idx].count <= 1) break;
+    out[idx] = { ...out[idx], count: out[idx].count - 1 };
+    total -= 1;
+  }
+  return out.filter((o) => o.count >= 1);
+}
+
+/** Enforce per–scene-type instance budgets; keeps unique imports low via fewer types + higher counts. */
+export function enforceSceneImportBudgets(sr: SceneRequest): SceneRequest {
+  const st = sr.scene_type;
+  let b: number;
+  let v: number;
+  let veh: number;
+  let inf: number;
+  let det: number;
+  let ch: number;
+
+  if (st === "village") {
+    b = 3;
+    v = 4;
+    veh = 1;
+    inf = 3;
+    det = 2;
+    ch = 0;
+  } else if (st === "city") {
+    b = 6;
+    v = 6;
+    veh = 2;
+    inf = 5;
+    det = 3;
+    ch = 0;
+  } else if (st === "forest") {
+    b = 1;
+    v = 12;
+    veh = 0;
+    inf = 0;
+    det = 4;
+    ch = 0;
+  } else if (st === "beach") {
+    b = 3;
+    v = 5;
+    veh = 2;
+    inf = 2;
+    det = 3;
+    ch = 0;
+  } else if (st === "desert") {
+    b = 3;
+    v = 4;
+    veh = 2;
+    inf = 0;
+    det = 3;
+    ch = 0;
+  } else {
+    b = 5;
+    v = 5;
+    veh = 2;
+    inf = 4;
+    det = 3;
+    ch = 0;
+  }
+
+  return {
+    ...sr,
+    buildings: capCategoryTotal(sr.buildings, b),
+    vegetation: capCategoryTotal(sr.vegetation, v),
+    vehicles: capCategoryTotal(sr.vehicles, veh),
+    infrastructure: capCategoryTotal(sr.infrastructure, inf),
+    details: capCategoryTotal(sr.details, det),
+    characters: capCategoryTotal(sr.characters, ch),
+  };
 }
 
 const SCENE_TYPES = new Set<string>([
@@ -111,7 +203,7 @@ function normalizeSceneRequest(raw: Record<string, unknown>): SceneRequest {
   const scale: SceneRequest["scale"] =
     typeof sc === "string" && SCALE_TYPES.has(sc) ? (sc as SceneRequest["scale"]) : "medium";
 
-  return {
+  const base: SceneRequest = {
     scene_type: scene_type,
     terrain,
     buildings: arr("buildings"),
@@ -124,6 +216,7 @@ function normalizeSceneRequest(raw: Record<string, unknown>): SceneRequest {
     lighting,
     scale,
   };
+  return enforceSceneImportBudgets(base);
 }
 
 export function defaultSceneFromKeywords(userPrompt: string): SceneRequest {
@@ -143,81 +236,93 @@ export function defaultSceneFromKeywords(userPrompt: string): SceneRequest {
   });
 
   if (p.includes("village") || p.includes("town")) {
-    return base({
-      scene_type: "village",
-      terrain: "flat_grass",
-      layout: "along_road",
-      buildings: [
-        { type: "house", count: 5, style: "cottage" },
-        { type: "building", count: 2, style: "farmhouse" },
-      ],
-      vegetation: [{ type: "tree", count: 10 }, { type: "pine", count: 4 }],
-      vehicles: [{ type: "car", count: 3 }],
-      infrastructure: [{ type: "street_light", count: 8 }],
-      details: [{ type: "bench", count: 5 }],
-    });
+    return enforceSceneImportBudgets(
+      base({
+        scene_type: "village",
+        terrain: "flat_grass",
+        layout: "along_road",
+        buildings: [
+          { type: "house", count: 2, style: "cottage" },
+          { type: "building", count: 1, style: "farmhouse" },
+        ],
+        vegetation: [{ type: "tree", count: 3 }, { type: "pine", count: 1 }],
+        vehicles: [{ type: "car", count: 1 }],
+        infrastructure: [{ type: "street_light", count: 2 }],
+        details: [{ type: "bench", count: 2 }, { type: "rock", count: 1 }],
+      }),
+    );
   }
   if (p.includes("city") || p.includes("urban")) {
-    return base({
-      scene_type: "city",
-      terrain: "urban_flat",
-      layout: "grid",
-      buildings: [
-        { type: "skyscraper", count: 6 },
-        { type: "building", count: 8 },
-        { type: "shop", count: 4 },
-      ],
-      vegetation: [{ type: "tree", count: 5 }],
-      vehicles: [{ type: "car", count: 5 }, { type: "truck", count: 2 }],
-      infrastructure: [{ type: "street_light", count: 15 }, { type: "traffic_light", count: 4 }],
-      details: [{ type: "bench", count: 5 }, { type: "mailbox", count: 4 }],
-    });
+    return enforceSceneImportBudgets(
+      base({
+        scene_type: "city",
+        terrain: "urban_flat",
+        layout: "grid",
+        buildings: [
+          { type: "skyscraper", count: 2 },
+          { type: "building", count: 2 },
+          { type: "shop", count: 2 },
+        ],
+        vegetation: [{ type: "tree", count: 4 }, { type: "pine", count: 2 }],
+        vehicles: [{ type: "car", count: 1 }, { type: "truck", count: 1 }],
+        infrastructure: [{ type: "street_light", count: 3 }, { type: "traffic_light", count: 2 }],
+        details: [{ type: "bench", count: 2 }, { type: "mailbox", count: 1 }],
+      }),
+    );
   }
   if (p.includes("forest") || p.includes("woods")) {
-    return base({
-      scene_type: "forest",
-      terrain: "forest_floor",
-      layout: "scattered",
-      buildings: [{ type: "house", count: 1, style: "cabin" }],
-      vegetation: [{ type: "pine", count: 20 }, { type: "tree", count: 15 }],
-      vehicles: [],
-      infrastructure: [],
-      details: [{ type: "rock", count: 5 }],
-    });
+    return enforceSceneImportBudgets(
+      base({
+        scene_type: "forest",
+        terrain: "forest_floor",
+        layout: "scattered",
+        buildings: [{ type: "house", count: 1, style: "cabin" }],
+        vegetation: [{ type: "pine", count: 8 }, { type: "tree", count: 4 }],
+        vehicles: [],
+        infrastructure: [],
+        details: [{ type: "rock", count: 3 }],
+      }),
+    );
   }
   if (p.includes("beach") || p.includes("coastal")) {
-    return base({
-      scene_type: "beach",
-      terrain: "beach_sand",
-      layout: "scattered",
-      buildings: [{ type: "house", count: 3, style: "beach" }],
-      vegetation: [{ type: "palm", count: 8 }],
-      vehicles: [{ type: "boat", count: 2 }],
-      infrastructure: [{ type: "street_light", count: 3 }],
-      details: [{ type: "bench", count: 4 }],
-    });
+    return enforceSceneImportBudgets(
+      base({
+        scene_type: "beach",
+        terrain: "beach_sand",
+        layout: "scattered",
+        buildings: [{ type: "house", count: 2, style: "beach" }],
+        vegetation: [{ type: "palm", count: 3 }],
+        vehicles: [{ type: "boat", count: 1 }],
+        infrastructure: [{ type: "street_light", count: 1 }],
+        details: [{ type: "bench", count: 2 }],
+      }),
+    );
   }
   if (p.includes("desert")) {
-    return base({
-      scene_type: "desert",
-      terrain: "desert_sand",
-      layout: "scattered",
-      buildings: [{ type: "building", count: 3 }],
-      vegetation: [{ type: "cactus", count: 5 }],
-      vehicles: [{ type: "truck", count: 2 }],
-      infrastructure: [],
-      details: [{ type: "rock", count: 3 }],
-    });
+    return enforceSceneImportBudgets(
+      base({
+        scene_type: "desert",
+        terrain: "desert_sand",
+        layout: "scattered",
+        buildings: [{ type: "building", count: 2 }],
+        vegetation: [{ type: "cactus", count: 3 }],
+        vehicles: [{ type: "truck", count: 1 }],
+        infrastructure: [],
+        details: [{ type: "rock", count: 2 }],
+      }),
+    );
   }
 
-  return base({
-    scene_type: "village",
-    buildings: [{ type: "house", count: 4 }],
-    vegetation: [{ type: "tree", count: 8 }],
-    vehicles: [{ type: "car", count: 2 }],
-    infrastructure: [{ type: "street_light", count: 6 }],
-    details: [{ type: "bench", count: 3 }],
-  });
+  return enforceSceneImportBudgets(
+    base({
+      scene_type: "village",
+      buildings: [{ type: "house", count: 2 }],
+      vegetation: [{ type: "tree", count: 3 }],
+      vehicles: [{ type: "car", count: 1 }],
+      infrastructure: [{ type: "street_light", count: 2 }],
+      details: [{ type: "bench", count: 2 }],
+    }),
+  );
 }
 
 /**
