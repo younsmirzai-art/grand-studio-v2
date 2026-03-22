@@ -347,9 +347,17 @@ def poll_commands():
                 if cmd_type == "screenshot" or cmd_type == "capture":
                     ue5_result = capture_screenshot()
                 else:
-                    # Large FBX/GLB imports can exceed 30s; keep 30s for normal commands.
-                    import_timeout = 120 if cmd_type == "import" else 30
+                    # Imports: 120s. Full placement scripts: 300s. Other execute: 30s.
                     if cmd_type == "import":
+                        import_timeout = 120
+                    elif cmd_type == "execute":
+                        import_timeout = 300
+                    else:
+                        import_timeout = 30
+                    if cmd_type == "import":
+                        print(
+                            f"         Import START (cmd {cmd_id[:8]}…, timeout {import_timeout}s)"
+                        )
                         FORCE_HEARTBEAT_UE5_CONNECTED = True
                         try:
                             ue5_result = execute_import_in_ue5_with_retry(
@@ -365,6 +373,7 @@ def poll_commands():
                     ue5_connected = True
                     print("         Success!")
                     if cmd_type == "import":
+                        print("         Import FINISH — success")
                         print(
                             "         Import finished; waiting 5s for UE5 to stabilize before next command…"
                         )

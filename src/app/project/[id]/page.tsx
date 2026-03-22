@@ -393,8 +393,14 @@ export default function ProjectPage() {
         type PlanStep = { stepNumber: number; description: string };
         let planSteps: PlanStep[] = [];
         const stepStates = new Map<number, StepState>();
-        let headline = "Planning your scene...";
+        let headline = "Understanding your scene (JSON plan)...";
         let footer = "";
+        let scenePlanLine = "";
+        const searchLines: string[] = [];
+        let importCurrent = 0;
+        let importTotal = 0;
+        let importName = "";
+        let importSource = "";
 
         const stateIcon = (s: StepState): string => {
           if (s === "running") return "🔵";
@@ -403,21 +409,47 @@ export default function ProjectPage() {
           return "⚪";
         };
 
+        const progressBar = (cur: number, tot: number): string => {
+          if (tot <= 0) return "";
+          const pct = Math.min(100, Math.round((cur / tot) * 100));
+          const filled = Math.round((pct / 100) * 12);
+          const bar = "█".repeat(filled) + "░".repeat(12 - filled);
+          return `[${bar}] ${pct}%`;
+        };
+
         const renderChecklist = () => {
           const lines: string[] = [];
           lines.push(headline);
           lines.push("");
-          if (planSteps.length === 0) {
-            lines.push("⚪ Waiting for plan...");
-          } else {
-            lines.push(`Plan (${planSteps.length} steps):`);
+          if (scenePlanLine) {
+            lines.push("━━ Scene plan ━━");
+            lines.push(scenePlanLine);
+            lines.push("");
+          }
+          if (searchLines.length > 0) {
+            lines.push("━━ Search ━━");
+            lines.push(...searchLines);
+            lines.push("");
+          }
+          if (importTotal > 0 && importCurrent > 0) {
+            lines.push("━━ Importing models ━━");
+            lines.push(
+              `${progressBar(importCurrent, importTotal)}  ${importCurrent}/${importTotal}`,
+            );
+            if (importName) {
+              lines.push(`📦 ${importName}${importSource ? ` from ${importSource}` : ""}`);
+            }
+            lines.push("");
+          }
+          if (planSteps.length > 0) {
+            lines.push(`Legacy steps (${planSteps.length}):`);
             for (const step of planSteps) {
               const state = stepStates.get(step.stepNumber) ?? "pending";
-              lines.push(`${stateIcon(state)} Step ${step.stepNumber}/${planSteps.length}: ${step.description}`);
+              lines.push(`${stateIcon(state)} Step ${step.stepNumber}: ${step.description}`);
             }
+            lines.push("");
           }
           if (footer) {
-            lines.push("");
             lines.push(footer);
           }
           return lines.join("\n");
@@ -458,14 +490,55 @@ export default function ProjectPage() {
                 total?: number;
                 message?: string;
                 steps?: Array<{ stepNumber: number; description: string }>;
+                sceneRequest?: {
+                  scene_type?: string;
+                  buildings?: { type: string; count: number }[];
+                  vegetation?: { type: string; count: number }[];
+                  vehicles?: { type: string; count: number }[];
+                  infrastructure?: { type: string; count: number }[];
+                  details?: { type: string; count: number }[];
+                };
+                planSummary?: string;
+                name?: string;
               };
               if (ev.type === "plan") {
+                if (typeof ev.planSummary === "string" && ev.planSummary) {
+                  scenePlanLine = `Scene Plan: ${ev.planSummary}`;
+                } else if (ev.sceneRequest) {
+                  const sr = ev.sceneRequest;
+                  const b = (sr.buildings ?? []).reduce((a, x) => a + x.count, 0);
+                  const t = (sr.vegetation ?? []).reduce((a, x) => a + x.count, 0);
+                  const c = (sr.vehicles ?? []).reduce((a, x) => a + x.count, 0);
+                  const l = (sr.infrastructure ?? []).reduce((a, x) => a + x.count, 0);
+                  const d = (sr.details ?? []).reduce((a, x) => a + x.count, 0);
+                  scenePlanLine = `Scene Plan: ${sr.scene_type ?? "scene"} with ${b} buildings, ${t} trees/plants, ${c} vehicles, ${l} street items, ${d} details`;
+                } else {
+                  scenePlanLine = "Scene Plan: (received)";
+                }
                 planSteps = (ev.steps ?? []).map((s, i) => ({
                   stepNumber: Number(s.stepNumber ?? i + 1),
                   description: s.description || `Step ${i + 1}`,
                 }));
                 for (const s of planSteps) stepStates.set(s.stepNumber, "pending");
-                headline = `Plan created: ${planSteps.length} steps`;
+                headline = "JSON scene plan ready — building in UE5…";
+                footer = "";
+              } else if (ev.type === "search") {
+                const msg = typeof ev.message === "string" ? ev.message : "";
+                if (msg) searchLines.push(`${msg} ✅`);
+                headline = "Searching asset libraries…";
+              } else if (ev.type === "importing") {
+                importCurrent = Number(ev.current ?? 0);
+                importTotal = Number(ev.total ?? 0);
+                importName = typeof ev.name === "string" ? ev.name : "";
+                importSource =
+                  typeof ev.source === "string" ? ev.source : typeof ev.asset === "string" ? ev.asset : "";
+                headline = `Importing models: ${importCurrent}/${importTotal}`;
+                footer = importName
+                  ? `Importing: ${importName}${importSource ? ` from ${importSource}` : ""}`
+                  : "";
+              } else if (ev.type === "placing") {
+                headline =
+                  typeof ev.message === "string" ? ev.message : "Placing objects in your scene…";
                 footer = "";
               } else if (ev.type === "step_start") {
                 const sn = Number(ev.stepNumber ?? 0);
@@ -483,11 +556,6 @@ export default function ProjectPage() {
                   ? `Step ${sn || "?"} complete`
                   : `Step ${sn || "?"} finished with issues`;
                 footer = "";
-              } else if (ev.type === "importing") {
-                const label = ev.asset ?? "asset";
-                const src = ev.source ?? "library";
-                const n = ev.current != null && ev.total != null ? ` (${ev.current}/${ev.total})` : "";
-                footer = `🌲 Importing ${label}${n} from ${src}...`;
               } else if (ev.type === "error") {
                 const sn = Number(ev.stepNumber ?? 0);
                 if (sn > 0 && stepStates.get(sn) !== "done") stepStates.set(sn, "failed");
