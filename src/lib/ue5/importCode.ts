@@ -49,6 +49,15 @@ _result = {'ue_asset_path': _ue_asset_path, 'material_count': _material_count, '
 unreal.log('IMPORT_RESULT:' + json.dumps(_result))
 `;
 
+export type UE5ImportCodeOptions = {
+  /** Unique asset name under /Game/GrandStudio/Imported (avoids overwriting). */
+  destinationName?: string;
+  /** Default true; use false when each import uses a unique destinationName. */
+  replaceExisting?: boolean;
+  /** If true, only import — do not spawn a temporary actor (batch import + place later). */
+  skipSpawnActor?: boolean;
+};
+
 /**
  * UE5 5.7+: AssetImportTask has no import_materials / import_textures on the task.
  * Minimal import: filename, destination_path, destination_name, replace_existing, automated, save only.
@@ -56,13 +65,29 @@ unreal.log('IMPORT_RESULT:' + json.dumps(_result))
 export function generateUE5ImportCode(
   downloadUrl: string,
   filename: string,
-  label: string
+  label: string,
+  options?: UE5ImportCodeOptions
 ): string {
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
   const baseName = filename.includes(".") ? filename.replace(/\.[^.]+$/, "") : filename;
-  const destinationName = baseName.replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;
+  const defaultDest = baseName.replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;
+  const destinationName = (options?.destinationName ?? defaultDest).replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;
+  const replaceExisting = options?.replaceExisting ?? true;
+  const skipSpawn = options?.skipSpawnActor === true;
   const localPath = `C:/GrandStudio/Downloads/${filename}`;
   const fileType = filename.includes(".") ? filename.split(".").pop()!.toLowerCase() : "glb";
+
+  const spawnBlock = skipSpawn
+    ? ""
+    : `
+if imported_paths and len(imported_paths) > 0:
+    asset = unreal.EditorAssetLibrary.load_asset(str(imported_paths[0]))
+    if asset:
+        editor = unreal.EditorLevelLibrary
+        actor = editor.spawn_actor_from_object(asset, unreal.Vector(0, 0, 0))
+        if actor:
+            actor.set_actor_label('${safeLabel}')
+            unreal.log('Asset placed in level!')`;
 
   return `import unreal
 import urllib.request
@@ -78,19 +103,11 @@ task = unreal.AssetImportTask()
 task.set_editor_property('filename', local_path)
 task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
 task.set_editor_property('destination_name', '${destinationName}')
-task.set_editor_property('replace_existing', True)
+task.set_editor_property('replace_existing', ${replaceExisting ? "True" : "False"})
 task.set_editor_property('automated', True)
 task.set_editor_property('save', True)
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
-imported_paths = task.get_editor_property('imported_object_paths')
-if imported_paths and len(imported_paths) > 0:
-    asset = unreal.EditorAssetLibrary.load_asset(str(imported_paths[0]))
-    if asset:
-        editor = unreal.EditorLevelLibrary
-        actor = editor.spawn_actor_from_object(asset, unreal.Vector(0, 0, 0))
-        if actor:
-            actor.set_actor_label('${safeLabel}')
-            unreal.log('Asset placed in level!')
+imported_paths = task.get_editor_property('imported_object_paths')${spawnBlock}
 _import_file_type = '${fileType}'
 ${VALIDATION_SNIPPET.trim()}
 `;
@@ -100,16 +117,37 @@ ${VALIDATION_SNIPPET.trim()}
  * Sketchfab import: API returns a ZIP URL. Download ZIP, extract, find .glb/.fbx/.gltf/.obj and import.
  * UE5 5.7+: same minimal AssetImportTask as generateUE5ImportCode (no import_materials / FbxImportUI on task).
  */
+export type SketchfabImportCodeOptions = UE5ImportCodeOptions;
+
 export function generateSketchfabImportCode(
   downloadUrl: string,
   zipFilename: string,
-  label: string
+  label: string,
+  options?: SketchfabImportCodeOptions
 ): string {
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
   const baseName = zipFilename.replace(/\.zip$/i, "");
   const zipPath = `C:/GrandStudio/Downloads/${zipFilename}`;
   const extractDir = `C:/GrandStudio/Downloads/${baseName}_extracted`;
   const escapedUrl = downloadUrl.replace(/'/g, "\\'");
+  const replaceExisting = options?.replaceExisting ?? true;
+  const skipSpawn = options?.skipSpawnActor === true;
+  const destOverride = options?.destinationName?.replace(/[^a-zA-Z0-9_]/g, "_");
+  const destNameBlock = destOverride
+    ? `    _dest_name = '${destOverride}'`
+    : `    _stem = os.path.splitext(os.path.basename(model_file))[0]
+    _dest_name = ''.join(c if c.isalnum() or c == '_' else '_' for c in _stem)`;
+
+  const spawnBlock = skipSpawn
+    ? ""
+    : `
+    if imported_paths and len(imported_paths) > 0:
+        asset = unreal.EditorAssetLibrary.load_asset(str(imported_paths[0]))
+        if asset:
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_object(asset, unreal.Vector(0, 0, 0))
+            if actor:
+                actor.set_actor_label('${safeLabel}')
+                unreal.log('Sketchfab model placed in level!')`;
 
   return `import unreal
 import urllib.request
@@ -147,24 +185,16 @@ else:
             dest = os.path.join(model_dir, os.path.basename(tex_file))
             if not os.path.exists(dest):
                 shutil.copy2(tex_file, dest)
-    _stem = os.path.splitext(os.path.basename(model_file))[0]
-    _dest_name = ''.join(c if c.isalnum() or c == '_' else '_' for c in _stem)
+${destNameBlock}
     task = unreal.AssetImportTask()
     task.set_editor_property('filename', model_file)
     task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
     task.set_editor_property('destination_name', _dest_name)
-    task.set_editor_property('replace_existing', True)
+    task.set_editor_property('replace_existing', ${replaceExisting ? "True" : "False"})
     task.set_editor_property('automated', True)
     task.set_editor_property('save', True)
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
-    imported_paths = task.get_editor_property('imported_object_paths')
-    if imported_paths and len(imported_paths) > 0:
-        asset = unreal.EditorAssetLibrary.load_asset(str(imported_paths[0]))
-        if asset:
-            actor = unreal.EditorLevelLibrary.spawn_actor_from_object(asset, unreal.Vector(0, 0, 0))
-            if actor:
-                actor.set_actor_label('${safeLabel}')
-                unreal.log('Sketchfab model placed in level!')
+    imported_paths = task.get_editor_property('imported_object_paths')${spawnBlock}
     _import_file_type = model_file.split('.')[-1].lower() if '.' in model_file else 'glb'
 ${VALIDATION_SNIPPET.trim().split("\n").map((l) => "    " + l).join("\n")}
 `;

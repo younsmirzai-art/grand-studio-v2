@@ -52,15 +52,14 @@ type RunAgentLoopArgs = {
   onEvent: (event: AgentEvent) => Promise<void> | void;
 };
 
-const WAIT_AFTER_COMMAND_MS = 10000;
-const WAIT_AFTER_BUILDING_IMPORT_MS = 20000;
-/** Minimum time between queued Poly Haven / Sketchfab import commands so UE5 can finish one import. */
+// ─── Timing ─────────────────────────────────────────────────────────────────
+
 const WAIT_BETWEEN_IMPORT_COMMANDS_MS = 15000;
-const WAIT_EVERY_3_COMMANDS_MS = 15000;
 const RELAY_RETRY_MS = 15000;
 const RELAY_MAX_RETRIES = 10;
 
-/** Scanned / Fab paths that must never appear in generated UE code when assetSource is "library". */
+// ─── Library mode: never embed scanned Fab paths in generated Python ─────────
+
 const FORBIDDEN_LIBRARY_UE_PATH_PREFIXES = [
   "/Game/Fab/",
   "/Game/Survival_Character/",
@@ -83,12 +82,30 @@ function filterPathsForLibraryMode(paths: string[]): string[] {
   );
 }
 
+// ─── Keyword map (fixed; no AI for search terms) ────────────────────────────
+
+export const SEARCH_KEYWORDS_MAP = {
+  house: ["house", "cottage", "cabin", "building", "farmhouse"],
+  tree: ["tree", "pine", "oak", "palm", "birch"],
+  car: ["car", "sedan", "truck", "suv", "van"],
+  wall: ["wall", "fence", "gate", "stone wall"],
+  detail: ["bench", "lamp", "barrel", "crate", "mailbox"],
+} as const;
+
+export type SearchCategory = keyof typeof SEARCH_KEYWORDS_MAP;
+
+const CATEGORY_ORDER: SearchCategory[] = ["house", "tree", "car", "wall", "detail"];
+
+// ─── Planning (high-level steps for UI only; execution is 3-phase) ────────
+
 function safeParsePlan(text: string): AgentStep[] | null {
   const trimmed = text.trim();
-  const raw = trimmed.startsWith("[") ? trimmed : (() => {
-    const m = trimmed.match(/\[[\s\S]*\]/);
-    return m ? m[0] : "";
-  })();
+  const raw = trimmed.startsWith("[")
+    ? trimmed
+    : (() => {
+        const m = trimmed.match(/\[[\s\S]*\]/);
+        return m ? m[0] : "";
+      })();
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as AgentStep[];
@@ -106,55 +123,56 @@ function safeParsePlan(text: string): AgentStep[] | null {
 
 function isSimpleRequest(prompt: string): boolean {
   const p = prompt.trim().toLowerCase();
-  return /^build\s+1\s+house\.?$/.test(p)
+  return (
+    /^build\s+1\s+house\.?$/.test(p)
     || /^build\s+1\s+tree\.?$/.test(p)
     || /^add\s+3\s+trees?\.?$/.test(p)
     || /^place\s+a\s+car\.?$/.test(p)
     || /^build\s+\d+\s+house(s)?\.?$/.test(p)
-    || /^add\s+\d+\s+trees?\.?$/.test(p);
+    || /^add\s+\d+\s+trees?\.?$/.test(p)
+  );
 }
 
 function defaultSimplePlan(prompt: string): AgentStep[] {
   const p = prompt.toLowerCase();
   if (p.includes("tree")) {
     return [
-      { stepNumber: 1, action: "place_trees", description: "Import requested tree model(s)", estimatedAssetCount: 1 },
-      { stepNumber: 2, action: "place_trees", description: "Place imported tree model(s)", estimatedAssetCount: 1 },
+      { stepNumber: 1, action: "place_trees", description: "Trees", estimatedAssetCount: 3 },
+      { stepNumber: 2, action: "add_lighting", description: "Lighting", estimatedAssetCount: 1 },
     ];
   }
   if (p.includes("car") || p.includes("vehicle")) {
     return [
-      { stepNumber: 1, action: "place_vehicles", description: "Import requested vehicle model", estimatedAssetCount: 1 },
-      { stepNumber: 2, action: "place_vehicles", description: "Place imported vehicle model", estimatedAssetCount: 1 },
+      { stepNumber: 1, action: "place_vehicles", description: "Vehicles", estimatedAssetCount: 2 },
+      { stepNumber: 2, action: "add_lighting", description: "Lighting", estimatedAssetCount: 1 },
     ];
   }
   return [
-    { stepNumber: 1, action: "place_buildings", description: "Import requested house/building model", estimatedAssetCount: 1 },
-    { stepNumber: 2, action: "place_buildings", description: "Place imported house/building model", estimatedAssetCount: 1 },
-    { stepNumber: 3, action: "add_lighting", description: "Optional quick lighting", estimatedAssetCount: 1 },
+    { stepNumber: 1, action: "place_buildings", description: "Buildings", estimatedAssetCount: 2 },
+    { stepNumber: 2, action: "place_trees", description: "Trees", estimatedAssetCount: 4 },
+    { stepNumber: 3, action: "add_lighting", description: "Lighting", estimatedAssetCount: 1 },
   ];
 }
 
-/** Library mode: import-first steps; final step places all imports with lighting. */
 function defaultLibrarySimplePlan(prompt: string): AgentStep[] {
   const p = prompt.toLowerCase();
   const treeOnly = (p.includes("tree") || /^build\s+1\s+tree/.test(p.trim())) && !p.includes("house");
   if (treeOnly) {
     return [
-      { stepNumber: 1, action: "place_trees", description: "Import tree model from library", estimatedAssetCount: 1 },
-      { stepNumber: 2, action: "add_lighting", description: "Place imported tree in scene with lighting", estimatedAssetCount: 1 },
+      { stepNumber: 1, action: "place_trees", description: "Trees from library", estimatedAssetCount: 4 },
+      { stepNumber: 2, action: "add_lighting", description: "Placement + lighting", estimatedAssetCount: 1 },
     ];
   }
   if (p.includes("car") || p.includes("vehicle")) {
     return [
-      { stepNumber: 1, action: "place_vehicles", description: "Import vehicle model from library", estimatedAssetCount: 1 },
-      { stepNumber: 2, action: "add_lighting", description: "Place imported vehicle with lighting", estimatedAssetCount: 1 },
+      { stepNumber: 1, action: "place_vehicles", description: "Vehicles from library", estimatedAssetCount: 2 },
+      { stepNumber: 2, action: "add_lighting", description: "Placement + lighting", estimatedAssetCount: 1 },
     ];
   }
   return [
-    { stepNumber: 1, action: "place_buildings", description: "Import house model from library", estimatedAssetCount: 1 },
-    { stepNumber: 2, action: "place_trees", description: "Import 3 tree models from library", estimatedAssetCount: 3 },
-    { stepNumber: 3, action: "add_lighting", description: "Place all imported models in scene with lighting", estimatedAssetCount: 1 },
+    { stepNumber: 1, action: "place_buildings", description: "Houses from library", estimatedAssetCount: 2 },
+    { stepNumber: 2, action: "place_trees", description: "Trees from library", estimatedAssetCount: 4 },
+    { stepNumber: 3, action: "add_lighting", description: "Placement + lighting", estimatedAssetCount: 1 },
   ];
 }
 
@@ -162,20 +180,16 @@ function defaultPlan(prompt: string): AgentStep[] {
   const env = detectEnvironment(prompt);
   const urban = env === "urban";
   return [
-    { stepNumber: 1, action: "load_landscape", description: urban ? "Setup urban base" : "Setup terrain base", estimatedAssetCount: 2 },
-    { stepNumber: 2, action: "place_buildings", description: "Import/place buildings", estimatedAssetCount: 6 },
-    { stepNumber: 3, action: "place_trees", description: "Import/place trees", estimatedAssetCount: 6 },
-    { stepNumber: 4, action: "place_walls", description: "Import/place walls and fences", estimatedAssetCount: 4 },
-    { stepNumber: 5, action: "add_details", description: "Import/place details and furniture", estimatedAssetCount: 4 },
-    { stepNumber: 6, action: "add_lighting", description: "Lighting pass", estimatedAssetCount: 2 },
-    { stepNumber: 7, action: "final_check", description: "Final check", estimatedAssetCount: 1 },
+    { stepNumber: 1, action: "load_landscape", description: urban ? "Urban base" : "Terrain base", estimatedAssetCount: 1 },
+    { stepNumber: 2, action: "place_buildings", description: "Buildings", estimatedAssetCount: 4 },
+    { stepNumber: 3, action: "place_trees", description: "Trees", estimatedAssetCount: 6 },
+    { stepNumber: 4, action: "place_walls", description: "Walls", estimatedAssetCount: 3 },
+    { stepNumber: 5, action: "add_details", description: "Details", estimatedAssetCount: 4 },
+    { stepNumber: 6, action: "add_lighting", description: "Lighting", estimatedAssetCount: 1 },
+    { stepNumber: 7, action: "final_check", description: "Done", estimatedAssetCount: 1 },
   ];
 }
 
-/**
- * Library-only: imports first (house, trees, …), then one placement + lighting step.
- * Never starts with load_landscape / sky — Poly Haven & Sketchfab imports come first.
- */
 function defaultLibraryPlan(prompt: string): AgentStep[] {
   const p = prompt.toLowerCase();
   const steps: AgentStep[] = [];
@@ -183,151 +197,239 @@ function defaultLibraryPlan(prompt: string): AgentStep[] {
   const wantsHouse =
     p.includes("house") || p.includes("building") || p.includes("castle") || /\bbuild\b/.test(p);
   const treeMatch = p.match(/(\d+)\s*trees?/);
-  const treeCount = treeMatch ? Math.min(5, Math.max(1, parseInt(treeMatch[1], 10))) : 3;
+  const treeCount = treeMatch ? Math.min(8, Math.max(1, parseInt(treeMatch[1], 10))) : 4;
 
   if (wantsHouse) {
     steps.push({
       stepNumber: n++,
       action: "place_buildings",
-      description: "Import house model from library",
-      estimatedAssetCount: 1,
+      description: "Houses from library",
+      estimatedAssetCount: 2,
     });
   }
   if (p.includes("tree") || p.includes("garden") || p.includes("forest") || p.includes("yard")) {
     steps.push({
       stepNumber: n++,
       action: "place_trees",
-      description: "Import tree models from library",
+      description: "Trees from library",
       estimatedAssetCount: treeCount,
     });
   } else if (wantsHouse) {
     steps.push({
       stepNumber: n++,
       action: "place_trees",
-      description: "Import 3 tree models from library",
+      description: "Trees from library",
+      estimatedAssetCount: 4,
+    });
+  }
+  if (p.includes("car") || p.includes("road") || p.includes("vehicle")) {
+    steps.push({
+      stepNumber: n++,
+      action: "place_vehicles",
+      description: "Vehicles from library",
+      estimatedAssetCount: 2,
+    });
+  }
+  if (p.includes("wall") || p.includes("fence") || p.includes("village")) {
+    steps.push({
+      stepNumber: n++,
+      action: "place_walls",
+      description: "Walls from library",
       estimatedAssetCount: 3,
     });
   }
   if (steps.length === 0) {
     return [
-      { stepNumber: 1, action: "place_buildings", description: "Import model from library", estimatedAssetCount: 1 },
-      { stepNumber: 2, action: "add_lighting", description: "Place imported models in scene with lighting", estimatedAssetCount: 1 },
+      { stepNumber: 1, action: "place_buildings", description: "Models from library", estimatedAssetCount: 2 },
+      { stepNumber: 2, action: "add_lighting", description: "Placement + lighting", estimatedAssetCount: 1 },
     ];
   }
   steps.push({
     stepNumber: n++,
     action: "add_lighting",
-    description: "Place all imported models in scene with lighting",
+    description: "Placement + lighting",
     estimatedAssetCount: 1,
   });
   return steps.map((s, i) => ({ ...s, stepNumber: i + 1 }));
 }
 
-/** Remove planner steps that would pull sky/terrain before imports in library mode. */
 function normalizeLibraryPlanSteps(steps: AgentStep[]): AgentStep[] {
-  const filtered = steps
+  return steps
     .filter((s) => s.action !== "load_landscape")
     .map((s, i) => ({ ...s, stepNumber: i + 1 }));
-  return filtered;
 }
 
 function summarizeAssets(assets: ScannedAsset[]): string {
-  const paths = assets.map((a) => (a.path || "").trim()).filter((p) => p.startsWith("/Game/")).slice(0, 200);
+  const paths = assets
+    .map((a) => (a.path || "").trim())
+    .filter((p) => p.startsWith("/Game/"))
+    .slice(0, 200);
   if (paths.length === 0) return "No scanned assets.";
   return paths.map((p) => `- ${p}`).join("\n");
 }
 
-function isPlacementStep(action: AgentStepAction): boolean {
-  return action !== "final_check";
+function stepActionToCategory(action: AgentStepAction): SearchCategory | null {
+  switch (action) {
+    case "place_buildings":
+      return "house";
+    case "place_trees":
+      return "tree";
+    case "place_vehicles":
+      return "car";
+    case "place_walls":
+      return "wall";
+    case "add_details":
+      return "detail";
+    default:
+      return null;
+  }
 }
 
-function searchQueryForStep(step: AgentStep): string {
-  const text = `${step.action} ${step.description}`.toLowerCase();
-  if (text.includes("house") || text.includes("building") || text.includes("castle")) return "building";
-  if (text.includes("tree") || text.includes("forest")) return "tree";
-  if (text.includes("wall") || text.includes("fence")) return "wall";
-  if (text.includes("detail") || text.includes("furniture") || text.includes("bench")) return "furniture";
-  if (text.includes("vehicle") || text.includes("car")) return "car";
-  if (text.includes("light") || text.includes("lamp")) return "lamp";
-  return "prop";
+/** How many models to source per category from the plan. */
+function collectCategoryDemandFromSteps(steps: AgentStep[]): Map<SearchCategory, number> {
+  const m = new Map<SearchCategory, number>();
+  for (const s of steps) {
+    const cat = stepActionToCategory(s.action);
+    if (!cat) continue;
+    const add = Math.max(1, Math.min(12, s.estimatedAssetCount || 1));
+    m.set(cat, (m.get(cat) ?? 0) + add);
+  }
+  return m;
 }
 
-function importsPerStep(prompt: string): number {
-  if (isSimpleRequest(prompt)) return 1;
-  return 2;
+function inferCategoriesFromPrompt(prompt: string): Map<SearchCategory, number> {
+  const p = prompt.toLowerCase();
+  const m = new Map<SearchCategory, number>();
+  if (p.includes("house") || p.includes("cottage") || p.includes("castle") || p.includes("village") || /\bbuild\b/.test(p)) {
+    m.set("house", Math.max(m.get("house") ?? 0, 2));
+  }
+  if (p.includes("tree") || p.includes("forest") || p.includes("garden") || p.includes("park")) {
+    m.set("tree", Math.max(m.get("tree") ?? 0, 4));
+  }
+  if (p.includes("car") || p.includes("vehicle") || p.includes("road") || p.includes("truck")) {
+    m.set("car", Math.max(m.get("car") ?? 0, 2));
+  }
+  if (p.includes("wall") || p.includes("fence") || p.includes("gate")) {
+    m.set("wall", Math.max(m.get("wall") ?? 0, 3));
+  }
+  if (p.includes("bench") || p.includes("lamp") || p.includes("prop") || p.includes("detail")) {
+    m.set("detail", Math.max(m.get("detail") ?? 0, 3));
+  }
+  return m;
 }
 
-function expectedImportedAssetPath(name: string): string {
-  const safe = name.replace(/[^a-zA-Z0-9_]/g, "_");
-  return `/Game/GrandStudio/Imported/${safe}`;
+function mergeDemandMaps(
+  a: Map<SearchCategory, number>,
+  b: Map<SearchCategory, number>,
+): Map<SearchCategory, number> {
+  const out = new Map(a);
+  for (const [k, v] of b) {
+    out.set(k, Math.max(out.get(k) ?? 0, v));
+  }
+  return out;
 }
 
-function buildLibraryModeCodePreamble(importedPaths: string[]): string {
-  const list =
-    importedPaths.length > 0
-      ? importedPaths.map((p) => `- ${p}`).join("\n# ")
-      : "- (none yet — complete previous import steps first)";
-  return `# LIBRARY MODE EXECUTION:
-# You have NO local assets available. You must ONLY use assets imported by the agent in previous steps.
-# Imported assets to use with EditorAssetLibrary.load_asset (ONLY these paths):
-# ${list}
-# Do NOT use any /Game/Fab/, /Game/ProceduralBuildingGenerator/, /Game/Sankoolarts/, /Game/MWLandscapeAutoMaterial/, /Game/Survival_Character/, or other scanned marketplace paths.
-`;
+// ─── Search: unified candidate ───────────────────────────────────────────────
+
+type UnifiedCandidate = {
+  dedupeKey: string;
+  source: "polyhaven" | "sketchfab";
+  name: string;
+  downloadCount: number;
+  category: SearchCategory;
+  polyId?: string;
+  sketchfabUid?: string;
+};
+
+async function searchOneKeywordBothSources(
+  keyword: string,
+  category: SearchCategory,
+  into: Map<string, UnifiedCandidate>,
+): Promise<void> {
+  const poly = await searchPolyHaven(keyword, "models", 40);
+  for (const a of poly) {
+    const key = `ph:${a.id}`;
+    if (into.has(key)) continue;
+    into.set(key, {
+      dedupeKey: key,
+      source: "polyhaven",
+      name: a.name,
+      downloadCount: a.downloadCount,
+      category,
+      polyId: a.id,
+    });
+  }
+
+  const token = process.env.SKETCHFAB_API_TOKEN;
+  const sketch = await searchSketchfab(keyword, { count: 24, token: token ?? undefined });
+  for (const a of sketch) {
+    const key = `sf:${a.uid}`;
+    if (into.has(key)) continue;
+    into.set(key, {
+      dedupeKey: key,
+      source: "sketchfab",
+      name: a.name,
+      downloadCount: a.viewCount,
+      category,
+      sketchfabUid: a.uid,
+    });
+  }
 }
 
-function buildPlacementCode(
-  paths: string[],
-  step: AgentStep,
-  opts?: { libraryMode?: boolean; importedPathsForPrompt?: string[] },
+/** STEP A — Search all keywords on Poly Haven + Sketchfab; sort; pick top per category. */
+async function searchPhaseBuildCandidates(
+  demand: Map<SearchCategory, number>,
+): Promise<Map<SearchCategory, UnifiedCandidate[]>> {
+  const assetCandidates = new Map<SearchCategory, UnifiedCandidate[]>();
+
+  for (const category of CATEGORY_ORDER) {
+    const neededRaw = demand.get(category) ?? 0;
+    if (neededRaw <= 0) continue;
+
+    const bucket = new Map<string, UnifiedCandidate>();
+    const keywords = [...SEARCH_KEYWORDS_MAP[category]];
+
+    for (const kw of keywords) {
+      await searchOneKeywordBothSources(kw, category, bucket);
+    }
+
+    const sorted = [...bucket.values()].sort((a, b) => b.downloadCount - a.downloadCount);
+    const pickMin = Math.min(5, Math.max(3, Math.min(neededRaw, 5)));
+    const pickN = Math.min(5, Math.max(1, pickMin));
+    const picked = sorted.slice(0, pickN);
+    assetCandidates.set(category, picked);
+  }
+
+  return assetCandidates;
+}
+
+function flattenImportJobs(
+  assetCandidates: Map<SearchCategory, UnifiedCandidate[]>,
+): Array<{ category: SearchCategory; candidate: UnifiedCandidate }> {
+  const jobs: Array<{ category: SearchCategory; candidate: UnifiedCandidate }> = [];
+  for (const category of CATEGORY_ORDER) {
+    const list = assetCandidates.get(category) ?? [];
+    for (const c of list) {
+      jobs.push({ category, candidate: c });
+    }
+  }
+  return jobs;
+}
+
+function makeUniqueDestinationName(
+  category: SearchCategory,
+  candidate: UnifiedCandidate,
+  indexOneBased: number,
 ): string {
-  const libraryMode = opts?.libraryMode === true;
-  const importedPathsForPrompt = opts?.importedPathsForPrompt ?? paths;
-  const preamble = libraryMode ? buildLibraryModeCodePreamble(importedPathsForPrompt) : "";
-  if (paths.length === 0) {
-    return preamble + (libraryMode ? "# waiting for imports\n" : "# waiting for imports");
-  }
-  const lines: string[] = [preamble.trimEnd(), "import unreal", "editor = unreal.EditorLevelLibrary"].filter(Boolean);
-  for (let i = 0; i < paths.length; i++) {
-    const p = paths[i].replace(/'/g, "\\'");
-    lines.push(`asset_${i} = unreal.EditorAssetLibrary.load_asset('${p}')`);
-    lines.push(`if asset_${i}:`);
-    lines.push(`    actor_${i} = editor.spawn_actor_from_object(asset_${i}, unreal.Vector(${i * 300}, 0, 0))`);
-    lines.push(`    if actor_${i}: actor_${i}.set_actor_label('Agent_${step.action}_${i + 1}')`);
-  }
-  return lines.join("\n");
+  const idPart =
+    candidate.source === "polyhaven"
+      ? candidate.polyId ?? "ph"
+      : candidate.sketchfabUid ?? "sf";
+  const safe = `${category}_${candidate.source}_${idPart}_${String(indexOneBased).padStart(2, "0")}`;
+  return safe.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 60);
 }
 
-/** How many Poly Haven / Sketchfab imports to run for this step in library mode. */
-function libraryImportCountForStep(step: AgentStep, userPrompt: string): number {
-  const p = userPrompt.toLowerCase();
-  if (step.action === "add_lighting" || step.action === "final_check") return 0;
-  if (step.action === "place_trees") {
-    const m = p.match(/(\d+)\s*trees?/);
-    if (m) return Math.min(5, Math.max(1, parseInt(m[1], 10)));
-    return Math.min(5, Math.max(1, step.estimatedAssetCount || 3));
-  }
-  if (step.action === "place_buildings") return 1;
-  if (
-    step.action === "place_walls"
-    || step.action === "place_vehicles"
-    || step.action === "add_details"
-    || step.action === "load_landscape"
-  ) {
-    return Math.min(5, Math.max(1, step.estimatedAssetCount || 2));
-  }
-  return Math.min(5, Math.max(1, step.estimatedAssetCount || 1));
-}
-
-function shouldRunLibraryPolySketchfabImports(
-  assetSource: AgentAssetSource,
-  step: AgentStep,
-): boolean {
-  if (!(assetSource === "library" || assetSource === "both")) return false;
-  if (!isPlacementStep(step.action)) return false;
-  if (step.action === "final_check") return false;
-  if (assetSource === "library" && step.action === "add_lighting") return false;
-  return true;
-}
+type ImportedRecord = { path: string; category: SearchCategory; source: "polyhaven" | "sketchfab" };
 
 async function waitForRelayOrTimeout(): Promise<boolean> {
   for (let i = 0; i < RELAY_MAX_RETRIES; i++) {
@@ -337,11 +439,18 @@ async function waitForRelayOrTimeout(): Promise<boolean> {
   return false;
 }
 
-async function waitForCommand(commandId: string, timeoutMs = 180000): Promise<{ status: string; error?: string }> {
+async function waitForCommand(
+  commandId: string,
+  timeoutMs = 300000,
+): Promise<{ status: string; error?: string }> {
   const supabase = createServerClient();
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const { data } = await supabase.from("ue5_commands").select("status, error_log").eq("id", commandId).maybeSingle();
+    const { data } = await supabase
+      .from("ue5_commands")
+      .select("status, error_log")
+      .eq("id", commandId)
+      .maybeSingle();
     if (data?.status === "success") return { status: "success" };
     if (data?.status === "error") return { status: "error", error: data.error_log ?? "Unknown error" };
     await new Promise((r) => setTimeout(r, 3000));
@@ -349,18 +458,259 @@ async function waitForCommand(commandId: string, timeoutMs = 180000): Promise<{ 
   return { status: "timeout", error: "Command timeout" };
 }
 
-async function waitAfterQueuedCommand(commandsQueued: number, waitMs: number): Promise<void> {
-  console.log(`IMPORT: Waiting ${Math.round(waitMs / 1000)} seconds for UE5`);
-  await new Promise((r) => setTimeout(r, waitMs));
-  if (commandsQueued % 3 === 0) {
-    await new Promise((r) => setTimeout(r, WAIT_EVERY_3_COMMANDS_MS));
-  }
+function expectedUePath(destinationName: string): string {
+  return `/Game/GrandStudio/Imported/${destinationName}`;
 }
+
+/** STEP B — Import every selected asset with a unique UE destination name. */
+async function importPhaseExecuteAll(args: {
+  projectId: string;
+  jobs: Array<{ category: SearchCategory; candidate: UnifiedCandidate }>;
+  onEvent: (event: AgentEvent) => void | Promise<void>;
+}): Promise<{ records: ImportedRecord[]; succeeded: number }> {
+  const { projectId, jobs, onEvent } = args;
+  const records: ImportedRecord[] = [];
+  let succeeded = 0;
+  const total = jobs.length;
+  let lastQueued = 0;
+
+  for (let i = 0; i < jobs.length; i++) {
+    const { category, candidate } = jobs[i];
+    const n = i + 1;
+    const destName = makeUniqueDestinationName(category, candidate, n);
+
+    const label = `[${category}] ${candidate.name}`;
+    console.log(
+      `IMPORTING ${n}/${total}: ${destName} from ${candidate.source === "polyhaven" ? "Poly Haven" : "Sketchfab"}`,
+    );
+
+    await onEvent({
+      type: "importing",
+      asset: `${destName} (${candidate.name})`,
+      source: candidate.source,
+      current: n,
+      total,
+    });
+
+    if (!(await waitForRelayOrTimeout())) {
+      await onEvent({ type: "error", message: "Relay offline during import batch." });
+      break;
+    }
+
+    if (lastQueued > 0) {
+      const elapsed = Date.now() - lastQueued;
+      if (elapsed < WAIT_BETWEEN_IMPORT_COMMANDS_MS) {
+        await new Promise((r) => setTimeout(r, WAIT_BETWEEN_IMPORT_COMMANDS_MS - elapsed));
+      }
+    }
+
+    let cmdId: string;
+
+    if (candidate.source === "polyhaven" && candidate.polyId) {
+      const url = await downloadPolyHavenModel(candidate.polyId);
+      if (!url) {
+        console.warn(`IMPORT: skip ${candidate.polyId} — no download URL`);
+        continue;
+      }
+      const ext = url.toLowerCase().includes(".fbx") ? "fbx" : "glb";
+      const filename = `${candidate.polyId}_${n}.${ext}`;
+      const code = generateUE5ImportCode(url, filename, candidate.name, {
+        destinationName: destName,
+        replaceExisting: false,
+        skipSpawnActor: true,
+      });
+      cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+    } else if (candidate.source === "sketchfab" && candidate.sketchfabUid) {
+      const token = process.env.SKETCHFAB_API_TOKEN;
+      if (!token) {
+        console.warn("IMPORT: Sketchfab token missing, skip");
+        continue;
+      }
+      const dl = await getSketchfabDownloadUrl(candidate.sketchfabUid, token);
+      if (!dl) {
+        console.warn(`IMPORT: skip Sketchfab ${candidate.sketchfabUid}`);
+        continue;
+      }
+      const zipFile = `sf_${candidate.sketchfabUid}_${n}.zip`;
+      const code = generateSketchfabImportCode(dl, zipFile, candidate.name, {
+        destinationName: destName,
+        replaceExisting: false,
+        skipSpawnActor: true,
+      });
+      cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+    } else {
+      continue;
+    }
+
+    lastQueued = Date.now();
+    const result = await waitForCommand(cmdId);
+    if (result.status !== "success") {
+      await onEvent({
+        type: "error",
+        message: `Import failed: ${candidate.name} — ${result.error ?? result.status}`,
+      });
+      continue;
+    }
+
+    succeeded += 1;
+    const supabase = createServerClient();
+    const { data: importRow } = await supabase
+      .from("ue5_import_assets")
+      .select("ue_asset_path")
+      .eq("ue5_command_id", cmdId)
+      .maybeSingle();
+    const path = importRow?.ue_asset_path ?? expectedUePath(destName);
+    records.push({ path, category, source: candidate.source });
+  }
+
+  return { records, succeeded };
+}
+
+function escapePyPath(p: string): string {
+  return p.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+/** STEP C — One Python script: place houses on a grid, trees random, cars on a line, walls perimeter, details scattered + lighting + camera. */
+function buildConsolidatedPlacementPython(
+  records: ImportedRecord[],
+  libraryMode: boolean,
+): string {
+  const byCat = (c: SearchCategory) => records.filter((r) => r.category === c).map((r) => r.path);
+
+  const houses = byCat("house");
+  const trees = byCat("tree");
+  const cars = byCat("car");
+  const walls = byCat("wall");
+  const details = byCat("detail");
+
+  const preamble = libraryMode
+    ? `# Library/batch placement — only imported asset paths below.
+`
+    : "";
+
+  const pyList = (arr: string[]) => `[${arr.map((p) => `'${escapePyPath(p)}'`).join(", ")}]`;
+
+  return `${preamble}import unreal
+import random
+import math
+random.seed(42)
+
+editor = unreal.EditorLevelLibrary
+
+house_paths = ${pyList(houses)}
+tree_paths = ${pyList(trees)}
+car_paths = ${pyList(cars)}
+wall_paths = ${pyList(walls)}
+detail_paths = ${pyList(details)}
+
+def spawn_at(path, loc, label):
+    a = unreal.EditorAssetLibrary.load_asset(path)
+    if not a:
+        return None
+    act = editor.spawn_actor_from_object(a, loc)
+    if act:
+        act.set_actor_label(label)
+    return act
+
+# Houses — grid
+for i, p in enumerate(house_paths):
+    row, col = divmod(i, 3)
+    spawn_at(p, unreal.Vector(float(col) * 900.0, float(row) * 1100.0, 0.0), 'House_%d' % i)
+
+# Trees — pseudo-random scatter between houses
+for i, p in enumerate(tree_paths):
+    x = random.uniform(-1500.0, 3500.0)
+    y = random.uniform(-1500.0, 3500.0)
+    spawn_at(p, unreal.Vector(x, y, 0.0), 'Tree_%d' % i)
+
+# Cars — road line along X
+for i, p in enumerate(car_paths):
+    spawn_at(p, unreal.Vector(float(i) * 450.0 - 500.0, -800.0, 0.0), 'Car_%d' % i)
+
+# Walls — circle perimeter
+wall_radius = 2200.0
+for i, p in enumerate(wall_paths):
+    angle = (2.0 * math.pi / max(len(wall_paths), 1)) * float(i)
+    spawn_at(p, unreal.Vector(wall_radius * math.cos(angle), wall_radius * math.sin(angle), 0.0), 'Wall_%d' % i)
+
+# Details — random
+for i, p in enumerate(detail_paths):
+    spawn_at(p, unreal.Vector(random.uniform(0, 2800), random.uniform(0, 2800), 0.0), 'Detail_%d' % i)
+
+# Lighting — one directional sun (matches project templates)
+try:
+    sun = editor.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(-4000, -4000, 2500))
+    if sun:
+        sun.set_actor_rotation(unreal.Rotator(-50.0, 28.0, 0.0), False)
+except Exception:
+    pass
+
+# Camera for overview
+try:
+    cam = editor.spawn_actor_from_class(unreal.CameraActor, unreal.Vector(2600, -2600, 650))
+    if cam:
+        cam.set_actor_rotation(unreal.Rotator(-14.0, 42.0, 0.0), False)
+except Exception:
+    pass
+
+unreal.log('GrandStudio batch placement done.')
+`;
+}
+
+// ─── My assets: scans only, single placement ─────────────────────────────────
+
+async function runMyAssetsPipeline(args: {
+  steps: AgentStep[];
+  prompt: string;
+  projectId: string;
+  scannedAssets: ScannedAsset[];
+  onEvent: (event: AgentEvent) => void | Promise<void>;
+}): Promise<{ completed: number; placementOk: boolean }> {
+  const { steps, projectId, scannedAssets, onEvent } = args;
+  const records: ImportedRecord[] = [];
+
+  for (const step of steps) {
+    const cat = stepActionToCategory(step.action);
+    if (!cat) continue;
+    const { found } = findAssetsForAction(step.action, scannedAssets);
+    for (const p of found) {
+      records.push({ path: p, category: cat, source: "polyhaven" });
+    }
+  }
+
+  const unique = new Map<string, ImportedRecord>();
+  for (const r of records) {
+    if (!unique.has(r.path)) unique.set(r.path, r);
+  }
+  const list = [...unique.values()];
+
+  await onEvent({ type: "step_start", stepNumber: 1, description: "Place scanned assets (single pass)" });
+  const code = buildConsolidatedPlacementPython(list, false);
+  await onEvent({ type: "step_code", stepNumber: 1, code });
+
+  let placementOk = false;
+  if (await waitForRelayOrTimeout()) {
+    const cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+    const result = await waitForCommand(cmdId);
+    placementOk = result.status === "success";
+    if (!placementOk) {
+      await onEvent({ type: "error", stepNumber: 1, message: result.error ?? "Placement failed" });
+    }
+  } else {
+    await onEvent({ type: "error", message: "Relay offline" });
+  }
+
+  await onEvent({ type: "step_complete", stepNumber: 1, success: placementOk });
+  return { completed: placementOk ? steps.length : 0, placementOk };
+}
+
+// ─── Main loop ───────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: string; steps: AgentStep[] }> {
   const { prompt, projectId, scannedAssets, assetSource, onEvent } = args;
 
   const effectiveScannedAssets: ScannedAsset[] = assetSource === "library" ? [] : scannedAssets;
+
   if (assetSource === "library") {
     console.log(
       "AGENT: Asset source mode = library. Scanned assets DISABLED. Using ONLY Poly Haven and Sketchfab imports.",
@@ -371,20 +721,18 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
     assetSource === "library"
       ? `You are a scene planner. Output ONLY a JSON array of steps with: stepNumber, action, description, estimatedAssetCount.
 
-CRITICAL: The user has NO local assets. You must plan to IMPORT every 3D asset from our online library (do not name external sites in the JSON). For a house, the plan must import a house model. For trees, import tree models. Do not reference any existing /Game/ paths, user scans, Fab, or marketplace folders.
-
-Do NOT use load_landscape, sky, or atmosphere as step 1. Imports must happen FIRST; then one step to place all imported models with lighting.
-
-Valid actions: load_landscape, place_buildings, place_trees, place_walls, place_vehicles, add_lighting, add_details, final_check.
-
-Match plan complexity to request:
-- Simple request like build 1 house = 3 steps: import house, import trees, place all with lighting.
-- Medium request = 4-5 steps.
-- Complex village/city = 6-8 steps.
+The user has NO local assets. Plan which kinds of models to use: place_buildings, place_trees, place_walls, place_vehicles, add_details, add_lighting, final_check.
+Do not reference /Game/ paths. Execution will search Poly Haven + Sketchfab in batch (you only list intent).
 
 User request:
 ${prompt}`
-      : `You are a scene planner. Output ONLY a JSON array of steps with: stepNumber, action, description, estimatedAssetCount.\n\nMatch plan complexity to request:\n- Simple request like build 1 house = 2-3 steps max.\n- Medium request like small garden = 4-5 steps.\n- Complex request like village = 6-8 steps.\n- Very complex like city = 8-10 steps.\n\nUser request:\n${prompt}\n\nScanned assets:\n${summarizeAssets(effectiveScannedAssets)}`;
+      : `You are a scene planner. Output ONLY a JSON array of steps with: stepNumber, action, description, estimatedAssetCount.
+
+User request:
+${prompt}
+
+Scanned assets:
+${summarizeAssets(effectiveScannedAssets)}`;
 
   let steps: AgentStep[] = [];
   try {
@@ -406,177 +754,140 @@ ${prompt}`
 
   await onEvent({ type: "plan", steps });
 
-  let completed = 0;
-  let totalLibraryImportsSucceeded = 0;
-  let commandsQueued = 0;
-  const usedAssets = new Set<string>();
-  const allImportedPathsOrdered: string[] = [];
-
-  for (const step of steps) {
-    await onEvent({ type: "step_start", stepNumber: step.stepNumber, description: step.description });
-
-    const scannedForStep = assetSource === "library" ? [] : scannedAssets;
-    const { found } = findAssetsForAction(step.action, scannedForStep);
-    let availablePaths =
-      assetSource === "library" ? [] : [...found];
-
-    if (shouldRunLibraryPolySketchfabImports(assetSource, step)) {
-      const toImport =
-        assetSource === "library" ? libraryImportCountForStep(step, prompt) : importsPerStep(prompt);
-      console.log(
-        `AGENT LOOP: Library import for step ${step.stepNumber}, assetSource=${assetSource}, toImport=${toImport}`,
-      );
-      const searchQuery = searchQueryForStep(step);
-      let lastPolySketchfabImportQueuedAt = 0;
-
-      for (let i = 0; i < toImport; i++) {
-        await onEvent({ type: "importing", asset: searchQuery, source: "none", current: i + 1, total: toImport });
-
-        console.log(`AGENT DIRECT: Searching Poly Haven for ${searchQuery}`);
-        const polyResults = await searchPolyHaven(searchQuery, "models", 20);
-        console.log(`AGENT DIRECT: Found ${polyResults.length} results`);
-
-        let importedPath: string | null = null;
-
-        if (polyResults.length > 0) {
-          const asset = polyResults[0];
-          const downloadUrl = await downloadPolyHavenModel(asset.id);
-          console.log(`AGENT DIRECT: Download URL = ${downloadUrl?.slice(0, 100) ?? "none"}`);
-          if (downloadUrl) {
-            const importCode = generateUE5ImportCode(downloadUrl, `${asset.id}.fbx`, asset.name);
-            const relayReady = await waitForRelayOrTimeout();
-            if (!relayReady) {
-              await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected while importing." });
-              continue;
-            }
-            if (lastPolySketchfabImportQueuedAt > 0) {
-              const elapsed = Date.now() - lastPolySketchfabImportQueuedAt;
-              if (elapsed < WAIT_BETWEEN_IMPORT_COMMANDS_MS) {
-                const gap = WAIT_BETWEEN_IMPORT_COMMANDS_MS - elapsed;
-                console.log(
-                  `AGENT: Waiting ${Math.round(gap / 1000)}s before next Poly Haven/Sketchfab import (min ${WAIT_BETWEEN_IMPORT_COMMANDS_MS / 1000}s between imports).`,
-                );
-                await new Promise((r) => setTimeout(r, gap));
-              }
-            }
-            const cmdId = await queueUE5Command(projectId, importCode, { commandType: "import" });
-            lastPolySketchfabImportQueuedAt = Date.now();
-            commandsQueued += 1;
-            console.log("AGENT DIRECT: Import code queued");
-            const result = await waitForCommand(cmdId);
-            await waitAfterQueuedCommand(commandsQueued, step.action === "place_buildings" ? WAIT_AFTER_BUILDING_IMPORT_MS : WAIT_AFTER_COMMAND_MS);
-            if (result.status === "success") {
-              totalLibraryImportsSucceeded += 1;
-              const supabase = createServerClient();
-              const { data: importRow } = await supabase
-                .from("ue5_import_assets")
-                .select("ue_asset_path")
-                .eq("ue5_command_id", cmdId)
-                .maybeSingle();
-              importedPath = importRow?.ue_asset_path ?? expectedImportedAssetPath(asset.name);
-              await onEvent({ type: "importing", asset: asset.name, source: "polyhaven", current: i + 1, total: toImport });
-            }
-          }
-        } else {
-          console.log(`AGENT DIRECT: Searching Sketchfab for ${searchQuery}`);
-          const sketchResults = await searchSketchfab(searchQuery, {
-            count: 12,
-            token: process.env.SKETCHFAB_API_TOKEN ?? undefined,
-          });
-          console.log(`AGENT DIRECT: Found ${sketchResults.length} results`);
-          if (sketchResults.length > 0) {
-            const skAsset = sketchResults[0];
-            const token = process.env.SKETCHFAB_API_TOKEN;
-            const sketchfabUrl = token ? await getSketchfabDownloadUrl(skAsset.uid, token) : null;
-            console.log(`AGENT DIRECT: Download URL = ${sketchfabUrl?.slice(0, 100) ?? "none"}`);
-            if (sketchfabUrl) {
-              const importCode = generateSketchfabImportCode(sketchfabUrl, `${skAsset.uid}.zip`, skAsset.name);
-              const relayReady = await waitForRelayOrTimeout();
-              if (!relayReady) {
-                await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected while importing." });
-                continue;
-              }
-              if (lastPolySketchfabImportQueuedAt > 0) {
-                const elapsed = Date.now() - lastPolySketchfabImportQueuedAt;
-                if (elapsed < WAIT_BETWEEN_IMPORT_COMMANDS_MS) {
-                  const gap = WAIT_BETWEEN_IMPORT_COMMANDS_MS - elapsed;
-                  console.log(
-                    `AGENT: Waiting ${Math.round(gap / 1000)}s before next Poly Haven/Sketchfab import (min ${WAIT_BETWEEN_IMPORT_COMMANDS_MS / 1000}s between imports).`,
-                  );
-                  await new Promise((r) => setTimeout(r, gap));
-                }
-              }
-              const cmdId = await queueUE5Command(projectId, importCode, { commandType: "import" });
-              lastPolySketchfabImportQueuedAt = Date.now();
-              commandsQueued += 1;
-              console.log("AGENT DIRECT: Import code queued");
-              const result = await waitForCommand(cmdId);
-              await waitAfterQueuedCommand(commandsQueued, step.action === "place_buildings" ? WAIT_AFTER_BUILDING_IMPORT_MS : WAIT_AFTER_COMMAND_MS);
-              if (result.status === "success") {
-                totalLibraryImportsSucceeded += 1;
-                const supabase = createServerClient();
-                const { data: importRow } = await supabase
-                  .from("ue5_import_assets")
-                  .select("ue_asset_path")
-                  .eq("ue5_command_id", cmdId)
-                  .maybeSingle();
-                importedPath = importRow?.ue_asset_path ?? expectedImportedAssetPath(skAsset.name);
-                await onEvent({ type: "importing", asset: skAsset.name, source: "sketchfab", current: i + 1, total: toImport });
-              }
-            }
-          }
-        }
-
-        if (importedPath) {
-          availablePaths.push(importedPath);
-          usedAssets.add(importedPath);
-          allImportedPathsOrdered.push(importedPath);
-        }
-      }
-    }
-
-    if (assetSource === "library") {
-      availablePaths = filterPathsForLibraryMode(availablePaths);
-    }
-
-    const importedPathsForPrompt = [...new Set(allImportedPathsOrdered)];
-    let stepAssets = [...new Set(availablePaths)].slice(0, 6);
-    let code = buildPlacementCode(stepAssets, step, {
-      libraryMode: assetSource === "library",
-      importedPathsForPrompt,
+  if (assetSource === "my_assets") {
+    const { completed, placementOk } = await runMyAssetsPipeline({
+      steps,
+      prompt,
+      projectId,
+      scannedAssets,
+      onEvent,
     });
-    if (assetSource === "library" && codeViolatesLibraryMode(code)) {
-      console.warn(
-        "AGENT: REJECTED step code — contained forbidden scanned/asset paths. Regenerating from imported paths only.",
-      );
-      stepAssets = filterPathsForLibraryMode(stepAssets);
-      code = buildPlacementCode(stepAssets, step, {
-        libraryMode: true,
-        importedPathsForPrompt,
-      });
-    }
-    await onEvent({ type: "step_code", stepNumber: step.stepNumber, code });
-
-    let success = false;
-    const relayReady = await waitForRelayOrTimeout();
-    if (!relayReady) {
-      await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected; skipped step command." });
-    } else {
-      const cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
-      commandsQueued += 1;
-      const result = await waitForCommand(cmdId);
-      await waitAfterQueuedCommand(commandsQueued, WAIT_AFTER_COMMAND_MS);
-      success = result.status === "success";
-      if (!success) {
-        await onEvent({ type: "error", stepNumber: step.stepNumber, message: `Step command failed: ${result.error || "Unknown error"}` });
+    let screenshotUrl: string | null = null;
+    if (placementOk) {
+      await onEvent({ type: "step_start", stepNumber: 2, description: "Screenshot" });
+      if (await waitForRelayOrTimeout()) {
+        const sid = await queueUE5Command(projectId, "", { commandType: "screenshot" });
+        await waitForCommand(sid);
+        const supabase = createServerClient();
+        const { data } = await supabase
+          .from("ue5_commands")
+          .select("screenshot_url")
+          .eq("id", sid)
+          .maybeSingle();
+        screenshotUrl = data?.screenshot_url ?? null;
       }
+      await onEvent({ type: "step_screenshot", stepNumber: 2, screenshotUrl });
     }
-
-    await onEvent({ type: "step_complete", stepNumber: step.stepNumber, success });
-    if (success) completed += 1;
+    const summary = `My-assets pipeline: placement ${placementOk ? "ok" : "failed"}. Steps: ${steps.length}.`;
+    await onEvent({ type: "complete", summary });
+    return { summary, steps };
   }
 
-  const summary = `Scene agent finished ${completed}/${steps.length} steps. Library imports succeeded: ${totalLibraryImportsSucceeded}. Unique asset paths used: ${usedAssets.size}. Asset source: ${assetSource}.`;
+  // ─── library + both: Phase A → B → C → D ───
+
+  let demand = collectCategoryDemandFromSteps(steps);
+  demand = mergeDemandMaps(demand, inferCategoriesFromPrompt(prompt));
+  if ([...demand.values()].every((v) => v <= 0)) {
+    demand.set("house", 2);
+    demand.set("tree", 3);
+  }
+
+  await onEvent({ type: "step_start", stepNumber: 1, description: "Phase A — Search Poly Haven + Sketchfab (all keywords)" });
+  const assetCandidates = await searchPhaseBuildCandidates(demand);
+  const totalCandidates = [...assetCandidates.values()].reduce((a, b) => a + b.length, 0);
+  console.log(`AGENT: Search phase done. Candidate models: ${totalCandidates} across categories.`);
+
+  await onEvent({ type: "step_complete", stepNumber: 1, success: totalCandidates > 0 });
+  if (totalCandidates === 0) {
+    const summary = "Search phase found no models. Check API keys / network.";
+    await onEvent({ type: "error", message: summary });
+    await onEvent({ type: "complete", summary });
+    return { summary, steps };
+  }
+
+  const jobs = flattenImportJobs(assetCandidates);
+
+  await onEvent({ type: "step_start", stepNumber: 2, description: "Phase B — Import all models (unique names)" });
+  const { records: importedLib, succeeded } = await importPhaseExecuteAll({
+    projectId,
+    jobs,
+    onEvent,
+  });
+
+  let records: ImportedRecord[] = [...importedLib];
+
+  if (assetSource === "both") {
+    for (const step of steps) {
+      const cat = stepActionToCategory(step.action);
+      if (!cat) continue;
+      const { found } = findAssetsForAction(step.action, scannedAssets);
+      for (const p of filterPathsForLibraryMode(found)) {
+        records.push({ path: p, category: cat, source: "polyhaven" });
+      }
+    }
+  }
+
+  const dedupe = new Map<string, ImportedRecord>();
+  for (const r of records) {
+    if (!dedupe.has(r.path)) dedupe.set(r.path, r);
+  }
+  records = [...dedupe.values()];
+
+  await onEvent({ type: "step_complete", stepNumber: 2, success: succeeded > 0 });
+
+  if (records.length === 0) {
+    const summary =
+      "Nothing to place: every import failed and no scanned assets were available for this plan.";
+    await onEvent({ type: "error", message: summary });
+    await onEvent({ type: "complete", summary });
+    return { summary, steps };
+  }
+
+  await onEvent({ type: "step_start", stepNumber: 3, description: "Phase C — Place all (single UE command)" });
+  let code = buildConsolidatedPlacementPython(records, assetSource === "library");
+  if (assetSource === "library" && codeViolatesLibraryMode(code)) {
+    console.warn("AGENT: Stripped forbidden paths from placement code.");
+    const safeRec = records.filter((r) =>
+      !FORBIDDEN_LIBRARY_UE_PATH_PREFIXES.some((pre) => r.path.includes(pre)),
+    );
+    code = buildConsolidatedPlacementPython(safeRec, true);
+  }
+
+  await onEvent({ type: "step_code", stepNumber: 3, code });
+
+  let placementOk = false;
+  if (await waitForRelayOrTimeout()) {
+    const cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+    const result = await waitForCommand(cmdId, 600000);
+    placementOk = result.status === "success";
+    if (!placementOk) {
+      await onEvent({ type: "error", stepNumber: 3, message: result.error ?? "Placement command failed" });
+    }
+  } else {
+    await onEvent({ type: "error", message: "Relay offline for placement" });
+  }
+
+  await onEvent({ type: "step_complete", stepNumber: 3, success: placementOk });
+
+  let screenshotUrl: string | null = null;
+  if (placementOk) {
+    await onEvent({ type: "step_start", stepNumber: 4, description: "Phase D — Screenshot" });
+    if (await waitForRelayOrTimeout()) {
+      const sid = await queueUE5Command(projectId, "", { commandType: "screenshot" });
+      await waitForCommand(sid);
+      const supabase = createServerClient();
+      const { data } = await supabase
+        .from("ue5_commands")
+        .select("screenshot_url")
+        .eq("id", sid)
+        .maybeSingle();
+      screenshotUrl = data?.screenshot_url ?? null;
+    }
+    await onEvent({ type: "step_screenshot", stepNumber: 4, screenshotUrl });
+    await onEvent({ type: "step_complete", stepNumber: 4, success: !!screenshotUrl });
+  }
+
+  const summary = `Phased agent: search → import (${succeeded}/${jobs.length}) → place → screenshot. Records in scene: ${records.length}. Asset source: ${assetSource}.`;
   await onEvent({ type: "complete", summary });
   return { summary, steps };
 }
