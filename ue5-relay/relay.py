@@ -27,6 +27,10 @@ UE5_URL = os.getenv("UE5_REMOTE_CONTROL_URL", "http://localhost:30010")
 WEB_APP_URL = os.getenv("NEXT_PUBLIC_SITE_URL", "http://localhost:3000").rstrip("/")
 SCAN_FILE_PATH = "C:/GrandStudio/asset_scan.json"
 POLL_INTERVAL = int(os.getenv("RELAY_POLL_INTERVAL", "2"))
+# During Poly Haven / Sketchfab imports UE5 may not respond in time; keep heartbeat "connected".
+FORCE_HEARTBEAT_UE5_CONNECTED = False
+IMPORT_MAX_ATTEMPTS = 5
+IMPORT_RETRY_WAIT_SEC = 10
 
 supabase = None
 
@@ -67,13 +71,16 @@ def check_ue5_connection_silent():
 
 
 def send_heartbeat():
-    """Send heartbeat to Supabase so website knows relay is alive"""
+    """Send heartbeat to Supabase so website knows relay is alive.
+    During import commands, keep ue5_connected True so UI does not flash disconnected while UE5 is busy."""
+    global FORCE_HEARTBEAT_UE5_CONNECTED
     try:
+        ue5_ok = True if FORCE_HEARTBEAT_UE5_CONNECTED else check_ue5_connection_silent()
         supabase.table("relay_heartbeat").upsert(
             {
                 "id": "local-relay",
                 "last_ping": datetime.now(timezone.utc).isoformat(),
-                "ue5_connected": check_ue5_connection_silent(),
+                "ue5_connected": ue5_ok,
                 "relay_version": "1.0.0",
             },
             on_conflict="id",
@@ -107,8 +114,46 @@ def execute_in_ue5(python_code, timeout=30):
             "success": False,
             "error": "Cannot connect to UE5. Is Unreal Engine running?",
         }
+    except requests.exceptions.Timeout as e:
+        return {"success": False, "error": str(e), "is_timeout": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        err = str(e)
+        is_timeout = "timed out" in err.lower() or "Read timed out" in err
+        return {"success": False, "error": err, "is_timeout": is_timeout}
+
+
+def _is_timeout_result(result):
+    if not result or result.get("success"):
+        return False
+    if result.get("is_timeout"):
+        return True
+    err = (result.get("error") or "").lower()
+    return "timed out" in err or "read timed out" in err
+
+
+def execute_import_in_ue5_with_retry(python_code, timeout=120):
+    """Import commands: retry on HTTP read timeout — UE5 is often still importing, not crashed."""
+    last = None
+    for attempt in range(1, IMPORT_MAX_ATTEMPTS + 1):
+        last = execute_in_ue5(python_code, timeout=timeout)
+        if last.get("success"):
+            return last
+        if not _is_timeout_result(last):
+            return last
+        print("         UE5 is busy processing, waiting… (timeout does not mean UE5 crashed)")
+        print(
+            f"         Import in progress, UE5 is busy. Waiting… (attempt {attempt}/{IMPORT_MAX_ATTEMPTS})"
+        )
+        if attempt >= IMPORT_MAX_ATTEMPTS:
+            return last
+        time.sleep(IMPORT_RETRY_WAIT_SEC)
+        if check_ue5_connection_silent():
+            print("         UE5 ping OK after wait, pausing 10s before retry…")
+            time.sleep(IMPORT_RETRY_WAIT_SEC)
+        else:
+            print("         UE5 ping failed — connection may be lost")
+            return last
+    return last
 
 
 def capture_screenshot():
@@ -242,6 +287,7 @@ def upload_scan_results_if_present(project_id):
 
 def poll_commands():
     """Main polling loop - checks Supabase for pending UE5 commands"""
+    global FORCE_HEARTBEAT_UE5_CONNECTED
     print("")
     print("=" * 55)
     print("  Grand Studio — UE5 Relay Bridge")
@@ -303,12 +349,26 @@ def poll_commands():
                 else:
                     # Large FBX/GLB imports can exceed 30s; keep 30s for normal commands.
                     import_timeout = 120 if cmd_type == "import" else 30
-                    ue5_result = execute_in_ue5(code, timeout=import_timeout)
+                    if cmd_type == "import":
+                        FORCE_HEARTBEAT_UE5_CONNECTED = True
+                        try:
+                            ue5_result = execute_import_in_ue5_with_retry(
+                                code, timeout=import_timeout
+                            )
+                        finally:
+                            FORCE_HEARTBEAT_UE5_CONNECTED = False
+                    else:
+                        ue5_result = execute_in_ue5(code, timeout=import_timeout)
 
                 completed_at = datetime.now(timezone.utc).isoformat()
                 if ue5_result["success"]:
                     ue5_connected = True
                     print("         Success!")
+                    if cmd_type == "import":
+                        print(
+                            "         Import finished; waiting 5s for UE5 to stabilize before next command…"
+                        )
+                        time.sleep(5)
                     update_data = {
                         "status": "success",
                         "result": json.dumps(ue5_result.get("result", {})),

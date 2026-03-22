@@ -54,6 +54,8 @@ type RunAgentLoopArgs = {
 
 const WAIT_AFTER_COMMAND_MS = 10000;
 const WAIT_AFTER_BUILDING_IMPORT_MS = 20000;
+/** Minimum time between queued Poly Haven / Sketchfab import commands so UE5 can finish one import. */
+const WAIT_BETWEEN_IMPORT_COMMANDS_MS = 15000;
 const WAIT_EVERY_3_COMMANDS_MS = 15000;
 const RELAY_RETRY_MS = 15000;
 const RELAY_MAX_RETRIES = 10;
@@ -235,6 +237,7 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
       console.log(`AGENT LOOP: About to call library import for step ${step.stepNumber}, assetSource=${assetSource}`);
       const searchQuery = searchQueryForStep(step);
       const toImport = importsPerStep(prompt);
+      let lastPolySketchfabImportQueuedAt = 0;
 
       for (let i = 0; i < toImport; i++) {
         await onEvent({ type: "importing", asset: searchQuery, source: "none", current: i + 1, total: toImport });
@@ -256,7 +259,18 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
               await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected while importing." });
               continue;
             }
+            if (lastPolySketchfabImportQueuedAt > 0) {
+              const elapsed = Date.now() - lastPolySketchfabImportQueuedAt;
+              if (elapsed < WAIT_BETWEEN_IMPORT_COMMANDS_MS) {
+                const gap = WAIT_BETWEEN_IMPORT_COMMANDS_MS - elapsed;
+                console.log(
+                  `AGENT: Waiting ${Math.round(gap / 1000)}s before next Poly Haven/Sketchfab import (min ${WAIT_BETWEEN_IMPORT_COMMANDS_MS / 1000}s between imports).`,
+                );
+                await new Promise((r) => setTimeout(r, gap));
+              }
+            }
             const cmdId = await queueUE5Command(projectId, importCode, { commandType: "import" });
+            lastPolySketchfabImportQueuedAt = Date.now();
             commandsQueued += 1;
             console.log("AGENT DIRECT: Import code queued");
             const result = await waitForCommand(cmdId);
@@ -292,7 +306,18 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
                 await onEvent({ type: "error", stepNumber: step.stepNumber, message: "Relay disconnected while importing." });
                 continue;
               }
+              if (lastPolySketchfabImportQueuedAt > 0) {
+                const elapsed = Date.now() - lastPolySketchfabImportQueuedAt;
+                if (elapsed < WAIT_BETWEEN_IMPORT_COMMANDS_MS) {
+                  const gap = WAIT_BETWEEN_IMPORT_COMMANDS_MS - elapsed;
+                  console.log(
+                    `AGENT: Waiting ${Math.round(gap / 1000)}s before next Poly Haven/Sketchfab import (min ${WAIT_BETWEEN_IMPORT_COMMANDS_MS / 1000}s between imports).`,
+                  );
+                  await new Promise((r) => setTimeout(r, gap));
+                }
+              }
               const cmdId = await queueUE5Command(projectId, importCode, { commandType: "import" });
+              lastPolySketchfabImportQueuedAt = Date.now();
               commandsQueued += 1;
               console.log("AGENT DIRECT: Import code queued");
               const result = await waitForCommand(cmdId);
