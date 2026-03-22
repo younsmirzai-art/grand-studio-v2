@@ -49,3 +49,6 @@ export type SceneObjectCategory =
   | "infrastructure"
   | "details"
   | "characters";
+
+/** UE5 asset source for scene build engine */
+export type AssetSourceMode = "my_assets" | "library" | "both";

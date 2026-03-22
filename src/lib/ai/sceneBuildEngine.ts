@@ -5,9 +5,14 @@ import { searchAssets as searchPolyHaven } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage as downloadPolyHavenModel } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { isRelayOnline } from "@/lib/ue5/relayStatus";
-import type { SceneRequest, SceneObject, SceneObjectCategory } from "@/lib/ai/sceneSchema";
-
-export type AssetSourceMode = "my_assets" | "library" | "both";
+import type { SceneRequest, SceneObject, SceneObjectCategory, AssetSourceMode } from "@/lib/ai/sceneSchema";
+import {
+  updateAgentProgress,
+  type SerializedAssetCandidate,
+  type ImportedAssetRecord,
+  type SearchSnapshot,
+  parseSearchSnapshot,
+} from "@/lib/ai/agentProgress";
 
 type ScannedAsset = { path?: string; name?: string; type?: string };
 
@@ -17,7 +22,34 @@ export type SceneBuildProgressEvent =
   | { type: "importing"; current: number; total: number; name: string; source: string }
   | { type: "placing"; message: string }
   | { type: "complete"; summary: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "chunk_pause"; message: string; sessionId: string };
+
+/** 240s work per Vercel request (60s buffer before 300s limit) */
+export const CHUNK_DEADLINE_MS = 240_000;
+
+export type BuildSceneOutcome = "completed" | "paused" | "error";
+
+export type BuildSceneParams = {
+  sceneRequest: SceneRequest;
+  projectId: string;
+  userId: string;
+  assetSource: AssetSourceMode;
+  scannedAssets: ScannedAsset[];
+  progressCallback: (ev: SceneBuildProgressEvent) => void | Promise<void>;
+  chunkStartTime: number;
+  sessionId: string;
+  progressRowId: string;
+  cumulativeElapsedMsBase: number;
+  resumePhase: "search" | "import" | "place" | "screenshot" | null;
+  resumeSearchSnapshot: SearchSnapshot | null;
+  resumeImportQueue: SerializedAssetCandidate[];
+  resumeImportedAssets: ImportedAssetRecord[];
+  resumeImportedCount: number;
+  resumeTotalImports: number;
+  resumePlacementDone: boolean;
+  resumeScreenshotDone: boolean;
+};
 
 const SEARCH_MAP: Record<string, string[]> = {
   house: ["house", "cottage", "cabin", "residential building"],
@@ -58,7 +90,8 @@ const NATURE_TYPES = new Set([
   "rock",
 ]);
 
-const MAX_IMPORTS_PER_SCENE = 25;
+/** No artificial cap — chunked execution handles long runs */
+const MAX_IMPORTS_PER_SCENE = 9999;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -437,105 +470,234 @@ const PRIORITY: SceneObjectCategory[] = [
   "characters",
 ];
 
+type FlatRow = { category: SceneObjectCategory; obj: SceneObject };
+
+export function checkDeadline(chunkStartTime: number): boolean {
+  return Date.now() - chunkStartTime >= CHUNK_DEADLINE_MS;
+}
+
+function logDeadlineCheck(chunkStartTime: number): void {
+  const elapsed = Date.now() - chunkStartTime;
+  const remaining = CHUNK_DEADLINE_MS - elapsed;
+  const safe = elapsed < CHUNK_DEADLINE_MS;
+  console.log(
+    `[sceneBuild] DEADLINE CHECK: elapsed=${Math.round(elapsed / 1000)}s, remaining=${Math.round(remaining / 1000)}s, safe=${safe}`,
+  );
+}
+
+function serCandidate(c: AssetCandidate): SerializedAssetCandidate {
+  return {
+    id: c.id,
+    name: c.name,
+    source: c.source,
+    objectType: c.objectType,
+    category: c.category,
+    polyId: c.polyId,
+    sketchfabUid: c.sketchfabUid,
+    downloadCount: c.downloadCount,
+    scanPath: c.scanPath ?? null,
+  };
+}
+
+function deserCandidate(c: SerializedAssetCandidate): AssetCandidate {
+  return {
+    id: c.id,
+    name: c.name,
+    source: c.source,
+    objectType: c.objectType,
+    category: c.category as SceneObjectCategory,
+    polyId: c.polyId,
+    sketchfabUid: c.sketchfabUid,
+    downloadCount: c.downloadCount,
+    scanPath: c.scanPath ?? null,
+  };
+}
+
+function snapshotToSearchJson(snap: SearchSnapshot): object {
+  return {
+    pathsReadyByType: snap.pathsReadyByType,
+    candidateByKey: snap.candidateByKey,
+    searchRowIndex: snap.searchRowIndex,
+    rowsSerialized: snap.rowsSerialized,
+  };
+}
+
 /**
- * Main engine: search → import → place → screenshot. No AI calls.
+ * Chunked engine: search → import → place → screenshot. Resumes via BuildSceneParams.
  */
-export async function buildScene(
-  sceneRequest: SceneRequest,
-  projectId: string,
-  _userId: string,
-  assetSource: AssetSourceMode,
-  scannedAssets: ScannedAsset[],
-  progressCallback: (ev: SceneBuildProgressEvent) => void | Promise<void>,
-): Promise<void> {
+export async function buildScene(params: BuildSceneParams): Promise<{
+  outcome: BuildSceneOutcome;
+  sessionId: string;
+  totalElapsedMs?: number;
+}> {
+  const {
+    sceneRequest,
+    projectId,
+    assetSource,
+    scannedAssets,
+    chunkStartTime,
+    sessionId,
+    progressRowId,
+} = params;
+
   const emit = async (ev: SceneBuildProgressEvent) => {
-    await progressCallback(ev);
+    await params.progressCallback(ev);
   };
 
-  const rows = flattenSceneObjects(sceneRequest);
+  const rows: FlatRow[] = flattenSceneObjects(sceneRequest);
   rows.sort((a, b) => PRIORITY.indexOf(a.category) - PRIORITY.indexOf(b.category));
+
+  let cumulativeBase = params.cumulativeElapsedMsBase;
+  const log = (msg: string) => console.log(`[sceneBuild] ${msg}`);
+  const chunkElapsed0 = Date.now() - chunkStartTime;
+  log(
+    `CHUNK START: session=${sessionId}, resuming from phase=${params.resumePhase ?? "new"}, imported=${params.resumeImportedCount}/${params.resumeTotalImports || 0}, elapsed=${Math.round(chunkElapsed0 / 1000)}s`,
+  );
 
   const candidateByKey = new Map<string, AssetCandidate>();
   const pathsReadyByType = new Map<string, string[]>();
 
-  for (const { category, obj } of rows) {
-    const t = obj.type.toLowerCase();
-    const needUnique = Math.min(5, Math.max(1, obj.count));
-    let scanPaths: string[] = [];
-
-    if (assetSource !== "library") {
-      scanPaths = collectScannedForType(scannedAssets, obj.type, needUnique * 2);
+  let searchRowIndex = 0;
+  if (params.resumePhase === "import" || params.resumePhase === "place" || params.resumePhase === "screenshot") {
+    const snap = params.resumeSearchSnapshot;
+    if (snap) {
+      Object.entries(snap.pathsReadyByType).forEach(([k, v]) => pathsReadyByType.set(k, [...v]));
+      Object.values(snap.candidateByKey).forEach((sc) => {
+        candidateByKey.set(sc.id, deserCandidate(sc));
+      });
     }
+  } else if (params.resumeSearchSnapshot && params.resumePhase === "search") {
+    const snap = params.resumeSearchSnapshot;
+    searchRowIndex = snap.searchRowIndex;
+    Object.entries(snap.pathsReadyByType).forEach(([k, v]) => pathsReadyByType.set(k, [...v]));
+    Object.values(snap.candidateByKey).forEach((sc) => {
+      candidateByKey.set(sc.id, deserCandidate(sc));
+    });
+  }
 
-    let libraryHits: LibraryHit[] = [];
-    if (assetSource === "my_assets") {
-      await emit({
-        type: "search",
-        message: `Using your assets for "${obj.type}"… found ${scanPaths.length} matches`,
-      });
-    } else if (assetSource === "library") {
-      await emit({
-        type: "search",
-        message: `Searching libraries for "${obj.type}"…`,
-      });
-      libraryHits = await searchLibrariesForType(obj.type);
-      await emit({
-        type: "search",
-        message: `Searching for ${obj.type}… found ${libraryHits.length} options`,
-      });
-    } else {
-      await emit({
-        type: "search",
-        message: `Checking scans + libraries for "${obj.type}"…`,
-      });
-      if (scanPaths.length < 2) {
+  const phaseStart = params.resumePhase ?? "search";
+
+  if (phaseStart === "search") {
+    for (let ri = searchRowIndex; ri < rows.length; ri++) {
+      logDeadlineCheck(chunkStartTime);
+      if (checkDeadline(chunkStartTime)) {
+        const snap: SearchSnapshot = {
+          pathsReadyByType: Object.fromEntries(pathsReadyByType),
+          candidateByKey: Object.fromEntries([...candidateByKey.entries()].map(([k, v]) => [k, serCandidate(v)])),
+          searchRowIndex: ri,
+          rowsSerialized: JSON.stringify(rows),
+        };
+        await updateAgentProgress(progressRowId, {
+          phase: "search",
+          search_results: snapshotToSearchJson(snap),
+          cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
+        });
+        await emit({
+          type: "chunk_pause",
+          message: "Saving progress, will continue automatically…",
+          sessionId,
+        });
+        return { outcome: "paused", sessionId };
+      }
+
+      const { category, obj } = rows[ri];
+      const t = obj.type.toLowerCase();
+      const needUnique = Math.min(5, Math.max(1, obj.count));
+      let scanPaths: string[] = [];
+      if (assetSource !== "library") {
+        scanPaths = collectScannedForType(scannedAssets, obj.type, needUnique * 2);
+      }
+
+      let libraryHits: LibraryHit[] = [];
+      if (assetSource === "my_assets") {
+        await emit({
+          type: "search",
+          message: `Using your assets for "${obj.type}"… found ${scanPaths.length} matches`,
+        });
+      } else if (assetSource === "library") {
+        await emit({ type: "search", message: `Searching libraries for "${obj.type}"…` });
+        logDeadlineCheck(chunkStartTime);
+        if (checkDeadline(chunkStartTime)) {
+          const snap: SearchSnapshot = {
+            pathsReadyByType: Object.fromEntries(pathsReadyByType),
+            candidateByKey: Object.fromEntries([...candidateByKey.entries()].map(([k, v]) => [k, serCandidate(v)])),
+            searchRowIndex: ri,
+            rowsSerialized: JSON.stringify(rows),
+          };
+          await updateAgentProgress(progressRowId, {
+            phase: "search",
+            search_results: snapshotToSearchJson(snap),
+            cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
+          });
+          await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
+          return { outcome: "paused", sessionId };
+        }
         libraryHits = await searchLibrariesForType(obj.type);
-      }
-      await emit({
-        type: "search",
-        message: `Searching for ${obj.type}… found ${scanPaths.length} scanned + ${libraryHits.length} library options`,
-      });
-    }
-
-    const chosenLib = libraryHits.slice(0, needUnique);
-
-    for (const h of chosenLib) {
-      const cand: AssetCandidate = {
-        id: h.key,
-        name: h.name,
-        source: h.source,
-        objectType: obj.type,
-        category,
-        polyId: h.polyId,
-        sketchfabUid: h.sketchfabUid,
-        downloadCount: h.downloadCount,
-        scanPath: null,
-      };
-      candidateByKey.set(h.key, cand);
-      if (h.source === "polyhaven" && h.polyId) {
-        cand.downloadUrl = null;
-      }
-    }
-
-    for (const p of scanPaths) {
-      const key = `sc:${p}`;
-      if (!candidateByKey.has(key)) {
-        candidateByKey.set(key, {
-          id: key,
-          name: p.split("/").pop() ?? p,
-          source: "scanned",
-          objectType: obj.type,
-          category,
-          scanPath: p,
-          downloadCount: 0,
+        await emit({
+          type: "search",
+          message: `Searching for ${obj.type}… found ${libraryHits.length} options`,
+        });
+      } else {
+        await emit({ type: "search", message: `Checking scans + libraries for "${obj.type}"…` });
+        if (scanPaths.length < 2) {
+          logDeadlineCheck(chunkStartTime);
+          if (checkDeadline(chunkStartTime)) {
+            const snap: SearchSnapshot = {
+              pathsReadyByType: Object.fromEntries(pathsReadyByType),
+              candidateByKey: Object.fromEntries([...candidateByKey.entries()].map(([k, v]) => [k, serCandidate(v)])),
+              searchRowIndex: ri,
+              rowsSerialized: JSON.stringify(rows),
+            };
+            await updateAgentProgress(progressRowId, {
+              phase: "search",
+              search_results: snapshotToSearchJson(snap),
+              cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
+            });
+            await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
+            return { outcome: "paused", sessionId };
+          }
+          libraryHits = await searchLibrariesForType(obj.type);
+        }
+        await emit({
+          type: "search",
+          message: `Searching for ${obj.type}… found ${scanPaths.length} scanned + ${libraryHits.length} library options`,
         });
       }
-    }
 
-    if (!pathsReadyByType.has(t)) pathsReadyByType.set(t, []);
-    const bucket = pathsReadyByType.get(t)!;
-    for (const p of scanPaths) {
-      if (!bucket.includes(p)) bucket.push(p);
+      const chosenLib = libraryHits.slice(0, needUnique);
+      for (const h of chosenLib) {
+        const cand: AssetCandidate = {
+          id: h.key,
+          name: h.name,
+          source: h.source,
+          objectType: obj.type,
+          category,
+          polyId: h.polyId,
+          sketchfabUid: h.sketchfabUid,
+          downloadCount: h.downloadCount,
+          scanPath: null,
+        };
+        candidateByKey.set(h.key, cand);
+      }
+      for (const p of scanPaths) {
+        const key = `sc:${p}`;
+        if (!candidateByKey.has(key)) {
+          candidateByKey.set(key, {
+            id: key,
+            name: p.split("/").pop() ?? p,
+            source: "scanned",
+            objectType: obj.type,
+            category,
+            scanPath: p,
+            downloadCount: 0,
+          });
+        }
+      }
+      if (!pathsReadyByType.has(t)) pathsReadyByType.set(t, []);
+      const bucket = pathsReadyByType.get(t)!;
+      for (const p of scanPaths) {
+        if (!bucket.includes(p)) bucket.push(p);
+      }
     }
   }
 
@@ -544,7 +706,6 @@ export async function buildScene(
     if (c.source === "scanned" && c.scanPath) continue;
     importJobs.push(c);
   }
-
   const seenJob = new Set<string>();
   const dedupedJobs: AssetCandidate[] = [];
   for (const j of importJobs) {
@@ -552,7 +713,6 @@ export async function buildScene(
     seenJob.add(j.id);
     dedupedJobs.push(j);
   }
-
   const prioritized = [...dedupedJobs].sort((a, b) => {
     const pa = PRIORITY.indexOf(a.category);
     const pb = PRIORITY.indexOf(b.category);
@@ -560,94 +720,143 @@ export async function buildScene(
     return b.downloadCount - a.downloadCount;
   });
 
-  const toImport = prioritized.slice(0, MAX_IMPORTS_PER_SCENE);
+  let toImport: AssetCandidate[] = prioritized.slice(0, MAX_IMPORTS_PER_SCENE);
+  if (params.resumeImportQueue.length > 0) {
+    toImport = params.resumeImportQueue.map(deserCandidate);
+  } else {
+    await updateAgentProgress(progressRowId, {
+      phase: "import",
+      import_queue: toImport.map(serCandidate),
+      total_imports: toImport.length,
+      imported_count: params.resumeImportedCount,
+      search_results: {
+        pathsReadyByType: Object.fromEntries(pathsReadyByType),
+        candidateByKey: Object.fromEntries([...candidateByKey.entries()].map(([k, v]) => [k, serCandidate(v)])),
+        searchRowIndex: rows.length,
+        rowsSerialized: JSON.stringify(rows),
+      },
+    });
+  }
+
   const totalImports = toImport.length;
-  let queuedImports = 0;
-  const pathByJobId = new Map<string, string>();
+  let importedAssets: ImportedAssetRecord[] = [...params.resumeImportedAssets];
+  let importedCount = params.resumeImportedCount;
 
-  for (let i = 0; i < toImport.length; i++) {
-    const job = toImport[i];
-    const cur = i + 1;
+  if (phaseStart === "import" || phaseStart === "search") {
+    for (let i = importedCount; i < toImport.length; i++) {
+      logDeadlineCheck(chunkStartTime);
+      if (checkDeadline(chunkStartTime)) {
+        log(`CHUNK PAUSE: saving progress at import ${importedCount}/${totalImports}, will resume in next request`);
+        await updateAgentProgress(progressRowId, {
+          phase: "import",
+          import_queue: toImport.map(serCandidate),
+          imported_assets: importedAssets,
+          imported_count: importedCount,
+          total_imports: totalImports,
+          search_results: {
+            pathsReadyByType: Object.fromEntries(pathsReadyByType),
+            candidateByKey: Object.fromEntries([...candidateByKey.entries()].map(([k, v]) => [k, serCandidate(v)])),
+            searchRowIndex: rows.length,
+            rowsSerialized: JSON.stringify(rows),
+          },
+          cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
+        });
+        await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
+        return { outcome: "paused", sessionId };
+      }
 
-    if (!(await waitRelayWithRetries())) {
-      await emit({ type: "error", message: "Relay disconnected; stopping imports." });
-      break;
-    }
+      const job = toImport[i];
+      const curGlobal = i + 1;
+      if (!(await waitRelayWithRetries())) {
+        await emit({ type: "error", message: "Relay disconnected; stopping imports." });
+        return { outcome: "error", sessionId };
+      }
 
-    const destName = `${job.objectType.replace(/[^a-zA-Z0-9_]/g, "_")}_${job.source}_${String(cur).padStart(2, "0")}`.slice(0, 55);
+      const destName = `${job.objectType.replace(/[^a-zA-Z0-9_]/g, "_")}_${job.source}_${String(curGlobal).padStart(3, "0")}`.slice(0, 55);
 
-    let cmdId: string | undefined;
-    if (job.source === "polyhaven" && job.polyId) {
-      const url = await downloadPolyHavenModel(job.polyId);
-      if (!url) continue;
-      await emit({
-        type: "importing",
-        current: cur,
-        total: totalImports,
-        name: job.name,
-        source: "our library (Poly Haven)",
+      let cmdId: string | undefined;
+      if (job.source === "polyhaven" && job.polyId) {
+        const url = await downloadPolyHavenModel(job.polyId);
+        if (!url) continue;
+        await emit({
+          type: "importing",
+          current: curGlobal,
+          total: totalImports,
+          name: job.name,
+          source: "our library (Poly Haven)",
+        });
+        const ext = url.toLowerCase().includes(".fbx") ? "fbx" : "glb";
+        const filename = `${job.polyId}_${curGlobal}.${ext}`;
+        const code = generateUE5ImportCode(url, filename, job.name, {
+          destinationName: destName,
+          replaceExisting: false,
+          skipSpawnActor: true,
+        });
+        cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+      } else if (job.source === "sketchfab" && job.sketchfabUid) {
+        const token = process.env.SKETCHFAB_API_TOKEN;
+        if (!token) continue;
+        const dl = await getSketchfabDownloadUrl(job.sketchfabUid, token);
+        if (!dl) continue;
+        await emit({
+          type: "importing",
+          current: curGlobal,
+          total: totalImports,
+          name: job.name,
+          source: "our library (Sketchfab)",
+        });
+        const zip = `sf_${job.sketchfabUid}_${curGlobal}.zip`;
+        const code = generateSketchfabImportCode(dl, zip, job.name, {
+          destinationName: destName,
+          replaceExisting: false,
+          skipSpawnActor: true,
+        });
+        cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+      } else {
+        continue;
+      }
+
+      if (!cmdId) continue;
+      const result = await waitForCommand(cmdId);
+      if (result.status !== "success") {
+        await emit({ type: "error", message: `Import failed: ${job.name}` });
+        continue;
+      }
+
+      const supabase = createServerClient();
+      const { data: row } = await supabase
+        .from("ue5_import_assets")
+        .select("ue_asset_path")
+        .eq("ue5_command_id", cmdId)
+        .maybeSingle();
+      const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/${destName}`;
+      importedAssets.push({
+        jobId: job.id,
+        path: uePath,
+        objectType: job.objectType,
+        category: job.category,
       });
-      const ext = url.toLowerCase().includes(".fbx") ? "fbx" : "glb";
-      const filename = `${job.polyId}_${cur}.${ext}`;
-      const code = generateUE5ImportCode(url, filename, job.name, {
-        destinationName: destName,
-        replaceExisting: false,
-        skipSpawnActor: true,
+      importedCount += 1;
+
+      const arr = pathsReadyByType.get(job.objectType.toLowerCase()) ?? [];
+      if (!arr.includes(uePath)) arr.push(uePath);
+      pathsReadyByType.set(job.objectType.toLowerCase(), arr);
+
+      await updateAgentProgress(progressRowId, {
+        imported_assets: importedAssets,
+        imported_count: importedCount,
+        import_queue: toImport.map(serCandidate),
+        total_imports: totalImports,
+        cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
       });
-      cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
-    } else if (job.source === "sketchfab" && job.sketchfabUid) {
-      const token = process.env.SKETCHFAB_API_TOKEN;
-      if (!token) continue;
-      const dl = await getSketchfabDownloadUrl(job.sketchfabUid, token);
-      if (!dl) continue;
-      await emit({
-        type: "importing",
-        current: cur,
-        total: totalImports,
-        name: job.name,
-        source: "our library (Sketchfab)",
-      });
-      const zip = `sf_${job.sketchfabUid}_${cur}.zip`;
-      const code = generateSketchfabImportCode(dl, zip, job.name, {
-        destinationName: destName,
-        replaceExisting: false,
-        skipSpawnActor: true,
-      });
-      cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
-    } else {
-      continue;
-    }
 
-    if (!cmdId) continue;
-    queuedImports += 1;
-    const result = await waitForCommand(cmdId);
-    if (result.status !== "success") {
-      await emit({ type: "error", message: `Import failed: ${job.name}` });
-      continue;
-    }
-
-    const supabase = createServerClient();
-    const { data: row } = await supabase
-      .from("ue5_import_assets")
-      .select("ue_asset_path")
-      .eq("ue5_command_id", cmdId)
-      .maybeSingle();
-    const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/${destName}`;
-    pathByJobId.set(job.id, uePath);
-
-    const arr = pathsReadyByType.get(job.objectType.toLowerCase()) ?? [];
-    if (!arr.includes(uePath)) arr.push(uePath);
-    pathsReadyByType.set(job.objectType.toLowerCase(), arr);
-
-    const baseWait = isHeavyBuildingType(job.objectType) ? 20000 : 10000;
-    await sleep(baseWait);
-    if (queuedImports % 3 === 0) {
-      await sleep(15000);
+      const baseWait = isHeavyBuildingType(job.objectType) ? 20000 : 10000;
+      await sleep(baseWait);
+      if (importedCount % 3 === 0) await sleep(15000);
     }
   }
 
   const pathsBySlot: Array<{ category: SceneObjectCategory; objectType: string; path: string }> = [];
-
   for (const { category, obj } of rows) {
     const t = obj.type.toLowerCase();
     const pool = [...(pathsReadyByType.get(t) ?? [])];
@@ -661,32 +870,67 @@ export async function buildScene(
   if (pathsBySlot.length === 0) {
     await emit({ type: "error", message: "No assets available to place." });
     await emit({ type: "complete", summary: "Build aborted — no models imported or scanned." });
-    return;
+    await updateAgentProgress(progressRowId, { status: "error", error_message: "No assets to place" });
+    return { outcome: "error", sessionId };
   }
 
-  await emit({
-    type: "placing",
-    message: `Placing ${pathsBySlot.length} objects in your scene…`,
-  });
-
-  const slots = computeSlots(sceneRequest, pathsBySlot);
-  const py = generatePlacementCode(sceneRequest, slots);
-
-  if (await waitRelayWithRetries()) {
-    const placeId = await queueUE5Command(projectId, py, { commandType: "execute" });
-    await waitForCommand(placeId, 600000);
-    await sleep(10000);
+  const runPlacement = params.resumePhase !== "screenshot" && !params.resumePlacementDone;
+  if (runPlacement) {
+    logDeadlineCheck(chunkStartTime);
+    if (checkDeadline(chunkStartTime)) {
+      await updateAgentProgress(progressRowId, {
+        phase: "place",
+        placement_done: false,
+        screenshot_done: false,
+        cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
+      });
+      await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
+      return { outcome: "paused", sessionId };
+    }
+    await emit({ type: "placing", message: `Placing ${pathsBySlot.length} objects in your scene…` });
+    const slots = computeSlots(sceneRequest, pathsBySlot);
+    const py = generatePlacementCode(sceneRequest, slots);
+    if (await waitRelayWithRetries()) {
+      const placeId = await queueUE5Command(projectId, py, { commandType: "execute" });
+      await waitForCommand(placeId, 600000);
+      await sleep(10000);
+    }
+    await updateAgentProgress(progressRowId, { placement_done: true, phase: "screenshot" });
   }
 
-  if (await waitRelayWithRetries()) {
-    const sid = await queueUE5Command(projectId, " ", { commandType: "screenshot" });
-    await waitForCommand(sid, 120000);
-    await sleep(5000);
+  if (!params.resumeScreenshotDone) {
+    logDeadlineCheck(chunkStartTime);
+    if (checkDeadline(chunkStartTime)) {
+      await updateAgentProgress(progressRowId, {
+        phase: "screenshot",
+        cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
+      });
+      await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
+      return { outcome: "paused", sessionId };
+    }
+    if (await waitRelayWithRetries()) {
+      const sid = await queueUE5Command(projectId, " ", { commandType: "screenshot" });
+      await waitForCommand(sid, 120000);
+      await sleep(5000);
+    }
+    await updateAgentProgress(progressRowId, { screenshot_done: true });
   }
 
+  const totalMs = cumulativeBase + (Date.now() - chunkStartTime);
   const counts = rows.map((r) => `${r.obj.count} ${r.obj.type}`).join(", ");
+  log(
+    `AGENT COMPLETE: all ${totalImports} imports done, placement done, total time across chunks ≈ ${Math.round(totalMs / 1000)}s (this chunk ≈ ${Math.round((Date.now() - chunkStartTime) / 1000)}s)`,
+  );
   await emit({
     type: "complete",
-    summary: `${sceneRequest.scene_type} built! ${counts}. (${pathsBySlot.length} instances placed.)`,
+    summary: `${sceneRequest.scene_type} built! ${counts}. (${pathsBySlot.length} instances placed.) Total time ≈ ${Math.round(totalMs / 1000)}s.`,
   });
+  await updateAgentProgress(progressRowId, {
+    status: "completed",
+    phase: "completed",
+    placement_done: true,
+    screenshot_done: true,
+    cumulative_elapsed_ms: totalMs,
+  });
+  return { outcome: "completed", sessionId, totalElapsedMs: totalMs };
 }

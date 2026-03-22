@@ -1,11 +1,21 @@
+import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { createServerAuthClient, createServerClient } from "@/lib/supabase/server";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import { queueUE5Command } from "@/lib/ue5/commands";
 import { generateScanCode } from "@/lib/ue5/assetScanner";
 import { askAIForSceneJSON } from "@/lib/ai/sceneAI";
-import { buildScene, type AssetSourceMode } from "@/lib/ai/sceneBuildEngine";
-import type { SceneRequest } from "@/lib/ai/sceneSchema";
+import { buildScene, type BuildSceneParams } from "@/lib/ai/sceneBuildEngine";
+import type { AssetSourceMode, SceneRequest } from "@/lib/ai/sceneSchema";
+import {
+  deleteOldCompletedSessions,
+  getAgentProgressBySession,
+  handleStaleSession,
+  insertAgentProgress,
+  isStaleProgress,
+  parseSearchSnapshot,
+  type AgentProgressRow,
+} from "@/lib/ai/agentProgress";
 
 type ScannedAsset = { path?: string; name?: string; type?: string };
 
@@ -61,6 +71,40 @@ function summarizePlanForUser(scene: SceneRequest): string {
   return `${scene.scene_type} — ${parts.join(", ") || "objects"}`;
 }
 
+function rowToBuildParams(
+  row: AgentProgressRow,
+  projectId: string,
+  userId: string,
+  scannedAssets: ScannedAsset[],
+  chunkStartTime: number,
+  progressCallback: BuildSceneParams["progressCallback"],
+): BuildSceneParams {
+  const snap = parseSearchSnapshot(row.search_results);
+  const phase = row.phase;
+  const resumePhase: BuildSceneParams["resumePhase"] =
+    phase === "completed" ? null : (phase as BuildSceneParams["resumePhase"]);
+  return {
+    sceneRequest: row.scene_request,
+    projectId,
+    userId,
+    assetSource: row.asset_source,
+    scannedAssets,
+    progressCallback,
+    chunkStartTime,
+    sessionId: row.session_id,
+    progressRowId: row.id,
+    cumulativeElapsedMsBase: row.cumulative_elapsed_ms,
+    resumePhase,
+    resumeSearchSnapshot: snap,
+    resumeImportQueue: row.import_queue ?? [],
+    resumeImportedAssets: row.imported_assets ?? [],
+    resumeImportedCount: row.imported_count,
+    resumeTotalImports: row.total_imports,
+    resumePlacementDone: row.placement_done,
+    resumeScreenshotDone: row.screenshot_done,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const auth = await createServerAuthClient();
   const {
@@ -69,24 +113,36 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+
   const body = await request.json();
+  const continueSessionId = typeof body?.continueSession === "string" ? body.continueSession.trim() : "";
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   const projectId = typeof body?.projectId === "string" ? body.projectId : "";
   const rawSource = body?.assetSource;
   const assetSource: AssetSourceMode =
     rawSource === "my_assets" || rawSource === "library" || rawSource === "both" ? rawSource : "both";
-  if (!prompt || !projectId) {
-    return new Response(JSON.stringify({ error: "prompt and projectId required" }), { status: 400 });
+
+  if (!projectId) {
+    return new Response(JSON.stringify({ error: "projectId required" }), { status: 400 });
+  }
+  if (!continueSessionId && !prompt) {
+    return new Response(JSON.stringify({ error: "prompt required for new session" }), { status: 400 });
   }
 
-  const limit = await checkUsageLimit(user.id, "ai_message");
-  if (!limit.allowed) {
-    return new Response(JSON.stringify({ error: "AI daily limit reached", limitReached: true }), { status: 403 });
+  const isContinue = Boolean(continueSessionId);
+
+  if (!isContinue) {
+    const limit = await checkUsageLimit(user.id, "ai_message");
+    if (!limit.allowed) {
+      return new Response(JSON.stringify({ error: "AI daily limit reached", limitReached: true }), { status: 403 });
+    }
   }
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       try {
+        await deleteOldCompletedSessions();
+
         emit(controller, {
           type: "step_start",
           stepNumber: 0,
@@ -118,19 +174,89 @@ export async function POST(request: NextRequest) {
         }
 
         const scannedForAI = assetSource === "library" ? [] : latest.assets;
-        const sceneRequest = await askAIForSceneJSON(prompt, scannedForAI);
+        const chunkStartTime = Date.now();
 
-        emit(controller, {
-          type: "plan",
-          sceneRequest,
-          planSummary: summarizePlanForUser(sceneRequest),
-        });
+        let buildParams: BuildSceneParams;
 
-        await buildScene(sceneRequest, projectId, user.id, assetSource, latest.assets, async (ev) => {
-          emit(controller, ev as object);
-        });
+        if (isContinue) {
+          let row = await getAgentProgressBySession(continueSessionId, user.id);
+          if (!row) {
+            emit(controller, { type: "error", message: "Session not found" });
+            controller.close();
+            return;
+          }
+          if (row.project_id !== projectId) {
+            emit(controller, { type: "error", message: "Session does not match project" });
+            controller.close();
+            return;
+          }
+          if (row.status === "completed" || row.phase === "completed") {
+            emit(controller, { type: "error", message: "Session already completed" });
+            controller.close();
+            return;
+          }
+          if (isStaleProgress(row)) {
+            row = await handleStaleSession(row);
+          }
 
-        await recordUsage(user.id, "ai_message");
+          const sceneRequest = row.scene_request;
+          emit(controller, {
+            type: "plan",
+            sceneRequest,
+            planSummary: summarizePlanForUser(sceneRequest),
+          });
+
+          const scannedForRow = row.asset_source === "library" ? [] : latest.assets;
+          buildParams = rowToBuildParams(row, projectId, user.id, scannedForRow, chunkStartTime, async (ev) => {
+            emit(controller, ev as object);
+          });
+        } else {
+          const sceneRequest = await askAIForSceneJSON(prompt, scannedForAI);
+          const sessionId = randomUUID();
+          const inserted = await insertAgentProgress({
+            userId: user.id,
+            projectId,
+            sessionId,
+            sceneRequest,
+            assetSource,
+          });
+
+          emit(controller, {
+            type: "plan",
+            sceneRequest,
+            planSummary: summarizePlanForUser(sceneRequest),
+          });
+
+          buildParams = {
+            sceneRequest,
+            projectId,
+            userId: user.id,
+            assetSource,
+            scannedAssets: scannedForAI,
+            chunkStartTime,
+            sessionId,
+            progressRowId: inserted.id,
+            cumulativeElapsedMsBase: 0,
+            resumePhase: null,
+            resumeSearchSnapshot: null,
+            resumeImportQueue: [],
+            resumeImportedAssets: [],
+            resumeImportedCount: 0,
+            resumeTotalImports: 0,
+            resumePlacementDone: false,
+            resumeScreenshotDone: false,
+            progressCallback: async (ev) => {
+              emit(controller, ev as object);
+            },
+          };
+        }
+
+        const result = await buildScene(buildParams);
+
+        if (result.outcome === "completed") {
+          await recordUsage(user.id, "ai_message");
+        }
+
         controller.close();
       } catch (e) {
         emit(controller, {

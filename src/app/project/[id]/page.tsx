@@ -456,51 +456,72 @@ export default function ProjectPage() {
         };
 
         setStreamingContent(renderChecklist());
-        const agentRes = await fetch("/api/build/agent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ prompt: message.trim(), projectId: id, assetSource }),
-        });
-        if (!agentRes.ok) {
-          const err = await agentRes.text();
-          throw new Error(err || "Agent request failed");
-        }
-        const reader = agentRes.body?.getReader();
-        const decoder = new TextDecoder();
-        if (!reader) throw new Error("No agent response body");
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6);
-            try {
-              const ev = JSON.parse(data) as {
-                type?: string;
-                stepNumber?: number;
-                description?: string;
-                summary?: string;
-                success?: boolean;
-                asset?: string;
-                source?: string;
-                current?: number;
-                total?: number;
-                message?: string;
-                steps?: Array<{ stepNumber: number; description: string }>;
-                sceneRequest?: {
-                  scene_type?: string;
-                  buildings?: { type: string; count: number }[];
-                  vegetation?: { type: string; count: number }[];
-                  vehicles?: { type: string; count: number }[];
-                  infrastructure?: { type: string; count: number }[];
-                  details?: { type: string; count: number }[];
+        const initialBody = { prompt: message.trim(), projectId: id, assetSource };
+        let continueSessionId: string | undefined;
+
+        agentChunks: for (;;) {
+          const agentRes = await fetch("/api/build/agent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(
+              continueSessionId
+                ? { continueSession: continueSessionId, projectId: id }
+                : initialBody,
+            ),
+          });
+          continueSessionId = undefined;
+          if (!agentRes.ok) {
+            const err = await agentRes.text();
+            throw new Error(err || "Agent request failed");
+          }
+          const reader = agentRes.body?.getReader();
+          const decoder = new TextDecoder();
+          if (!reader) throw new Error("No agent response body");
+          let chunkPauseSession: string | undefined;
+          readLoop: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break readLoop;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n");
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const data = line.slice(6);
+              try {
+                const ev = JSON.parse(data) as {
+                  type?: string;
+                  stepNumber?: number;
+                  description?: string;
+                  summary?: string;
+                  success?: boolean;
+                  asset?: string;
+                  source?: string;
+                  current?: number;
+                  total?: number;
+                  message?: string;
+                  sessionId?: string;
+                  steps?: Array<{ stepNumber: number; description: string }>;
+                  sceneRequest?: {
+                    scene_type?: string;
+                    buildings?: { type: string; count: number }[];
+                    vegetation?: { type: string; count: number }[];
+                    vehicles?: { type: string; count: number }[];
+                    infrastructure?: { type: string; count: number }[];
+                    details?: { type: string; count: number }[];
+                  };
+                  planSummary?: string;
+                  name?: string;
                 };
-                planSummary?: string;
-                name?: string;
-              };
+                if (ev.type === "chunk_pause") {
+                  headline = "Saving progress… continuing automatically";
+                  footer =
+                    typeof ev.message === "string" && ev.message
+                      ? ev.message
+                      : "Saving progress, will continue automatically…";
+                  chunkPauseSession = typeof ev.sessionId === "string" ? ev.sessionId : undefined;
+                  setStreamingContent(renderChecklist());
+                  break readLoop;
+                }
               if (ev.type === "plan") {
                 if (typeof ev.planSummary === "string" && ev.planSummary) {
                   scenePlanLine = `Scene Plan: ${ev.planSummary}`;
@@ -564,11 +585,18 @@ export default function ProjectPage() {
                 headline = "Your scene is complete!";
                 footer = `🎉 ${ev.summary ?? "Build complete"}`;
               }
-              setStreamingContent(renderChecklist());
-            } catch {
-              /* ignore partial lines */
+                setStreamingContent(renderChecklist());
+              } catch {
+                /* ignore partial lines */
+              }
             }
           }
+          if (chunkPauseSession) {
+            await new Promise((r) => setTimeout(r, 2000));
+            continueSessionId = chunkPauseSession;
+            continue agentChunks;
+          }
+          break agentChunks;
         }
         const finalAgentChecklist = renderChecklist();
         await supabase.from("chat_turns").insert({
