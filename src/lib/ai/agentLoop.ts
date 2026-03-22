@@ -70,7 +70,11 @@ const FORBIDDEN_LIBRARY_UE_PATH_PREFIXES = [
 ] as const;
 
 function codeViolatesLibraryMode(code: string): boolean {
-  return FORBIDDEN_LIBRARY_UE_PATH_PREFIXES.some((prefix) => code.includes(prefix));
+  const withoutCommentLines = code
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+  return FORBIDDEN_LIBRARY_UE_PATH_PREFIXES.some((prefix) => withoutCommentLines.includes(prefix));
 }
 
 function filterPathsForLibraryMode(paths: string[]): string[] {
