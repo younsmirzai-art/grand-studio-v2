@@ -22,7 +22,7 @@ const SCENE_JSON_SYSTEM = `You are a scene description AI. You receive a user re
 
 CRITICAL — FEW UNIQUE MODEL IMPORTS (the engine hard-limits to 15 unique library imports per scene):
 - Prefer FEWER object TYPES and higher "count" per type so the same imported model can be INSTANCED many times at placement (repeated positions, varied rotation/scale). Do NOT list dozens of unique types.
-- Small village / town: at most 3 buildings total (sum of counts), 4 trees/plants, 1 vehicle, 3 infrastructure, 2 details — about 13 placed instances but only ~8–10 unique asset types.
+- Small village / town: at most 2 buildings total, 3 trees/plants, 1 vehicle, 2 infrastructure (e.g. street lights), 1 detail (e.g. bench) — ~9 placed instances, ~5–6 unique imports.
 - Large city: at most 6 buildings, 6 trees, 2 vehicles, 5 infrastructure, 3 details — about 22 placed instances but at most 15 UNIQUE imports; reuse types with count>1.
 - Forest: 0–1 building, up to 12 trees total (split types ok), 0–4 details; keep unique types low.
 - Beach / desert / other: keep totals modest; prefer repeating the same types with count.
@@ -93,11 +93,11 @@ export function enforceSceneImportBudgets(sr: SceneRequest): SceneRequest {
   let ch: number;
 
   if (st === "village") {
-    b = 3;
-    v = 4;
+    b = 2;
+    v = 3;
     veh = 1;
-    inf = 3;
-    det = 2;
+    inf = 2;
+    det = 1;
     ch = 0;
   } else if (st === "city") {
     b = 6;
@@ -242,13 +242,13 @@ export function defaultSceneFromKeywords(userPrompt: string): SceneRequest {
         terrain: "flat_grass",
         layout: "along_road",
         buildings: [
-          { type: "house", count: 2, style: "cottage" },
+          { type: "house", count: 1, style: "cottage" },
           { type: "building", count: 1, style: "farmhouse" },
         ],
-        vegetation: [{ type: "tree", count: 3 }, { type: "pine", count: 1 }],
+        vegetation: [{ type: "tree", count: 3 }],
         vehicles: [{ type: "car", count: 1 }],
         infrastructure: [{ type: "street_light", count: 2 }],
-        details: [{ type: "bench", count: 2 }, { type: "rock", count: 1 }],
+        details: [{ type: "bench", count: 1 }],
       }),
     );
   }
@@ -316,11 +316,14 @@ export function defaultSceneFromKeywords(userPrompt: string): SceneRequest {
   return enforceSceneImportBudgets(
     base({
       scene_type: "village",
-      buildings: [{ type: "house", count: 2 }],
+      buildings: [
+        { type: "house", count: 1 },
+        { type: "building", count: 1 },
+      ],
       vegetation: [{ type: "tree", count: 3 }],
       vehicles: [{ type: "car", count: 1 }],
       infrastructure: [{ type: "street_light", count: 2 }],
-      details: [{ type: "bench", count: 2 }],
+      details: [{ type: "bench", count: 1 }],
     }),
   );
 }

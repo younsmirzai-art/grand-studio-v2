@@ -28,6 +28,12 @@ export type SceneBuildProgressEvent =
 /** 240s work per Vercel request (60s buffer before 300s limit) */
 export const CHUNK_DEADLINE_MS = 240_000;
 
+/** Leave at least this much chunk time for Phase 3 placement (skip remaining imports). */
+const PLACEMENT_TIME_RESERVE_MS = 60_000;
+
+/** After this elapsed time in a chunk, stop importing if we already have enough models. */
+const IMPORT_STOP_AFTER_ELAPSED_MS = 180_000;
+
 export type BuildSceneOutcome = "completed" | "paused" | "error";
 
 export type BuildSceneParams = {
@@ -81,19 +87,20 @@ const SEARCH_MAP: Record<string, string[]> = {
   road: ["road", "street", "pathway"],
 };
 
-const NATURE_TYPES = new Set([
-  "tree",
-  "pine",
-  "palm",
-  "cactus",
-  "bush",
-  "rock",
-]);
-
 /** Hard cap: unique library imports per scene (reuse models in placement for more instances) */
 const MAX_IMPORTS_PER_SCENE = 15;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Clears relay download temp folder only — not /Game/GrandStudio/Imported. Runs once per agent import session. */
+const CLEAN_DOWNLOADS_PYTHON = `import os
+import shutil
+dl_path = 'C:/GrandStudio/Downloads'
+if os.path.exists(dl_path):
+    shutil.rmtree(dl_path)
+os.makedirs(dl_path)
+unreal.log('Cleaned downloads folder')
+`;
 
 function keywordsForType(objectType: string): string[] {
   const t = objectType.toLowerCase().trim();
@@ -135,7 +142,6 @@ type LibraryHit = {
 async function searchLibrariesForType(objectType: string): Promise<LibraryHit[]> {
   const bucket = new Map<string, LibraryHit>();
   const kws = keywordsForType(objectType);
-  const preferNature = NATURE_TYPES.has(objectType.toLowerCase());
 
   for (const kw of kws) {
     try {
@@ -155,38 +161,38 @@ async function searchLibrariesForType(objectType: string): Promise<LibraryHit[]>
       /* ignore */
     }
     await sleep(1000);
+  }
 
-    try {
-      const sketch = await searchSketchfab(kw, {
-        count: 16,
-        token: process.env.SKETCHFAB_API_TOKEN ?? undefined,
-      });
-      for (const a of sketch) {
-        const key = `sf:${a.uid}`;
-        if (bucket.has(key)) continue;
-        bucket.set(key, {
-          key,
-          source: "sketchfab",
-          name: a.name,
-          downloadCount: a.viewCount,
-          sketchfabUid: a.uid,
+  if (bucket.size === 0) {
+    for (const kw of kws) {
+      try {
+        const sketch = await searchSketchfab(kw, {
+          count: 16,
+          token: process.env.SKETCHFAB_API_TOKEN ?? undefined,
         });
+        for (const a of sketch) {
+          const key = `sf:${a.uid}`;
+          if (bucket.has(key)) continue;
+          bucket.set(key, {
+            key,
+            source: "sketchfab",
+            name: a.name,
+            downloadCount: a.viewCount,
+            sketchfabUid: a.uid,
+          });
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
+      await sleep(1000);
     }
-    await sleep(1000);
   }
 
   const list = [...bucket.values()];
   list.sort((a, b) => {
     const ap = a.source === "polyhaven" ? 1 : 0;
     const bp = b.source === "polyhaven" ? 1 : 0;
-    if (preferNature) {
-      if (ap !== bp) return bp - ap;
-    } else {
-      if (ap !== bp) return ap - bp;
-    }
+    if (ap !== bp) return bp - ap;
     return b.downloadCount - a.downloadCount;
   });
   return list;
@@ -788,6 +794,9 @@ export async function buildScene(params: BuildSceneParams): Promise<{
     const pa = PRIORITY.indexOf(a.category);
     const pb = PRIORITY.indexOf(b.category);
     if (pa !== pb) return pa - pb;
+    const ap = a.source === "polyhaven" ? 1 : 0;
+    const bp = b.source === "polyhaven" ? 1 : 0;
+    if (ap !== bp) return bp - ap;
     return b.downloadCount - a.downloadCount;
   });
 
@@ -814,7 +823,30 @@ export async function buildScene(params: BuildSceneParams): Promise<{
   let importedCount = params.resumeImportedCount;
 
   if (phaseStart === "import" || phaseStart === "search") {
+    if (importedCount === 0) {
+      if (await waitRelayWithRetries()) {
+        const cleanId = await queueUE5Command(
+          projectId,
+          `import unreal\n${CLEAN_DOWNLOADS_PYTHON}`,
+          { commandType: "execute" },
+        );
+        await waitForCommand(cleanId, 120_000);
+      }
+    }
+
     for (let i = importedCount; i < toImport.length; i++) {
+      const elapsedChunk = Date.now() - chunkStartTime;
+      const remainingChunk = CHUNK_DEADLINE_MS - elapsedChunk;
+      const stopEarlyForPlacement =
+        remainingChunk < PLACEMENT_TIME_RESERVE_MS ||
+        (elapsedChunk > IMPORT_STOP_AFTER_ELAPSED_MS && importedCount >= 3);
+      if (stopEarlyForPlacement) {
+        log(
+          `DEADLINE APPROACHING: skipping remaining imports, jumping to placement with ${importedCount} imported models`,
+        );
+        break;
+      }
+
       logDeadlineCheck(chunkStartTime);
       if (checkDeadline(chunkStartTime)) {
         log(`CHUNK PAUSE: saving progress at import ${importedCount}/${totalImports}, will resume in next request`);
