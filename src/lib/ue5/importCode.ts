@@ -50,7 +50,8 @@ unreal.log('IMPORT_RESULT:' + json.dumps(_result))
 `;
 
 /**
- * Direct file import (Poly Haven FBX/GLB, etc.). Single file downloaded and imported.
+ * UE5 5.7+: AssetImportTask has no import_materials / import_textures on the task.
+ * Minimal import: filename, destination_path, destination_name, replace_existing, automated, save only.
  */
 export function generateUE5ImportCode(
   downloadUrl: string,
@@ -58,6 +59,8 @@ export function generateUE5ImportCode(
   label: string
 ): string {
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
+  const baseName = filename.includes(".") ? filename.replace(/\.[^.]+$/, "") : filename;
+  const destinationName = baseName.replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;
   const localPath = `C:/GrandStudio/Downloads/${filename}`;
   const fileType = filename.includes(".") ? filename.split(".").pop()!.toLowerCase() : "glb";
 
@@ -74,25 +77,10 @@ unreal.log('Import started.')
 task = unreal.AssetImportTask()
 task.set_editor_property('filename', local_path)
 task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
+task.set_editor_property('destination_name', '${destinationName}')
+task.set_editor_property('replace_existing', True)
 task.set_editor_property('automated', True)
 task.set_editor_property('save', True)
-task.set_editor_property('replace_existing', True)
-task.set_editor_property('import_materials', True)
-task.set_editor_property('import_textures', True)
-if local_path.lower().endswith('.fbx'):
-    fbx_import_ui = unreal.FbxImportUI()
-    fbx_import_ui.set_editor_property('import_materials', True)
-    fbx_import_ui.set_editor_property('import_textures', True)
-    fbx_import_ui.set_editor_property('import_as_skeletal', False)
-    try:
-        fbx_import_ui.texture_import_data.set_editor_property('material_search_location', unreal.MaterialSearchLocation.LOCAL)
-    except Exception:
-        pass
-    try:
-        fbx_import_ui.static_mesh_import_data.set_editor_property('combine_meshes', True)
-    except Exception:
-        pass
-    task.set_editor_property('options', fbx_import_ui)
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 imported_paths = task.get_editor_property('imported_object_paths')
 if imported_paths and len(imported_paths) > 0:
@@ -110,6 +98,7 @@ ${VALIDATION_SNIPPET.trim()}
 
 /**
  * Sketchfab import: API returns a ZIP URL. Download ZIP, extract, find .glb/.fbx/.gltf/.obj and import.
+ * UE5 5.7+: same minimal AssetImportTask as generateUE5ImportCode (no import_materials / FbxImportUI on task).
  */
 export function generateSketchfabImportCode(
   downloadUrl: string,
@@ -147,7 +136,6 @@ for ext in ['.glb', '.fbx', '.gltf', '.obj']:
         break
 if not model_file:
     unreal.log_error('No 3D model file found in ZIP')
-    task = unreal.AssetImportTask()
     unreal.log('IMPORT_RESULT:' + json.dumps({'ue_asset_path': '', 'material_count': 0, 'texture_count': 0, 'import_status': 'failed', 'import_error': 'No 3D model file in ZIP'}))
 else:
     unreal.log(f'Found model: {model_file}')
@@ -159,28 +147,15 @@ else:
             dest = os.path.join(model_dir, os.path.basename(tex_file))
             if not os.path.exists(dest):
                 shutil.copy2(tex_file, dest)
+    _stem = os.path.splitext(os.path.basename(model_file))[0]
+    _dest_name = ''.join(c if c.isalnum() or c == '_' else '_' for c in _stem)
     task = unreal.AssetImportTask()
     task.set_editor_property('filename', model_file)
     task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
+    task.set_editor_property('destination_name', _dest_name)
+    task.set_editor_property('replace_existing', True)
     task.set_editor_property('automated', True)
     task.set_editor_property('save', True)
-    task.set_editor_property('replace_existing', True)
-    task.set_editor_property('import_materials', True)
-    task.set_editor_property('import_textures', True)
-    if model_file.lower().endswith('.fbx'):
-        fbx_import_ui = unreal.FbxImportUI()
-        fbx_import_ui.set_editor_property('import_materials', True)
-        fbx_import_ui.set_editor_property('import_textures', True)
-        fbx_import_ui.set_editor_property('import_as_skeletal', False)
-        try:
-            fbx_import_ui.texture_import_data.set_editor_property('material_search_location', unreal.MaterialSearchLocation.LOCAL)
-        except Exception:
-            pass
-        try:
-            fbx_import_ui.static_mesh_import_data.set_editor_property('combine_meshes', True)
-        except Exception:
-            pass
-        task.set_editor_property('options', fbx_import_ui)
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
     imported_paths = task.get_editor_property('imported_object_paths')
     if imported_paths and len(imported_paths) > 0:

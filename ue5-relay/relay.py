@@ -82,8 +82,8 @@ def send_heartbeat():
         pass
 
 
-def execute_in_ue5(python_code):
-    """Send Python code to UE5 via Web Remote Control"""
+def execute_in_ue5(python_code, timeout=30):
+    """Send Python code to UE5 via Web Remote Control. Use longer timeout for heavy imports."""
     try:
         payload = {
             "objectPath": "/Script/PythonScriptPlugin.Default__PythonScriptLibrary",
@@ -93,7 +93,7 @@ def execute_in_ue5(python_code):
         response = requests.put(
             f"{UE5_URL}/remote/object/call",
             json=payload,
-            timeout=30,
+            timeout=timeout,
         )
         if response.status_code == 200:
             return {"success": True, "result": response.json()}
@@ -301,7 +301,9 @@ def poll_commands():
                 if cmd_type == "screenshot" or cmd_type == "capture":
                     ue5_result = capture_screenshot()
                 else:
-                    ue5_result = execute_in_ue5(code)
+                    # Large FBX/GLB imports can exceed 30s; keep 30s for normal commands.
+                    import_timeout = 120 if cmd_type == "import" else 30
+                    ue5_result = execute_in_ue5(code, timeout=import_timeout)
 
                 completed_at = datetime.now(timezone.utc).isoformat()
                 if ue5_result["success"]:
