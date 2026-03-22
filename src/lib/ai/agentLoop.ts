@@ -60,6 +60,25 @@ const WAIT_EVERY_3_COMMANDS_MS = 15000;
 const RELAY_RETRY_MS = 15000;
 const RELAY_MAX_RETRIES = 10;
 
+/** Scanned / Fab paths that must never appear in generated UE code when assetSource is "library". */
+const FORBIDDEN_LIBRARY_UE_PATH_PREFIXES = [
+  "/Game/Fab/",
+  "/Game/Survival_Character/",
+  "/Game/ProceduralBuildingGenerator/",
+  "/Game/Sankoolarts/",
+  "/Game/MWLandscapeAutoMaterial/",
+] as const;
+
+function codeViolatesLibraryMode(code: string): boolean {
+  return FORBIDDEN_LIBRARY_UE_PATH_PREFIXES.some((prefix) => code.includes(prefix));
+}
+
+function filterPathsForLibraryMode(paths: string[]): string[] {
+  return paths.filter(
+    (p) => !FORBIDDEN_LIBRARY_UE_PATH_PREFIXES.some((prefix) => p.includes(prefix)),
+  );
+}
+
 function safeParsePlan(text: string): AgentStep[] | null {
   const trimmed = text.trim();
   const raw = trimmed.startsWith("[") ? trimmed : (() => {
@@ -112,6 +131,29 @@ function defaultSimplePlan(prompt: string): AgentStep[] {
   ];
 }
 
+/** Library mode: import-first steps; final step places all imports with lighting. */
+function defaultLibrarySimplePlan(prompt: string): AgentStep[] {
+  const p = prompt.toLowerCase();
+  const treeOnly = (p.includes("tree") || /^build\s+1\s+tree/.test(p.trim())) && !p.includes("house");
+  if (treeOnly) {
+    return [
+      { stepNumber: 1, action: "place_trees", description: "Import tree model from library", estimatedAssetCount: 1 },
+      { stepNumber: 2, action: "add_lighting", description: "Place imported tree in scene with lighting", estimatedAssetCount: 1 },
+    ];
+  }
+  if (p.includes("car") || p.includes("vehicle")) {
+    return [
+      { stepNumber: 1, action: "place_vehicles", description: "Import vehicle model from library", estimatedAssetCount: 1 },
+      { stepNumber: 2, action: "add_lighting", description: "Place imported vehicle with lighting", estimatedAssetCount: 1 },
+    ];
+  }
+  return [
+    { stepNumber: 1, action: "place_buildings", description: "Import house model from library", estimatedAssetCount: 1 },
+    { stepNumber: 2, action: "place_trees", description: "Import 3 tree models from library", estimatedAssetCount: 3 },
+    { stepNumber: 3, action: "add_lighting", description: "Place all imported models in scene with lighting", estimatedAssetCount: 1 },
+  ];
+}
+
 function defaultPlan(prompt: string): AgentStep[] {
   const env = detectEnvironment(prompt);
   const urban = env === "urban";
@@ -126,6 +168,65 @@ function defaultPlan(prompt: string): AgentStep[] {
   ];
 }
 
+/**
+ * Library-only: imports first (house, trees, …), then one placement + lighting step.
+ * Never starts with load_landscape / sky — Poly Haven & Sketchfab imports come first.
+ */
+function defaultLibraryPlan(prompt: string): AgentStep[] {
+  const p = prompt.toLowerCase();
+  const steps: AgentStep[] = [];
+  let n = 1;
+  const wantsHouse =
+    p.includes("house") || p.includes("building") || p.includes("castle") || /\bbuild\b/.test(p);
+  const treeMatch = p.match(/(\d+)\s*trees?/);
+  const treeCount = treeMatch ? Math.min(5, Math.max(1, parseInt(treeMatch[1], 10))) : 3;
+
+  if (wantsHouse) {
+    steps.push({
+      stepNumber: n++,
+      action: "place_buildings",
+      description: "Import house model from library",
+      estimatedAssetCount: 1,
+    });
+  }
+  if (p.includes("tree") || p.includes("garden") || p.includes("forest") || p.includes("yard")) {
+    steps.push({
+      stepNumber: n++,
+      action: "place_trees",
+      description: "Import tree models from library",
+      estimatedAssetCount: treeCount,
+    });
+  } else if (wantsHouse) {
+    steps.push({
+      stepNumber: n++,
+      action: "place_trees",
+      description: "Import 3 tree models from library",
+      estimatedAssetCount: 3,
+    });
+  }
+  if (steps.length === 0) {
+    return [
+      { stepNumber: 1, action: "place_buildings", description: "Import model from library", estimatedAssetCount: 1 },
+      { stepNumber: 2, action: "add_lighting", description: "Place imported models in scene with lighting", estimatedAssetCount: 1 },
+    ];
+  }
+  steps.push({
+    stepNumber: n++,
+    action: "add_lighting",
+    description: "Place all imported models in scene with lighting",
+    estimatedAssetCount: 1,
+  });
+  return steps.map((s, i) => ({ ...s, stepNumber: i + 1 }));
+}
+
+/** Remove planner steps that would pull sky/terrain before imports in library mode. */
+function normalizeLibraryPlanSteps(steps: AgentStep[]): AgentStep[] {
+  const filtered = steps
+    .filter((s) => s.action !== "load_landscape")
+    .map((s, i) => ({ ...s, stepNumber: i + 1 }));
+  return filtered;
+}
+
 function summarizeAssets(assets: ScannedAsset[]): string {
   const paths = assets.map((a) => (a.path || "").trim()).filter((p) => p.startsWith("/Game/")).slice(0, 200);
   if (paths.length === 0) return "No scanned assets.";
@@ -138,7 +239,7 @@ function isPlacementStep(action: AgentStepAction): boolean {
 
 function searchQueryForStep(step: AgentStep): string {
   const text = `${step.action} ${step.description}`.toLowerCase();
-  if (text.includes("house") || text.includes("building")) return "building";
+  if (text.includes("house") || text.includes("building") || text.includes("castle")) return "building";
   if (text.includes("tree") || text.includes("forest")) return "tree";
   if (text.includes("wall") || text.includes("fence")) return "wall";
   if (text.includes("detail") || text.includes("furniture") || text.includes("bench")) return "furniture";
@@ -157,9 +258,31 @@ function expectedImportedAssetPath(name: string): string {
   return `/Game/GrandStudio/Imported/${safe}`;
 }
 
-function buildPlacementCode(paths: string[], step: AgentStep): string {
-  if (paths.length === 0) return "# waiting for imports";
-  const lines: string[] = ["import unreal", "editor = unreal.EditorLevelLibrary"];
+function buildLibraryModeCodePreamble(importedPaths: string[]): string {
+  const list =
+    importedPaths.length > 0
+      ? importedPaths.map((p) => `- ${p}`).join("\n# ")
+      : "- (none yet — complete previous import steps first)";
+  return `# LIBRARY MODE EXECUTION:
+# You have NO local assets available. You must ONLY use assets imported by the agent in previous steps.
+# Imported assets to use with EditorAssetLibrary.load_asset (ONLY these paths):
+# ${list}
+# Do NOT use any /Game/Fab/, /Game/ProceduralBuildingGenerator/, /Game/Sankoolarts/, /Game/MWLandscapeAutoMaterial/, /Game/Survival_Character/, or other scanned marketplace paths.
+`;
+}
+
+function buildPlacementCode(
+  paths: string[],
+  step: AgentStep,
+  opts?: { libraryMode?: boolean; importedPathsForPrompt?: string[] },
+): string {
+  const libraryMode = opts?.libraryMode === true;
+  const importedPathsForPrompt = opts?.importedPathsForPrompt ?? paths;
+  const preamble = libraryMode ? buildLibraryModeCodePreamble(importedPathsForPrompt) : "";
+  if (paths.length === 0) {
+    return preamble + (libraryMode ? "# waiting for imports\n" : "# waiting for imports");
+  }
+  const lines: string[] = [preamble.trimEnd(), "import unreal", "editor = unreal.EditorLevelLibrary"].filter(Boolean);
   for (let i = 0; i < paths.length; i++) {
     const p = paths[i].replace(/'/g, "\\'");
     lines.push(`asset_${i} = unreal.EditorAssetLibrary.load_asset('${p}')`);
@@ -168,6 +291,38 @@ function buildPlacementCode(paths: string[], step: AgentStep): string {
     lines.push(`    if actor_${i}: actor_${i}.set_actor_label('Agent_${step.action}_${i + 1}')`);
   }
   return lines.join("\n");
+}
+
+/** How many Poly Haven / Sketchfab imports to run for this step in library mode. */
+function libraryImportCountForStep(step: AgentStep, userPrompt: string): number {
+  const p = userPrompt.toLowerCase();
+  if (step.action === "add_lighting" || step.action === "final_check") return 0;
+  if (step.action === "place_trees") {
+    const m = p.match(/(\d+)\s*trees?/);
+    if (m) return Math.min(5, Math.max(1, parseInt(m[1], 10)));
+    return Math.min(5, Math.max(1, step.estimatedAssetCount || 3));
+  }
+  if (step.action === "place_buildings") return 1;
+  if (
+    step.action === "place_walls"
+    || step.action === "place_vehicles"
+    || step.action === "add_details"
+    || step.action === "load_landscape"
+  ) {
+    return Math.min(5, Math.max(1, step.estimatedAssetCount || 2));
+  }
+  return Math.min(5, Math.max(1, step.estimatedAssetCount || 1));
+}
+
+function shouldRunLibraryPolySketchfabImports(
+  assetSource: AgentAssetSource,
+  step: AgentStep,
+): boolean {
+  if (!(assetSource === "library" || assetSource === "both")) return false;
+  if (!isPlacementStep(step.action)) return false;
+  if (step.action === "final_check") return false;
+  if (assetSource === "library" && step.action === "add_lighting") return false;
+  return true;
 }
 
 async function waitForRelayOrTimeout(): Promise<boolean> {
@@ -201,22 +356,48 @@ async function waitAfterQueuedCommand(commandsQueued: number, waitMs: number): P
 export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: string; steps: AgentStep[] }> {
   const { prompt, projectId, scannedAssets, assetSource, onEvent } = args;
 
-  const planningPrompt = `You are a scene planner. Output ONLY a JSON array of steps with: stepNumber, action, description, estimatedAssetCount.\n\nMatch plan complexity to request:\n- Simple request like build 1 house = 2-3 steps max.\n- Medium request like small garden = 4-5 steps.\n- Complex request like village = 6-8 steps.\n- Very complex like city = 8-10 steps.\n\nUser request:\n${prompt}\n\nScanned assets:\n${summarizeAssets(scannedAssets)}`;
+  const effectiveScannedAssets: ScannedAsset[] = assetSource === "library" ? [] : scannedAssets;
+  if (assetSource === "library") {
+    console.log(
+      "AGENT: Asset source mode = library. Scanned assets DISABLED. Using ONLY Poly Haven and Sketchfab imports.",
+    );
+  }
+
+  const planningPrompt =
+    assetSource === "library"
+      ? `You are a scene planner. Output ONLY a JSON array of steps with: stepNumber, action, description, estimatedAssetCount.
+
+CRITICAL: The user has NO local assets. You must plan to IMPORT every 3D asset from our online library (do not name external sites in the JSON). For a house, the plan must import a house model. For trees, import tree models. Do not reference any existing /Game/ paths, user scans, Fab, or marketplace folders.
+
+Do NOT use load_landscape, sky, or atmosphere as step 1. Imports must happen FIRST; then one step to place all imported models with lighting.
+
+Valid actions: load_landscape, place_buildings, place_trees, place_walls, place_vehicles, add_lighting, add_details, final_check.
+
+Match plan complexity to request:
+- Simple request like build 1 house = 3 steps: import house, import trees, place all with lighting.
+- Medium request = 4-5 steps.
+- Complex village/city = 6-8 steps.
+
+User request:
+${prompt}`
+      : `You are a scene planner. Output ONLY a JSON array of steps with: stepNumber, action, description, estimatedAssetCount.\n\nMatch plan complexity to request:\n- Simple request like build 1 house = 2-3 steps max.\n- Medium request like small garden = 4-5 steps.\n- Complex request like village = 6-8 steps.\n- Very complex like city = 8-10 steps.\n\nUser request:\n${prompt}\n\nScanned assets:\n${summarizeAssets(effectiveScannedAssets)}`;
 
   let steps: AgentStep[] = [];
   try {
     const planResp = await askGrandStudioAI(planningPrompt);
-    steps = safeParsePlan(planResp.rawResponse) ?? defaultPlan(prompt);
+    steps =
+      safeParsePlan(planResp.rawResponse)
+      ?? (assetSource === "library" ? defaultLibraryPlan(prompt) : defaultPlan(prompt));
   } catch {
-    steps = defaultPlan(prompt);
+    steps = assetSource === "library" ? defaultLibraryPlan(prompt) : defaultPlan(prompt);
   }
 
-  if (isSimpleRequest(prompt)) steps = defaultSimplePlan(prompt);
-  if (assetSource === "library" && /^\s*build\s+1\s+tree\s*\.?\s*$/i.test(prompt.trim())) {
-    steps = [
-      { stepNumber: 1, action: "place_trees", description: "Import tree model", estimatedAssetCount: 1 },
-      { stepNumber: 2, action: "place_trees", description: "Place imported tree model", estimatedAssetCount: 1 },
-    ];
+  if (isSimpleRequest(prompt)) {
+    steps = assetSource === "library" ? defaultLibrarySimplePlan(prompt) : defaultSimplePlan(prompt);
+  }
+  if (assetSource === "library") {
+    steps = normalizeLibraryPlanSteps(steps);
+    if (steps.length === 0) steps = defaultLibraryPlan(prompt);
   }
 
   await onEvent({ type: "plan", steps });
@@ -225,18 +406,23 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
   let totalLibraryImportsSucceeded = 0;
   let commandsQueued = 0;
   const usedAssets = new Set<string>();
+  const allImportedPathsOrdered: string[] = [];
 
   for (const step of steps) {
     await onEvent({ type: "step_start", stepNumber: step.stepNumber, description: step.description });
 
     const scannedForStep = assetSource === "library" ? [] : scannedAssets;
     const { found } = findAssetsForAction(step.action, scannedForStep);
-    const availablePaths = [...found];
+    let availablePaths =
+      assetSource === "library" ? [] : [...found];
 
-    if ((assetSource === "library" || assetSource === "both") && isPlacementStep(step.action)) {
-      console.log(`AGENT LOOP: About to call library import for step ${step.stepNumber}, assetSource=${assetSource}`);
+    if (shouldRunLibraryPolySketchfabImports(assetSource, step)) {
+      const toImport =
+        assetSource === "library" ? libraryImportCountForStep(step, prompt) : importsPerStep(prompt);
+      console.log(
+        `AGENT LOOP: Library import for step ${step.stepNumber}, assetSource=${assetSource}, toImport=${toImport}`,
+      );
       const searchQuery = searchQueryForStep(step);
-      const toImport = importsPerStep(prompt);
       let lastPolySketchfabImportQueuedAt = 0;
 
       for (let i = 0; i < toImport; i++) {
@@ -340,12 +526,31 @@ export async function runAgentLoop(args: RunAgentLoopArgs): Promise<{ summary: s
         if (importedPath) {
           availablePaths.push(importedPath);
           usedAssets.add(importedPath);
+          allImportedPathsOrdered.push(importedPath);
         }
       }
     }
 
-    const stepAssets = [...new Set(availablePaths)].slice(0, 6);
-    const code = buildPlacementCode(stepAssets, step);
+    if (assetSource === "library") {
+      availablePaths = filterPathsForLibraryMode(availablePaths);
+    }
+
+    const importedPathsForPrompt = [...new Set(allImportedPathsOrdered)];
+    let stepAssets = [...new Set(availablePaths)].slice(0, 6);
+    let code = buildPlacementCode(stepAssets, step, {
+      libraryMode: assetSource === "library",
+      importedPathsForPrompt,
+    });
+    if (assetSource === "library" && codeViolatesLibraryMode(code)) {
+      console.warn(
+        "AGENT: REJECTED step code — contained forbidden scanned/asset paths. Regenerating from imported paths only.",
+      );
+      stepAssets = filterPathsForLibraryMode(stepAssets);
+      code = buildPlacementCode(stepAssets, step, {
+        libraryMode: true,
+        importedPathsForPrompt,
+      });
+    }
     await onEvent({ type: "step_code", stepNumber: step.stepNumber, code });
 
     let success = false;
