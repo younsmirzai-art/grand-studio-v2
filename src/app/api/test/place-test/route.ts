@@ -6,22 +6,29 @@ const PLACEMENT_TEST_PYTHON = `import unreal
 editor = unreal.EditorLevelLibrary
 import_dir = '/Game/GrandStudio/Imported'
 all_assets = unreal.EditorAssetLibrary.list_assets(import_dir, recursive=True)
-unreal.log(f'Found {len(all_assets)} imported assets')
-placed = 0
-for i, asset_path in enumerate(all_assets[:5]):
-    clean = asset_path.split('.')[0]
+unreal.log(f'Found {len(all_assets)} total assets in Imported folder')
+static_meshes = []
+for a in all_assets:
+    clean = a.split('.')[0]
     obj = unreal.EditorAssetLibrary.load_asset(clean)
+    if obj and obj.get_class().get_name() == 'StaticMesh':
+        static_meshes.append(clean)
+        unreal.log(f'StaticMesh found: {clean}')
+unreal.log(f'Found {len(static_meshes)} StaticMeshes total')
+placed = 0
+for i, mesh_path in enumerate(static_meshes[:10]):
+    obj = unreal.EditorAssetLibrary.load_asset(mesh_path)
     if obj:
-        actor = editor.spawn_actor_from_object(obj, unreal.Vector(i * 800, 0, 0))
+        actor = editor.spawn_actor_from_object(obj, unreal.Vector(i * 1000, 0, 0))
         if actor:
             placed += 1
-            unreal.log(f'Placed {clean} at x={i * 800}')
-unreal.log(f'Placement test done: {placed} assets placed')
+            unreal.log(f'Placed {mesh_path} at x={i * 1000}')
+unreal.log(f'Placement test done: {placed} StaticMeshes placed out of {len(static_meshes)} found')
 `;
 
 /**
  * GET /api/test/place-test?projectId=...
- * Queues a minimal UE5 placement script to verify Imported assets can be spawned in the level.
+ * Queues a minimal UE5 placement script to verify Imported StaticMeshes can be found in subfolders and spawned.
  */
 export async function GET(request: NextRequest) {
   try {

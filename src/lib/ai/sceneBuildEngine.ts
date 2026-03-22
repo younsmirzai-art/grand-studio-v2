@@ -393,6 +393,19 @@ function escapePy(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+/** Last path segment without extension — used to match discovered StaticMeshes under subfolders */
+function matchKeyFromUePath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").trim();
+  const parts = normalized.split("/").filter(Boolean);
+  const last = parts[parts.length - 1] ?? "";
+  if (!last) return "";
+  return last.includes(".") ? last.split(".").slice(0, -1).join(".") : last;
+}
+
+/**
+ * Placement: discover StaticMeshes under /Game/GrandStudio/Imported recursively, then match by asset name
+ * to the paths we stored (which may omit subfolders like scene/StaticMeshes/).
+ */
 export function generatePlacementCode(scene: SceneRequest, slots: PlaceSlot[]): string {
   const sun = lightingToSunRot(scene.lighting);
   const lines: string[] = [
@@ -412,15 +425,60 @@ export function generatePlacementCode(scene: SceneRequest, slots: PlaceSlot[]): 
     "            pass",
     "    return act",
     "",
+    "def _basename_key(path):",
+    "    p = path.rstrip('/').split('/')[-1] if path else ''",
+    "    if '.' in p:",
+    "        p = p.split('.')[0]",
+    "    return p.lower()",
+    "",
+    "import_dir = '/Game/GrandStudio/Imported'",
+    "all_assets = unreal.EditorAssetLibrary.list_assets(import_dir, recursive=True)",
+    "unreal.log(f'[placement] Recursive scan: {len(all_assets)} assets under Imported')",
+    "mesh_by_key = {}",
+    "for a in all_assets:",
+    "    clean = a.split('.')[0]",
+    "    try:",
+    "        obj = unreal.EditorAssetLibrary.load_asset(clean)",
+    "    except Exception:",
+    "        continue",
+    "    if obj and obj.get_class().get_name() == 'StaticMesh':",
+    "        k = _basename_key(clean)",
+    "        mesh_by_key[k] = clean",
+    "        unreal.log(f'[placement] StaticMesh: {clean}')",
+    "unreal.log(f'[placement] Indexed {len(mesh_by_key)} StaticMeshes')",
+    "",
+    "SLOT_SPECS = [",
   ];
 
   for (const s of slots) {
-    const p = escapePy(s.path);
+    const mk = matchKeyFromUePath(s.path).trim();
+    if (!mk) continue;
+    const yawDeg = ((s.yaw * 180) / Math.PI).toFixed(2);
     lines.push(
-      `spawn_mesh('${p}', unreal.Vector(${s.x.toFixed(1)}, ${s.y.toFixed(1)}, ${s.z.toFixed(1)}), ${((s.yaw * 180) / Math.PI).toFixed(2)}, unreal.Vector(${s.scale.toFixed(3)}, ${s.scale.toFixed(3)}, ${s.scale.toFixed(3)}))`,
+      `    {"match": '${escapePy(mk)}', "x": ${s.x.toFixed(1)}, "y": ${s.y.toFixed(1)}, "z": ${s.z.toFixed(1)}, "yaw_deg": ${yawDeg}, "sx": ${s.scale.toFixed(3)}, "sy": ${s.scale.toFixed(3)}, "sz": ${s.scale.toFixed(3)}},`,
     );
   }
 
+  lines.push("]");
+  lines.push("");
+  lines.push("placed = 0");
+  lines.push("for spec in SLOT_SPECS:");
+  lines.push("    want = spec['match'].lower()");
+  lines.push("    resolved = mesh_by_key.get(want)");
+  lines.push("    if not resolved:");
+  lines.push("        for k, v in mesh_by_key.items():");
+  lines.push("            if want == k or want in k or k in want:");
+  lines.push("                resolved = v");
+  lines.push("                break");
+  lines.push("    if not resolved:");
+  lines.push("        unreal.log(f\"[placement] No StaticMesh matched for '{want}' (expected from relay path)\")");
+  lines.push("        continue");
+  lines.push("    unreal.log(f\"[placement] Spawning {resolved} for match '{want}'\")");
+  lines.push(
+    "    if spawn_mesh(resolved, unreal.Vector(spec['x'], spec['y'], spec['z']), spec['yaw_deg'], unreal.Vector(spec['sx'], spec['sy'], spec['sz'])):",
+  );
+  lines.push("        placed += 1");
+  lines.push("unreal.log(f'[placement] Spawned {placed} / {len(SLOT_SPECS)} slots')");
   lines.push("");
   lines.push("# Sky + lighting");
   lines.push("try:");
