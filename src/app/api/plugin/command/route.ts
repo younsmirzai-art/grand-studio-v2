@@ -2,17 +2,81 @@ import { NextRequest, NextResponse } from "next/server";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 
-function extractJsonObject(text: string): string | null {
+/** Slice from first `{` through end of text (may be incomplete). */
+function extractJsonCandidate(text: string): string | null {
   const trimmed = text.trim();
-  if (trimmed.startsWith("{")) {
-    const last = trimmed.lastIndexOf("}");
-    if (last > 0) return trimmed.slice(0, last + 1);
-  }
-  const m = text.match(/\{[\s\S]*\}/);
-  return m ? m[0] : null;
+  const start = trimmed.indexOf("{");
+  if (start < 0) return null;
+  return trimmed.slice(start);
 }
 
-function formatAssetsForPrompt(assets: unknown, assetCount: unknown): string {
+/**
+ * Best-effort repair: close an open string, then `]`, then `}` to balance JSON structure.
+ * Brace/bracket counts ignore characters inside quoted strings.
+ */
+function repairIncompleteJson(input: string): string {
+  let s = input;
+  let depth = 0;
+  let bdepth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    else if (c === "[") bdepth++;
+    else if (c === "]") bdepth--;
+  }
+  let out = s;
+  if (inString) out += '"';
+  while (bdepth > 0) {
+    out += "]";
+    bdepth--;
+  }
+  while (depth > 0) {
+    out += "}";
+    depth--;
+  }
+  return out;
+}
+
+function tryParsePluginJson(text: string): Record<string, unknown> | null {
+  const candidate = extractJsonCandidate(text);
+  if (!candidate) return null;
+  try {
+    return JSON.parse(candidate) as Record<string, unknown>;
+  } catch {
+    try {
+      return JSON.parse(repairIncompleteJson(candidate)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** First ```python or ``` fenced block in the raw response. */
+function extractPythonFromFences(text: string): string | null {
+  const re = /```(?:python)?\s*([\s\S]*?)```/;
+  const m = text.match(re);
+  if (!m?.[1]) return null;
+  const body = m[1].trim();
+  return body || null;
+}
+
+function formatAssetsForPrompt(assets: unknown): string {
   if (typeof assets === "string") {
     return assets.slice(0, 200_000);
   }
@@ -24,8 +88,15 @@ function formatAssetsForPrompt(assets: unknown, assetCount: unknown): string {
 }
 
 function commanderSystemPrompt(assetsText: string): string {
-  return `You are Grand Studio AI Commander running inside UE5. You have direct access to the user's project. The user has these assets: ${assetsText}. When the user asks you to build something, respond with a JSON object containing: description (friendly text explaining what you will do) and code (complete Python code to execute in UE5). The Python code must use unreal module. Always use load_asset and spawn_actor_from_object for placing assets. Never use BasicShapes when real assets are available.
-Output ONLY valid JSON with keys "description" and "code". No markdown fences, no text before or after the JSON.`;
+  return `Grand Studio AI Commander in UE5. Available assets: ${assetsText}
+
+For build requests reply with ONLY a JSON object (no markdown, no text outside JSON):
+{"description":"short friendly plan","code":"..."}
+
+Rules:
+- Python: import unreal, use EditorAssetLibrary.load_asset and EditorLevelLibrary.spawn_actor_from_object for meshes. No BasicShapes if an asset path fits the request.
+- Keep code ≤50 lines, minimal and focused. End with unreal.log(...).
+- Escape double quotes inside the code string as \\".`;
 }
 
 /**
@@ -49,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
     const assetCount = body?.assetCount;
-    const assetsText = formatAssetsForPrompt(body?.assets ?? [], assetCount);
+    const assetsText = formatAssetsForPrompt(body?.assets ?? []);
 
     console.log("[plugin/command] received", {
       promptLength: prompt.length,
@@ -74,7 +145,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 8000,
+        max_tokens: 16000,
         temperature: 0.25,
         messages: [
           { role: "system", content: system },
@@ -98,30 +169,29 @@ export async function POST(request: NextRequest) {
     const raw = data.choices?.[0]?.message?.content ?? "";
     console.log("[plugin/command] raw response length", raw.length);
 
-    const jsonStr = extractJsonObject(raw);
-    if (!jsonStr) {
-      console.log("[plugin/command] could not parse JSON from model output");
-      return NextResponse.json(
-        { error: "Model did not return valid JSON", raw: raw.slice(0, 2000) },
-        { status: 422 },
-      );
+    let parsed = tryParsePluginJson(raw);
+    if (parsed) {
+      console.log("[plugin/command] JSON parse ok (raw or after repair)");
+    } else {
+      console.log("[plugin/command] JSON parse failed after repair, will try fenced code");
     }
 
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    } catch (e) {
-      console.log("[plugin/command] JSON.parse failed", e);
-      return NextResponse.json({ error: "Invalid JSON from model", snippet: jsonStr.slice(0, 500) }, { status: 422 });
-    }
-
-    const description = typeof parsed.description === "string" ? parsed.description : "";
-    const code = typeof parsed.code === "string" ? parsed.code : "";
+    let description = typeof parsed?.description === "string" ? parsed.description : "";
+    let code = typeof parsed?.code === "string" ? parsed.code : "";
 
     if (!code) {
-      console.log("[plugin/command] missing code in parsed payload", Object.keys(parsed));
+      const fenced = extractPythonFromFences(raw);
+      if (fenced) {
+        code = fenced;
+        if (!description) description = "Recovered Python from markdown code fence in model output.";
+        console.log("[plugin/command] using fallback fenced code", { codeLength: code.length });
+      }
+    }
+
+    if (!code) {
+      console.log("[plugin/command] no code from JSON or fences");
       return NextResponse.json(
-        { error: 'Response must include string "code"', parsed },
+        { error: "Model did not return usable JSON or fenced Python", raw: raw.slice(0, 2000) },
         { status: 422 },
       );
     }
