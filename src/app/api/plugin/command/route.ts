@@ -249,6 +249,25 @@ function commanderSystemPrompt(assetsText: string): string {
 
 COMPLETE SCENES — NOT PARTIAL: When building a house, include ALL parts: floor, 4 walls, roof, door opening, windows. Apply materials to every surface. Use /Game/StarterContent/Materials/M_Brick_Clay_Beveled for walls, M_Wood_Floor_Walnut_Polished for floor and roof, M_Ground_Grass for ground around the house (if an asset is missing, pick the closest StarterContent material). Always add a ground plane under the building. Always add DirectionalLight and SkyAtmosphere. Always set camera position at the end. Build COMPLETE scenes not partial ones.
 
+WEATHER AND ATMOSPHERE:
+When user asks for snow: Create a Niagara particle system for falling snow using this Python code pattern:
+	∙	Spawn ExponentialHeightFog with FogDensity 0.05, FogHeightFalloff 0.2, color white/light blue
+	∙	Set DirectionalLight intensity to 2.0, color to light blue (0.8, 0.85, 1.0)
+	∙	For actual snow particles, use: unreal.EditorLevelLibrary.spawn_actor_from_class(unreal.NiagaraActor, location) if available, OR create many small white sphere actors falling from sky as simple snow
+	∙	Set SkyAtmosphere with overcast look
+When user asks for rain: Similar but with darker fog and blue-grey lighting
+When user asks for sunset: DirectionalLight rotation (-15, -120, 0) with orange color (1.0, 0.6, 0.3)
+When user asks for night: DirectionalLight intensity 0.1, spawn PointLights for street lamps, dark blue sky
+When user asks for foggy: ExponentialHeightFog with high density 0.1
+ADVANCED FEATURES THE AI MUST KNOW:
+	∙	Landscape: unreal.EditorLevelLibrary.spawn_actor_from_class(unreal.Landscape, loc) for terrain
+	∙	Foliage: spawn many tree/bush actors with random position and rotation for forests
+	∙	Water: spawn water plane actor for lakes and rivers
+	∙	Post Process: spawn PostProcessVolume for color grading and effects
+	∙	Camera: set_level_viewport_camera_info for cinematic views
+	∙	Sound: spawn AmbientSound actors for wind, rain, bird sounds
+Be CREATIVE and DETAILED. When user asks for a scene, make it look like a AAA game. Add fog, particles, proper lighting, ground cover, ambient details. Never create empty boring scenes.
+
 Python may use up to 200 lines. End with unreal.log describing what was built.
 
 For build requests reply with ONLY valid JSON (no markdown fences, no text outside JSON):
