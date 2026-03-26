@@ -62,9 +62,106 @@ function tryParsePluginJson(text: string): Record<string, unknown> | null {
     try {
       return JSON.parse(repairIncompleteJson(candidate)) as Record<string, unknown>;
     } catch {
-      return null;
+      return tryParseWithEscapedQuotePlaceholder(candidate)
+        ?? tryParseWithEscapedQuotePlaceholder(repairIncompleteJson(candidate));
     }
   }
+}
+
+const JSON_ESC_QUOTE_PLACEHOLDER = "\uE000PLACEHOLDER_QUOTE\uE001";
+
+/**
+ * Try JSON.parse after replacing escaped quotes inside the payload so naive parsers succeed.
+ * Restores placeholders only in string values — best-effort: replace all \\\" then parse.
+ */
+function tryParseWithEscapedQuotePlaceholder(candidate: string): Record<string, unknown> | null {
+  if (!candidate.trim()) return null;
+  const patched = candidate.replace(/\\"/g, JSON_ESC_QUOTE_PLACEHOLDER);
+  try {
+    const o = JSON.parse(patched) as Record<string, unknown>;
+    const walk = (v: unknown): unknown => {
+      if (typeof v === "string") {
+        return v.split(JSON_ESC_QUOTE_PLACEHOLDER).join('"');
+      }
+      if (Array.isArray(v)) return v.map(walk);
+      if (v && typeof v === "object")
+        return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, walk(val)]));
+      return v;
+    };
+    return walk(o) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract a JSON string value for `field` after `"field": "` using JSON escape rules.
+ * Handles \\\", \\n, etc. Truncated responses: returns unclosed content as the value.
+ */
+function extractJsonStringValue(raw: string, field: string): string | null {
+  const esc = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`"${esc}"\\s*:\\s*"`, "im");
+  const m = re.exec(raw);
+  if (!m || m.index === undefined) return null;
+  let i = m.index + m[0].length;
+  let out = "";
+  while (i < raw.length) {
+    const c = raw[i];
+    if (c === "\\" && i + 1 < raw.length) {
+      const n = raw[i + 1];
+      if (n === "n") {
+        out += "\n";
+        i += 2;
+        continue;
+      }
+      if (n === "r") {
+        out += "\r";
+        i += 2;
+        continue;
+      }
+      if (n === "t") {
+        out += "\t";
+        i += 2;
+        continue;
+      }
+      if (n === '"') {
+        out += '"';
+        i += 2;
+        continue;
+      }
+      if (n === "\\") {
+        out += "\\";
+        i += 2;
+        continue;
+      }
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '"') return out;
+    out += c;
+    i++;
+  }
+  return out.length > 0 ? out : null;
+}
+
+function naiveJsonishUnescape(s: string): string {
+  return s
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+/** If the model returned mostly Python (no usable JSON wrapper). */
+function fallbackRawAsCode(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  if (t.startsWith("import unreal")) return naiveJsonishUnescape(t);
+  const idx = t.indexOf("import unreal");
+  if (idx >= 0 && t.includes("unreal.")) return naiveJsonishUnescape(t.slice(idx));
+  return null;
 }
 
 /** First ```python or ``` fenced block in the raw response. */
@@ -171,13 +268,21 @@ export async function POST(request: NextRequest) {
 
     let parsed = tryParsePluginJson(raw);
     if (parsed) {
-      console.log("[plugin/command] JSON parse ok (raw or after repair)");
+      console.log("[plugin/command] JSON parse ok (raw, repair, or quote-placeholder)");
     } else {
-      console.log("[plugin/command] JSON parse failed after repair, will try fenced code");
+      console.log("[plugin/command] JSON.parse paths failed, will extract fields or fallbacks");
     }
 
     let description = typeof parsed?.description === "string" ? parsed.description : "";
     let code = typeof parsed?.code === "string" ? parsed.code : "";
+
+    if (!description || !code) {
+      const d = extractJsonStringValue(raw, "description");
+      const c = extractJsonStringValue(raw, "code");
+      if (d) description = d;
+      if (c) code = c;
+      if (d || c) console.log("[plugin/command] used manual JSON string extraction", { hasD: !!d, hasC: !!c });
+    }
 
     if (!code) {
       const fenced = extractPythonFromFences(raw);
@@ -189,9 +294,27 @@ export async function POST(request: NextRequest) {
     }
 
     if (!code) {
-      console.log("[plugin/command] no code from JSON or fences");
+      const asCode = fallbackRawAsCode(raw);
+      if (asCode) {
+        code = asCode;
+        if (!description) description = "Recovered: model output treated as Python.";
+        console.log("[plugin/command] using raw-as-code fallback", { codeLength: code.length });
+      }
+    }
+
+    if (!code) {
+      const stripped = naiveJsonishUnescape(raw.trim());
+      if (stripped.includes("import unreal")) {
+        code = stripped;
+        if (!description) description = "Recovered: full raw response unescaped as Python.";
+        console.log("[plugin/command] using full raw unescape as code");
+      }
+    }
+
+    if (!code) {
+      console.log("[plugin/command] no code after all strategies");
       return NextResponse.json(
-        { error: "Model did not return usable JSON or fenced Python", raw: raw.slice(0, 2000) },
+        { error: "Model did not return usable JSON, fields, fences, or Python", raw: raw.slice(0, 2000) },
         { status: 422 },
       );
     }
