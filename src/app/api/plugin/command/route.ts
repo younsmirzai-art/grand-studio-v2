@@ -184,16 +184,80 @@ function formatAssetsForPrompt(assets: unknown): string {
   }
 }
 
+const HOUSE_WITH_MATERIALS_EXAMPLE = `import unreal
+editor = unreal.EditorLevelLibrary
+el = unreal.EditorAssetLibrary
+MAT_WALL = '/Game/StarterContent/Materials/M_Brick_Clay_Beveled'
+MAT_FLOOR_ROOF = '/Game/StarterContent/Materials/M_Wood_Floor_Walnut_Polished'
+MAT_GROUND = '/Game/StarterContent/Materials/M_Ground_Grass'
+
+def smat(act, mat_path):
+    if not act: return
+    smc = act.get_component_by_class(unreal.StaticMeshComponent)
+    mat = el.load_asset(mat_path)
+    if smc and mat:
+        smc.set_material(0, mat)
+
+def scube(loc, scale3d, mat_path):
+    a = el.load_asset('/Engine/BasicShapes/Cube')
+    if not a: return None
+    act = editor.spawn_actor_from_object(a, loc)
+    if not act: return None
+    act.set_actor_scale3d(scale3d)
+    smat(act, mat_path)
+    return act
+
+def splane(loc, scale3d, mat_path):
+    a = el.load_asset('/Engine/BasicShapes/Plane')
+    if not a: return None
+    act = editor.spawn_actor_from_object(a, loc)
+    if not act: return None
+    act.set_actor_scale3d(scale3d)
+    smat(act, mat_path)
+    return act
+
+# Units: centimeters. Default BasicShapes cube ~100; scales multiply that.
+splane(unreal.Vector(0, 0, 0), unreal.Vector(40, 40, 1), MAT_GROUND)
+scube(unreal.Vector(0, 0, 5), unreal.Vector(6, 6, 0.1), MAT_FLOOR_ROOF)
+# Four walls ~200 cm tall, door gap: two wall segments on south (+Y) side with space between
+scube(unreal.Vector(0, -300, 110), unreal.Vector(6, 0.2, 2), MAT_WALL)
+scube(unreal.Vector(0, 300, 110), unreal.Vector(6, 0.2, 2), MAT_WALL)
+scube(unreal.Vector(-300, 0, 110), unreal.Vector(0.2, 6, 2), MAT_WALL)
+scube(unreal.Vector(300, -150, 110), unreal.Vector(0.2, 3, 2), MAT_WALL)
+scube(unreal.Vector(300, 150, 110), unreal.Vector(0.2, 3, 2), MAT_WALL)
+scube(unreal.Vector(0, 0, 260), unreal.Vector(6.2, 6.2, 0.15), MAT_FLOOR_ROOF)
+try:
+    sun = editor.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(-4000, -4000, 4000))
+    if sun:
+        sun.set_actor_rotation(unreal.Rotator(-45, 35, 0), False)
+except Exception:
+    pass
+try:
+    editor.spawn_actor_from_class(unreal.SkyAtmosphere, unreal.Vector(0, 0, 0))
+except Exception:
+    pass
+try:
+    cam = editor.spawn_actor_from_class(unreal.CameraActor, unreal.Vector(900, -900, 280))
+    if cam:
+        cam.set_actor_rotation(unreal.Rotator(-12, 42, 0), False)
+except Exception:
+    pass
+unreal.log('Complete house: ground, floor, walls with door gap, roof, materials, sun, sky, camera')`;
+
 function commanderSystemPrompt(assetsText: string): string {
-  return `Grand Studio AI Commander in UE5. Available assets: ${assetsText}
+  return `Grand Studio AI Commander in UE5. The user has these project assets (use exact paths with load_asset + spawn_actor_from_object when they fit the request; otherwise use BasicShapes + StarterContent as below): ${assetsText}
 
-For build requests reply with ONLY a JSON object (no markdown, no text outside JSON):
-{"description":"short friendly plan","code":"..."}
+COMPLETE SCENES — NOT PARTIAL: When building a house, include ALL parts: floor, 4 walls, roof, door opening, windows. Apply materials to every surface. Use /Game/StarterContent/Materials/M_Brick_Clay_Beveled for walls, M_Wood_Floor_Walnut_Polished for floor and roof, M_Ground_Grass for ground around the house (if an asset is missing, pick the closest StarterContent material). Always add a ground plane under the building. Always add DirectionalLight and SkyAtmosphere. Always set camera position at the end. Build COMPLETE scenes not partial ones.
 
-Rules:
-- Python: import unreal, use EditorAssetLibrary.load_asset and EditorLevelLibrary.spawn_actor_from_object for meshes. No BasicShapes if an asset path fits the request.
-- Keep code ≤50 lines, minimal and focused. End with unreal.log(...).
-- Escape double quotes inside the code string as \\".`;
+Python may use up to 200 lines. End with unreal.log describing what was built.
+
+For build requests reply with ONLY valid JSON (no markdown fences, no text outside JSON):
+{"description":"short friendly plan what you will build","code":"..."}
+
+Escape every double-quote inside the code string as \\" and newlines as \\n.
+
+EXACT PATTERN EXAMPLE (follow this structure; adapt sizes, add door/window cuts, use user assets when they match house parts):
+${HOUSE_WITH_MATERIALS_EXAMPLE}`;
 }
 
 /**
@@ -242,7 +306,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 16000,
+        max_tokens: 32000,
         temperature: 0.25,
         messages: [
           { role: "system", content: system },
