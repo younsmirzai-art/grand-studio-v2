@@ -1,6 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
+const GEMINI_GENERATE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+
+type GeminiGenerateResponse = {
+  candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+  error?: { message?: string; code?: number };
+};
+
+function extractGeminiText(data: GeminiGenerateResponse): string {
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!parts?.length) return "";
+  return parts.map((p) => p.text ?? "").join("");
+}
+
+async function fetchGeminiCompletion(apiKey: string, systemPrompt: string, userPrompt: string): Promise<Response> {
+  const url = `${GEMINI_GENERATE_URL}?key=${encodeURIComponent(apiKey)}`;
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        { role: "user", parts: [{ text: systemPrompt }] },
+        { role: "model", parts: [{ text: "I understand. I will follow your instructions." }] },
+        { role: "user", parts: [{ text: userPrompt }] },
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 32000,
+      },
+    }),
+  });
+}
+
+async function fetchOpenRouterCompletion(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<Response> {
+  return fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://grand-studio-v2-prod.vercel.app",
+      "X-Title": "Grand Studio AI Commander Plugin",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 32000,
+      temperature: 0.25,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+}
 
 /** Slice from first `{` through end of text (may be incomplete). */
 function extractJsonCandidate(text: string): string | null {
@@ -286,10 +344,15 @@ ${HOUSE_WITH_MATERIALS_EXAMPLE}`;
  */
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      console.log("[plugin/command] missing OPENROUTER_API_KEY");
-      return NextResponse.json({ error: "OpenRouter not configured" }, { status: 503 });
+    const geminiKey = typeof process.env.GEMINI_API_KEY === "string" ? process.env.GEMINI_API_KEY.trim() : "";
+    const openRouterKey =
+      typeof process.env.OPENROUTER_API_KEY === "string" ? process.env.OPENROUTER_API_KEY.trim() : "";
+    if (!geminiKey && !openRouterKey) {
+      console.log("[plugin/command] missing GEMINI_API_KEY and OPENROUTER_API_KEY");
+      return NextResponse.json(
+        { error: "AI not configured. Set GEMINI_API_KEY (preferred) or OPENROUTER_API_KEY." },
+        { status: 503 },
+      );
     }
 
     const body = (await request.json()) as {
@@ -312,41 +375,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    const model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
     const system = commanderSystemPrompt(assetsText);
+    const useGemini = Boolean(geminiKey);
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://grand-studio-v2-prod.vercel.app",
-        "X-Title": "Grand Studio AI Commander Plugin",
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 32000,
-        temperature: 0.25,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
+    const response = useGemini
+      ? await fetchGeminiCompletion(geminiKey, system, prompt)
+      : await fetchOpenRouterCompletion(
+          openRouterKey,
+          process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
+          system,
+          prompt,
+        );
 
-    console.log("[plugin/command] OpenRouter status", response.status);
+    console.log("[plugin/command]", useGemini ? "Gemini" : "OpenRouter", "status", response.status);
 
     if (!response.ok) {
       const errText = await response.text();
-      console.log("[plugin/command] OpenRouter error body", errText.slice(0, 500));
+      console.log("[plugin/command] AI error body", errText.slice(0, 500));
       return NextResponse.json(
         { error: "AI request failed", detail: errText.slice(0, 500) },
         { status: 502 },
       );
     }
 
-    const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-    const raw = data.choices?.[0]?.message?.content ?? "";
+    const data = (await response.json()) as
+      | GeminiGenerateResponse
+      | { choices?: { message?: { content?: string } }[] };
+    const raw = useGemini
+      ? extractGeminiText(data as GeminiGenerateResponse)
+      : ((data as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content ?? "");
     console.log("[plugin/command] raw response length", raw.length);
 
     let parsed = tryParsePluginJson(raw);
