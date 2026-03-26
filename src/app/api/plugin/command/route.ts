@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 const GEMINI_GENERATE_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 type GeminiGenerateResponse = {
   candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
