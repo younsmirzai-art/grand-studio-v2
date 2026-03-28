@@ -2,10 +2,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Users, UserPlus } from "lucide-react";
+import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Users, UserPlus, MessagesSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { getClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -33,6 +41,7 @@ export default function ProjectSettingsPage() {
   const projectId = params.id as string;
   const project = useProjectStore((s) => s.project);
   const setProject = useProjectStore((s) => s.setProject);
+  const setChatTurns = useProjectStore((s) => s.setChatTurns);
   const isRelayConnected = useProjectStore((s) => s.isRelayConnected);
 
   const [name, setName] = useState(project?.name ?? "");
@@ -54,6 +63,8 @@ export default function ProjectSettingsPage() {
   const [shareEmail, setShareEmail] = useState("");
   const [sharePermission, setSharePermission] = useState<"editor" | "viewer">("editor");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [clearChatsDialogOpen, setClearChatsDialogOpen] = useState(false);
+  const [clearingChats, setClearingChats] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -148,17 +159,64 @@ export default function ProjectSettingsPage() {
     router.push("/");
   };
 
-  const deleteChatHistory = async () => {
-    if (!confirm("Delete all chat history? This cannot be undone.")) return;
+  const handleClearAllChatsConfirm = async () => {
+    setClearingChats(true);
     const supabase = getClient();
-    await supabase.from("chat_turns").delete().eq("project_id", projectId);
-    toast.success("Chat history deleted");
+    const { error } = await supabase.from("chat_turns").delete().eq("project_id", projectId);
+    setClearingChats(false);
+    setClearChatsDialogOpen(false);
+    if (error) {
+      toast.error("Failed to delete chat history");
+      return;
+    }
+    setChatTurns([]);
+    try {
+      sessionStorage.removeItem(`gs_copilot_session_${projectId}`);
+    } catch {
+      /* ignore */
+    }
+    toast.success("All chat history has been deleted");
   };
 
-  if (loading) return <div className="p-8 text-text-muted">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto p-8">
+          <p className="text-text-muted">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-2xl">
+    <>
+      <Dialog open={clearChatsDialogOpen} onOpenChange={setClearChatsDialogOpen}>
+        <DialogContent className="bg-[#111114] border-boss-border text-text-primary sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-text-primary">Clear all chats?</DialogTitle>
+            <DialogDescription className="text-text-muted">
+              Are you sure you want to delete all chat history? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setClearChatsDialogOpen(false)} className="border-boss-border">
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={clearingChats}
+              onClick={handleClearAllChatsConfirm}
+            >
+              {clearingChats ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete all"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex min-h-0 flex-1 flex-col w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain">
+          <div className="p-6 sm:p-8 max-w-2xl w-full mx-auto pb-24">
       <Link
         href={`/project/${projectId}`}
         className="flex items-center gap-1.5 text-text-muted hover:text-text-primary text-sm mb-6 transition-colors"
@@ -425,6 +483,25 @@ export default function ProjectSettingsPage() {
           </div>
         </section>
 
+        {/* Chat History */}
+        <section>
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <MessagesSquare className="w-4 h-4" />
+            Chat History
+          </h3>
+          <p className="text-xs text-text-muted mb-3">
+            Remove every AI Copilot message for this project from Grand Studio. Your project and UE5 data are not affected.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setClearChatsDialogOpen(true)}
+            className="border-agent-amber/30 text-agent-amber hover:bg-agent-amber/10"
+          >
+            Clear All Chats
+          </Button>
+        </section>
+
         {/* API */}
         <section>
           <h3 className="text-sm font-semibold text-text-primary mb-3">API</h3>
@@ -439,9 +516,6 @@ export default function ProjectSettingsPage() {
             Danger Zone
           </h3>
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" onClick={deleteChatHistory} className="border-agent-amber/30 text-agent-amber hover:bg-agent-amber/10">
-              Delete Chat History
-            </Button>
             <Button variant="outline" onClick={handleDelete} className="border-agent-rose/30 text-agent-rose hover:bg-agent-rose/10 gap-2">
               <Trash2 className="w-4 h-4" />
               Delete Project
@@ -456,6 +530,9 @@ export default function ProjectSettingsPage() {
           </Button>
         </div>
       </div>
-    </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

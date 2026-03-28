@@ -17,6 +17,7 @@ interface ProjectState {
   updateTask: (id: string, updates: Partial<Task>) => void;
   setChatTurns: (turns: ChatTurn[]) => void;
   addChatTurn: (turn: ChatTurn) => void;
+  removeChatTurn: (id: number) => void;
   setGodEyeLog: (entries: GodEyeEntry[]) => void;
   addGodEyeEntry: (entry: GodEyeEntry) => void;
   setUE5Commands: (commands: UE5Command[]) => void;
@@ -51,6 +52,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
       if (s.chatTurns.some((t) => t.id === turn.id)) return s;
       return { chatTurns: [...s.chatTurns, turn] };
     }),
+  removeChatTurn: (id) =>
+    set((s) => ({ chatTurns: s.chatTurns.filter((t) => t.id !== id) })),
   setGodEyeLog: (godEyeLog) => set({ godEyeLog }),
   addGodEyeEntry: (entry) =>
     set((s) => ({

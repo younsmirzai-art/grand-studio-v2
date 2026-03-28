@@ -16,6 +16,7 @@ import {
   Download,
   GitMerge,
   Star,
+  Trash2,
 } from "lucide-react";
 import { ScreenshotPreview } from "@/components/chat/ScreenshotPreview";
 import type { ChatTurn } from "@/lib/types";
@@ -36,6 +37,10 @@ interface AICopilotPanelProps {
   disabled?: boolean;
   prefillMessage?: string | null;
   onClearPrefill?: () => void;
+  /** Remove one turn from Supabase + UI (optional). */
+  onDeleteChatTurn?: (turnId: number) => void;
+  /** Start a fresh in-panel thread without deleting stored history. */
+  onNewChat?: () => void;
 }
 
 const SUGGESTIONS = [
@@ -67,6 +72,8 @@ export function AICopilotPanel({
   disabled,
   prefillMessage,
   onClearPrefill,
+  onDeleteChatTurn,
+  onNewChat,
   pendingAgentMessage,
   onAgentAssetSource,
   onCancelPendingAgent,
@@ -178,6 +185,17 @@ export function AICopilotPanel({
                 )}
               </div>
               <div className="flex items-center gap-1">
+                {onNewChat && (
+                  <button
+                    type="button"
+                    onClick={onNewChat}
+                    disabled={disabled}
+                    className="px-2 py-1 rounded-lg text-[11px] font-medium text-[#2196F3] hover:bg-[#2196F3]/10 border border-[#2196F3]/25 transition disabled:opacity-40"
+                    title="Start a new conversation (history stays saved)"
+                  >
+                    New Chat
+                  </button>
+                )}
                 <button
                   onClick={onClose}
                   className="p-1.5 rounded-lg text-[#606068] hover:text-white hover:bg-white/5 transition"
@@ -218,13 +236,25 @@ export function AICopilotPanel({
                 return (
                   <div
                     key={turn.id}
-                    className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                    className={`flex gap-1.5 items-start ${isUser ? "justify-end" : "justify-start"}`}
                   >
+                    {!isUser && onDeleteChatTurn && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteChatTurn(turn.id)}
+                        disabled={disabled}
+                        className="mt-1 p-1.5 rounded-lg text-[#606068] hover:text-agent-rose hover:bg-white/5 transition shrink-0 disabled:opacity-40"
+                        title="Delete this message"
+                        aria-label="Delete this message"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <div
                       className={`max-w-[85%] ${
                         isUser
-                          ? "bg-[#2196F3]/10 rounded-xl rounded-br-sm p-3 ml-8"
-                          : "p-3 mr-8"
+                          ? "bg-[#2196F3]/10 rounded-xl rounded-br-sm p-3 ml-4"
+                          : "p-3 mr-4"
                       }`}
                     >
                       {!isUser && (
@@ -301,6 +331,18 @@ export function AICopilotPanel({
                         </div>
                       )}
                     </div>
+                    {isUser && onDeleteChatTurn && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteChatTurn(turn.id)}
+                        disabled={disabled}
+                        className="mt-1 p-1.5 rounded-lg text-[#606068] hover:text-agent-rose hover:bg-white/5 transition shrink-0 disabled:opacity-40"
+                        title="Delete this message"
+                        aria-label="Delete this message"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 );
               })}

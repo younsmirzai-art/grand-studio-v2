@@ -56,6 +56,7 @@ export default function ProjectPage() {
   const {
     chatTurns,
     setChatTurns,
+    removeChatTurn,
     setFullProjectRunning,
     isFullProjectRunning,
     setFullProjectPaused,
@@ -88,6 +89,8 @@ export default function ProjectPage() {
   const [agentBarStatus, setAgentBarStatus] = useState<null | { phase: "running" | "continuing"; chunk: number }>(
     null,
   );
+  /** ISO timestamp: only Copilot turns at or after this are shown (New Chat without deleting DB). */
+  const [copilotSessionStart, setCopilotSessionStart] = useState("1970-01-01T00:00:00.000Z");
 
   const autoBuildStartedRef = useRef(false);
   const seenSuccessIdsRef = useRef<Set<string>>(new Set());
@@ -149,6 +152,45 @@ export default function ProjectPage() {
     if (!projectId) return;
     refetchUsage();
   }, [projectId, refetchUsage]);
+
+  useEffect(() => {
+    try {
+      const v = sessionStorage.getItem(`gs_copilot_session_${projectId}`);
+      if (v) setCopilotSessionStart(v);
+      else setCopilotSessionStart("1970-01-01T00:00:00.000Z");
+    } catch {
+      setCopilotSessionStart("1970-01-01T00:00:00.000Z");
+    }
+  }, [projectId]);
+
+  const visibleChatTurns = useMemo(
+    () => chatTurns.filter((t) => t.created_at >= copilotSessionStart),
+    [chatTurns, copilotSessionStart],
+  );
+
+  const handleCopilotNewChat = useCallback(() => {
+    const now = new Date().toISOString();
+    try {
+      sessionStorage.setItem(`gs_copilot_session_${projectId}`, now);
+    } catch {
+      /* ignore */
+    }
+    setCopilotSessionStart(now);
+    toast.success("Started a new conversation");
+  }, [projectId]);
+
+  const handleDeleteChatTurn = useCallback(
+    async (turnId: number) => {
+      const supabase = getClient();
+      const { error } = await supabase.from("chat_turns").delete().eq("id", turnId);
+      if (error) {
+        toast.error("Failed to delete message");
+        return;
+      }
+      removeChatTurn(turnId);
+    },
+    [removeChatTurn],
+  );
 
   // Auto-build on initial load
   const autoBuild = searchParams.get("autoBuild") === "1";
@@ -1356,7 +1398,7 @@ export default function ProjectPage() {
       <AICopilotPanel
         open={copilotOpen}
         onClose={() => setCopilotOpen(false)}
-        chatTurns={chatTurns}
+        chatTurns={visibleChatTurns}
         isGenerating={isGenerating}
         streamingContent={streamingContent}
         onSend={sendMessage}
@@ -1366,6 +1408,8 @@ export default function ProjectPage() {
         disabled={isGenerating || isFullProjectRunning}
         prefillMessage={prefillMessage}
         onClearPrefill={() => setPrefillMessage(null)}
+        onDeleteChatTurn={handleDeleteChatTurn}
+        onNewChat={handleCopilotNewChat}
       />
 
       {/* Image-to-3D Modal */}
