@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { buildPolyHavenImportPython, polyHavenTopModelsWithFbx } from "@/lib/plugin/polyhavenImport";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 const GEMINI_GENERATE_URL =
@@ -242,6 +243,13 @@ function formatAssetsForPrompt(assets: unknown): string {
   }
 }
 
+function extractClientApiKey(request: NextRequest, body: Record<string, unknown>): string {
+  const h = request.headers.get("x-grandstudio-key");
+  const headerKey = typeof h === "string" ? h.trim() : "";
+  const bodyKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  return bodyKey || headerKey;
+}
+
 const HOUSE_WITH_MATERIALS_EXAMPLE = `import unreal
 editor = unreal.EditorLevelLibrary
 el = unreal.EditorAssetLibrary
@@ -336,6 +344,12 @@ Scale: 1 unit = 1 cm. Human = 180 units. Door = 100x200. Wall = 400-600 wide x 3
 
 NEVER build incomplete scenes. NEVER leave surfaces without materials. NEVER forget lighting.
 
+GRAND STUDIO SERVER ROLE: You generate Python that the Grand Studio UE5 plugin runs in the user's Editor. Use the scanned asset list above for exact paths. When imported Poly Haven content exists under /Game/GrandStudio/Imported/, prefer those static meshes for props and environment pieces that match the user's request.
+
+MATERIAL KNOWLEDGE: You can assign StarterContent materials, create MaterialInstanceDynamic via KismetMaterialLibrary + BasicShapeMaterial, or create new Material assets with AssetTools. Every visible surface should have a material.
+
+UE 5.7 — ExponentialHeightFog: do NOT use fog_inscattering_color (unreliable / not available like older tutorials). Use fog_density, fog_height_falloff, and other fog properties documented for UE 5.7 only.
+
 WEATHER AND ATMOSPHERE:
 When user asks for snow: Create a Niagara particle system for falling snow using this Python code pattern:
 	∙	Spawn ExponentialHeightFog with FogDensity 0.05, FogHeightFalloff 0.2, color white/light blue
@@ -377,6 +391,66 @@ ${HOUSE_WITH_MATERIALS_EXAMPLE}`;
  */
 export async function POST(request: NextRequest) {
   try {
+    let bodyRaw: Record<string, unknown> = {};
+    try {
+      bodyRaw = (await request.json()) as Record<string, unknown>;
+    } catch {
+      bodyRaw = {};
+    }
+
+    const apiKey = extractClientApiKey(request, bodyRaw);
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "API key required. Get your key at https://grandstudio.dev/dashboard" },
+        { status: 401 },
+      );
+    }
+
+    const prompt = typeof bodyRaw.prompt === "string" ? bodyRaw.prompt.trim() : "";
+    const assetCount = bodyRaw.assetCount;
+    const assetsText = formatAssetsForPrompt(bodyRaw.assets ?? []);
+
+    console.log("[plugin/command] received", {
+      promptLength: prompt.length,
+      assetCount,
+      assetsTextLength: assetsText.length,
+      hasApiKey: Boolean(apiKey),
+    });
+
+    if (!prompt) {
+      return NextResponse.json({ error: "prompt is required" }, { status: 400 });
+    }
+
+    const importMatch = prompt.match(/^IMPORT:\s*(.*)$/i);
+    if (importMatch) {
+      const term = importMatch[1]?.trim() ?? "";
+      if (!term) {
+        return NextResponse.json(
+          { error: "IMPORT: requires a search term (e.g. IMPORT:tree)" },
+          { status: 400 },
+        );
+      }
+      try {
+        const hits = await polyHavenTopModelsWithFbx(term, 3);
+        if (hits.length === 0) {
+          return NextResponse.json({
+            description: `No Poly Haven FBX models found for "${term}".`,
+            code: "",
+          });
+        }
+        const names = hits.map((h) => h.name).join(", ");
+        const code = buildPolyHavenImportPython(hits);
+        return NextResponse.json({
+          description: `Importing ${hits.length} models: ${names}`,
+          code,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.log("[plugin/command] IMPORT error", msg);
+        return NextResponse.json({ error: "Poly Haven import failed", detail: msg }, { status: 502 });
+      }
+    }
+
     const geminiKey = typeof process.env.GEMINI_API_KEY === "string" ? process.env.GEMINI_API_KEY.trim() : "";
     const openRouterKey =
       typeof process.env.OPENROUTER_API_KEY === "string" ? process.env.OPENROUTER_API_KEY.trim() : "";
@@ -386,26 +460,6 @@ export async function POST(request: NextRequest) {
         { error: "AI not configured. Set GEMINI_API_KEY (preferred) or OPENROUTER_API_KEY." },
         { status: 503 },
       );
-    }
-
-    const body = (await request.json()) as {
-      prompt?: string;
-      assets?: unknown;
-      assetCount?: unknown;
-    };
-
-    const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const assetCount = body?.assetCount;
-    const assetsText = formatAssetsForPrompt(body?.assets ?? []);
-
-    console.log("[plugin/command] received", {
-      promptLength: prompt.length,
-      assetCount,
-      assetsTextLength: assetsText.length,
-    });
-
-    if (!prompt) {
-      return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
 
     const system = commanderSystemPrompt(assetsText);
