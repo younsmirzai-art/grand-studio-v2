@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildPolyHavenImportPython, polyHavenTopModelsWithFbx } from "@/lib/plugin/polyhavenImport";
+import { polyHavenHitsToImportSteps, polyHavenTopModelsWithFbx } from "@/lib/plugin/polyhavenImport";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 const GEMINI_GENERATE_URL =
@@ -436,13 +436,15 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             description: `No Poly Haven FBX models found for "${term}".`,
             code: "",
+            steps: [],
           });
         }
-        const names = hits.map((h) => h.name).join(", ");
-        const code = buildPolyHavenImportPython(hits);
+        const steps = polyHavenHitsToImportSteps(hits);
+        const ids = hits.map((h) => h.id).join(", ");
         return NextResponse.json({
-          description: `Importing ${hits.length} models: ${names}`,
-          code,
+          description: `Found ${hits.length} models for ${term}: ${ids}`,
+          code: "",
+          steps,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

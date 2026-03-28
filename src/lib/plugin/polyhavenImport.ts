@@ -2,6 +2,13 @@ const USER_AGENT = "GrandStudio/1.0 (contact@grandstudio.dev)";
 
 export type PolyHavenImportHit = { id: string; name: string; fbxUrl: string };
 
+export type PluginImportStep = {
+  action: "import";
+  name: string;
+  url: string;
+  destination: string;
+};
+
 function pickFbxUrl(filesRoot: Record<string, unknown>): string | null {
   const fbxCat = filesRoot.fbx as Record<string, unknown> | undefined;
   if (!fbxCat) return null;
@@ -42,44 +49,15 @@ export async function polyHavenTopModelsWithFbx(searchTerm: string, limit = 3): 
   return out;
 }
 
-function pyStr(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-/** Python script: download FBX files and import into /Game/GrandStudio/Imported/ (UE 5.7-safe AssetImportTask fields only). */
-export function buildPolyHavenImportPython(hits: PolyHavenImportHit[]): string {
-  let script = `import unreal
-import urllib.request
-import os
-import time
-
-os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
-try:
-    unreal.EditorAssetLibrary.make_directory('/Game/GrandStudio/Imported')
-except:
-    pass
-
-tasks = [
-`;
-  for (const h of hits) {
-    const safeId = h.id.replace(/ /g, "_");
-    script += `    ("${pyStr(h.fbxUrl)}", "${pyStr(`C:/GrandStudio/Downloads/${safeId}.fbx`)}", "${pyStr(safeId)}"),\n`;
-  }
-  script += `]
-
-for i, (url, filepath, dest_name) in enumerate(tasks):
-    if i > 0:
-        time.sleep(10)
-    urllib.request.urlretrieve(url, filepath)
-    task = unreal.AssetImportTask()
-    task.filename = filepath
-    task.destination_path = '/Game/GrandStudio/Imported'
-    task.destination_name = dest_name
-    task.replace_existing = True
-    task.automated = True
-    task.save = True
-    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
-    unreal.log('Imported ' + dest_name)
-`;
-  return script;
+/** Build step objects for the plugin to execute locally (no server download/import). */
+export function polyHavenHitsToImportSteps(hits: PolyHavenImportHit[]): PluginImportStep[] {
+  return hits.map((h) => {
+    const name = h.id.replace(/ /g, "_");
+    return {
+      action: "import",
+      name,
+      url: h.fbxUrl,
+      destination: `/Game/GrandStudio/Imported/${name}`,
+    };
+  });
 }
