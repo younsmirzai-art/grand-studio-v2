@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Users, UserPlus, MessagesSquare } from "lucide-react";
+import { Save, Loader2, Trash2, ArrowLeft, Wifi, WifiOff, AlertTriangle, Users, UserPlus, MessagesSquare, Key, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,6 +66,12 @@ export default function ProjectSettingsPage() {
   const [clearChatsDialogOpen, setClearChatsDialogOpen] = useState(false);
   const [clearingChats, setClearingChats] = useState(false);
 
+  const [commanderApiKeyStatus, setCommanderApiKeyStatus] = useState<{ hasKey: boolean; keySuffix?: string } | null>(null);
+  const [commanderApiKeyLoading, setCommanderApiKeyLoading] = useState(true);
+  const [commanderApiKeyRevealed, setCommanderApiKeyRevealed] = useState<string | null>(null);
+  const [commanderApiKeyGenerating, setCommanderApiKeyGenerating] = useState(false);
+  const [commanderApiKeyCopied, setCommanderApiKeyCopied] = useState(false);
+
   useEffect(() => {
     if (project) {
       setName(project.name);
@@ -112,6 +118,27 @@ export default function ProjectSettingsPage() {
   useEffect(() => {
     fetchCollaborators();
   }, [fetchCollaborators]);
+
+  const fetchCommanderApiKeyStatus = useCallback(async () => {
+    setCommanderApiKeyLoading(true);
+    try {
+      const res = await fetch("/api/user/grand-studio-api-key", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && typeof data.hasKey === "boolean") {
+        setCommanderApiKeyStatus({ hasKey: data.hasKey, keySuffix: data.keySuffix });
+      } else {
+        setCommanderApiKeyStatus({ hasKey: false });
+      }
+    } catch {
+      setCommanderApiKeyStatus({ hasKey: false });
+    } finally {
+      setCommanderApiKeyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCommanderApiKeyStatus();
+  }, [fetchCommanderApiKeyStatus]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -502,11 +529,138 @@ export default function ProjectSettingsPage() {
           </Button>
         </section>
 
-        {/* API */}
+        {/* Grand Studio UE Commander API key */}
         <section>
-          <h3 className="text-sm font-semibold text-text-primary mb-3">API</h3>
-          <p className="text-xs text-text-muted">Claude Opus 4.6 (Anthropic) API key: •••••••••••••••••</p>
-          <p className="text-xs text-text-muted mt-1">Configure in Vercel environment variables.</p>
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <Key className="w-4 h-4" />
+            Grand Studio API Key (UE5 Plugin)
+          </h3>
+          <p className="text-xs text-text-muted mb-3">
+            Paste this key into the Grand Studio AI Commander panel in Unreal Engine. Keys start with{" "}
+            <code className="text-text-secondary">gs_</code> and are tied to your account.
+          </p>
+          {commanderApiKeyLoading ? (
+            <p className="text-xs text-text-muted flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Loading key status…
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {commanderApiKeyStatus?.hasKey && (
+                <p className="text-xs text-text-secondary">
+                  Active key ending in{" "}
+                  <span className="font-mono text-text-primary">••••{commanderApiKeyStatus.keySuffix ?? "????"}</span>
+                </p>
+              )}
+              {commanderApiKeyRevealed && (
+                <div className="rounded-lg border border-boss-border bg-boss-card p-3 space-y-2">
+                  <p className="text-[11px] text-agent-amber font-medium">
+                    Copy and store this key now. For security we won&apos;t show it again on this page.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="text-xs font-mono text-text-primary break-all flex-1 min-w-0">{commanderApiKeyRevealed}</code>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-boss-border shrink-0"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(commanderApiKeyRevealed);
+                          setCommanderApiKeyCopied(true);
+                          toast.success("Copied to clipboard");
+                          setTimeout(() => setCommanderApiKeyCopied(false), 2000);
+                        } catch {
+                          toast.error("Could not copy");
+                        }
+                      }}
+                    >
+                      {commanderApiKeyCopied ? <Check className="w-4 h-4 text-agent-green" /> : <Copy className="w-4 h-4" />}
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {!commanderApiKeyStatus?.hasKey ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={commanderApiKeyGenerating}
+                    onClick={async () => {
+                      setCommanderApiKeyGenerating(true);
+                      try {
+                        const res = await fetch("/api/user/grand-studio-api-key", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: "include",
+                          body: JSON.stringify({ regenerate: false }),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          toast.error(typeof data.error === "string" ? data.error : "Could not generate key");
+                          return;
+                        }
+                        if (typeof data.apiKey === "string") {
+                          setCommanderApiKeyRevealed(data.apiKey);
+                          setCommanderApiKeyStatus({ hasKey: true, keySuffix: data.apiKey.slice(-4) });
+                          toast.success("API key generated");
+                        }
+                      } catch {
+                        toast.error("Could not generate key");
+                      } finally {
+                        setCommanderApiKeyGenerating(false);
+                      }
+                    }}
+                    className="gap-2 bg-gold/90 text-boss-bg hover:bg-gold"
+                  >
+                    {commanderApiKeyGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                    Generate API Key
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={commanderApiKeyGenerating}
+                    className="border-agent-amber/40 text-agent-amber hover:bg-agent-amber/10"
+                    onClick={async () => {
+                      if (!confirm("Regenerate your API key? The old key will stop working immediately in the UE5 plugin.")) {
+                        return;
+                      }
+                      setCommanderApiKeyGenerating(true);
+                      setCommanderApiKeyRevealed(null);
+                      try {
+                        const res = await fetch("/api/user/grand-studio-api-key", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: "include",
+                          body: JSON.stringify({ regenerate: true }),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          toast.error(typeof data.error === "string" ? data.error : "Could not regenerate key");
+                          return;
+                        }
+                        if (typeof data.apiKey === "string") {
+                          setCommanderApiKeyRevealed(data.apiKey);
+                          setCommanderApiKeyStatus({ hasKey: true, keySuffix: data.apiKey.slice(-4) });
+                          toast.success("New API key generated");
+                        }
+                      } catch {
+                        toast.error("Could not regenerate key");
+                      } finally {
+                        setCommanderApiKeyGenerating(false);
+                      }
+                    }}
+                  >
+                    {commanderApiKeyGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Regenerate API Key
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* DANGER ZONE */}

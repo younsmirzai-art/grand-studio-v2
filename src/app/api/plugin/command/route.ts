@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  grandStudioApiKeyExistsInDatabase,
+  isGrandStudioApiKeyFormat,
+} from "@/lib/plugin/grandStudioApiKey";
 import { polyHavenHitsToImportSteps, polyHavenTopModelsWithFbx } from "@/lib/plugin/polyhavenImport";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
@@ -400,10 +404,16 @@ export async function POST(request: NextRequest) {
 
     const apiKey = extractClientApiKey(request, bodyRaw);
     if (!apiKey) {
-      return NextResponse.json(
-        { error: "API key required. Get your key at https://grandstudio.dev/dashboard" },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: "API key required" }, { status: 401 });
+    }
+
+    if (!isGrandStudioApiKeyFormat(apiKey)) {
+      return NextResponse.json({ error: "Invalid API key format" }, { status: 401 });
+    }
+
+    const keyOk = await grandStudioApiKeyExistsInDatabase(apiKey);
+    if (!keyOk) {
+      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
     const prompt = typeof bodyRaw.prompt === "string" ? bodyRaw.prompt.trim() : "";
