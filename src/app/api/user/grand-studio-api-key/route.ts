@@ -6,7 +6,8 @@ import {
 } from "@/lib/plugin/grandStudioApiKey";
 
 /**
- * GET — whether the signed-in user has an active Commander API key (no full secret).
+ * GET — active Commander API key status. Includes `apiKey` when the user has a valid active key
+ * (needed for browser WebSocket auth to the plugin relay). Same-origin session only.
  * POST — generate first key, or regenerate (body: { regenerate: true }).
  */
 export async function GET() {
@@ -28,9 +29,11 @@ export async function GET() {
 
   const row = data as { api_key?: string } | null;
   const key = row?.api_key;
+  const valid = Boolean(key && isGrandStudioApiKeyFormat(key));
   return NextResponse.json({
-    hasKey: Boolean(key && isGrandStudioApiKeyFormat(key)),
+    hasKey: valid,
     keySuffix: key && key.length >= 4 ? key.slice(-4) : undefined,
+    apiKey: valid && key ? key : undefined,
   });
 }
 

@@ -23,6 +23,14 @@ import type { ChatTurn } from "@/lib/types";
 
 export type AgentAssetSourceChoice = "my_assets" | "library" | "both";
 
+/** Live WebSocket status for the UE5 Commander plugin (site ↔ relay). */
+export type PluginSocketStatus = {
+  isConnected: boolean;
+  isPluginOnline: boolean;
+  hasApiKey: boolean;
+  keyFetchDone: boolean;
+};
+
 interface AICopilotPanelProps {
   open: boolean;
   onClose: () => void;
@@ -41,6 +49,8 @@ interface AICopilotPanelProps {
   onDeleteChatTurn?: (turnId: number) => void;
   /** Start a fresh in-panel thread without deleting stored history. */
   onNewChat?: () => void;
+  /** Optional: show green/red plugin connection next to the panel title. */
+  pluginSocket?: PluginSocketStatus;
 }
 
 const SUGGESTIONS = [
@@ -77,6 +87,7 @@ export function AICopilotPanel({
   pendingAgentMessage,
   onAgentAssetSource,
   onCancelPendingAgent,
+  pluginSocket,
 }: AICopilotPanelProps) {
   const [input, setInput] = useState("");
   const [aiMode, setAiMode] = useState<"ask" | "agent">("ask");
@@ -181,6 +192,37 @@ export function AICopilotPanel({
                   <span className="flex items-center gap-1.5 text-xs text-[#00BCD4]">
                     <Loader2 className="w-3 h-3 animate-spin" />
                     Working...
+                  </span>
+                )}
+                {pluginSocket && (
+                  <span
+                    className="flex items-center gap-1.5 text-xs text-[#A0A0A8] ml-1"
+                    title={
+                      !pluginSocket.keyFetchDone
+                        ? "Checking API key…"
+                        : !pluginSocket.hasApiKey
+                          ? "Generate an API key in Project Settings to connect the UE5 plugin."
+                          : pluginSocket.isConnected && pluginSocket.isPluginOnline
+                            ? "UE5 Commander is connected via WebSocket."
+                            : "Open Unreal with the Commander plugin signed in with the same API key."
+                    }
+                  >
+                    {!pluginSocket.keyFetchDone ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-[#606068] animate-pulse" />
+                        Checking…
+                      </>
+                    ) : pluginSocket.isConnected && pluginSocket.isPluginOnline ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+                        <span className="text-emerald-400">Plugin Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-red-500" />
+                        <span className="text-red-400">Plugin Offline</span>
+                      </>
+                    )}
                   </span>
                 )}
               </div>
