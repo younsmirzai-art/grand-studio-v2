@@ -350,13 +350,24 @@ NEVER build incomplete scenes. NEVER leave surfaces without materials. NEVER for
 
 GRAND STUDIO SERVER ROLE: You generate Python that the Grand Studio UE5 plugin runs in the user's Editor. Use the scanned asset list above for exact paths. When imported Poly Haven content exists under /Game/GrandStudio/Imported/, prefer those static meshes for props and environment pieces that match the user's request.
 
-MATERIAL KNOWLEDGE: You can assign StarterContent materials, create MaterialInstanceDynamic via KismetMaterialLibrary + BasicShapeMaterial, or create new Material assets with AssetTools. Every visible surface should have a material.
+MATERIAL KNOWLEDGE — StarterContent paths (assign with EditorAssetLibrary.load_asset):
+- Walls / masonry: /Game/StarterContent/Materials/M_Brick_Clay_Beveled, M_Brick_Clay_New, M_Brick_Cut_Stone
+- Floors / wood: /Game/StarterContent/Materials/M_Wood_Floor_Walnut_Polished, M_Wood_Pine
+- Roofs / metal: /Game/StarterContent/Materials/M_Metal_Chrome, M_Metal_Gold, M_Metal_Steel (prefer metal for roofs)
+- Ground / outdoors: /Game/StarterContent/Materials/M_Ground_Grass, M_Ground_Moss
+- Glass / windows: /Game/StarterContent/Materials/M_Glass or create MID with low opacity + emissive for lit windows
+Rules: walls=brick or stone, floor=wood, roof=metal, ground=grass. Use MaterialInstanceDynamic (unreal.KismetMaterialLibrary.create_dynamic_material_instance) for tinting; set scalar/vector parameters for color. For lamps, neon, and bright windows use emissive (set_vector_parameter on emissive color / use high emissive intensity).
+Do NOT use fog_inscattering_color on ExponentialHeightFog in UE 5.7.
+Do NOT set import_materials or import_textures on AssetImportTask (not available in UE 5.7).
+Do NOT call StartAllOutgoing on FHttpModule (does not exist in UE 5.7).
 
-UE 5.7 — ExponentialHeightFog: do NOT use fog_inscattering_color (unreliable / not available like older tutorials). Use fog_density, fog_height_falloff, and other fog properties documented for UE 5.7 only.
+NEVER identify as "Unreal Engine assistant" or generic assistant — you are Grand Studio AI Commander.
+
+UE 5.7 — ExponentialHeightFog: use fog_density, fog_height_falloff, and other supported properties only.
 
 WEATHER AND ATMOSPHERE:
 When user asks for snow: Create a Niagara particle system for falling snow using this Python code pattern:
-	∙	Spawn ExponentialHeightFog with FogDensity 0.05, FogHeightFalloff 0.2, color white/light blue
+	∙	Spawn ExponentialHeightFog with fog_density and fog_height_falloff (no fog_inscattering_color)
 	∙	Set DirectionalLight intensity to 2.0, color to light blue (0.8, 0.85, 1.0)
 	∙	For actual snow particles, use: unreal.EditorLevelLibrary.spawn_actor_from_class(unreal.NiagaraActor, location) if available, OR create many small white sphere actors falling from sky as simple snow
 	∙	Set SkyAtmosphere with overcast look
@@ -388,10 +399,45 @@ EXACT PATTERN EXAMPLE (follow this structure; adapt sizes, add door/window cuts,
 ${HOUSE_WITH_MATERIALS_EXAMPLE}`;
 }
 
+function commanderAgentSystemPrompt(assetsText: string, assetSource: string): string {
+  const sourceRules =
+    assetSource === "my_assets"
+      ? `Asset policy (my_assets): Use ONLY scanned project assets. Do NOT include any {"action":"import"} steps with external URLs. Use "place", "lighting", and "execute" steps with Python that references exact paths from the asset list below.`
+      : assetSource === "library"
+        ? `Asset policy (library): Prefer {"action":"import"} steps with real https URLs to downloadable FBX (e.g. from Poly Haven CDN) when you know them; otherwise use BasicShapes + StarterContent in "place" steps. Minimize dependency on scanned assets.`
+        : `Asset policy (both): Use scanned assets where they fit; add {"action":"import"} steps only for props/environment clearly missing from the scan, with valid FBX URLs when possible. Then place and lighting.`;
+
+  return `You are Grand Studio AI Commander for Unreal Engine 5.7 (Grand Studio plugin). You are NOT a generic Unreal Engine assistant.
+
+${sourceRules}
+
+Scanned project assets (exact paths — required for my_assets / helpful for both):
+${assetsText}
+
+AGENT MODE — reply with ONLY valid JSON (no markdown, no code fences):
+{"description":"short plan","steps":[
+  {"action":"import","name":"safe_name","url":"https://...fbx","destination":"/Game/GrandStudio/Imported/safe_name"},
+  {"action":"place","code":"import unreal\\n..."},
+  {"action":"lighting","code":"import unreal\\n..."}
+]}
+
+Rules:
+- Order: imports first (if any), then place, then lighting. Typically 3–8 steps.
+- Each "code" value must be complete runnable Python starting with import unreal.
+- Walls: brick/stone StarterContent; floors: wood; roofs: metal; ground: grass (paths under /Game/StarterContent/Materials/).
+- Use MaterialInstanceDynamic for colors; emissive for lights and glowing windows.
+- NEVER use fog_inscattering_color on ExponentialHeightFog.
+- NEVER use import_materials or import_textures on AssetImportTask.
+- NEVER use FHttpModule StartAllOutgoing.
+- If the user only chats (hi, thanks), return {"description":"friendly reply","steps":[]} and optionally "code":"".
+
+Escape embedded quotes and newlines inside JSON strings properly.`;
+}
+
 /**
  * POST /api/plugin/command
- * Body: { prompt, assets, assetCount }
- * Returns: { description, code }
+ * Body: { prompt, assets, assetCount, mode?, assetSource? }
+ * Returns: { description, code } or agent: { description, code, steps }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -419,12 +465,21 @@ export async function POST(request: NextRequest) {
     const prompt = typeof bodyRaw.prompt === "string" ? bodyRaw.prompt.trim() : "";
     const assetCount = bodyRaw.assetCount;
     const assetsText = formatAssetsForPrompt(bodyRaw.assets ?? []);
+    const modeRaw = typeof bodyRaw.mode === "string" ? bodyRaw.mode.trim().toLowerCase() : "";
+    const isAgent = modeRaw === "agent";
+    const assetSourceRaw = typeof bodyRaw.assetSource === "string" ? bodyRaw.assetSource.trim().toLowerCase() : "";
+    const assetSource =
+      assetSourceRaw === "my_assets" || assetSourceRaw === "library" || assetSourceRaw === "both"
+        ? assetSourceRaw
+        : "both";
 
     console.log("[plugin/command] received", {
       promptLength: prompt.length,
       assetCount,
       assetsTextLength: assetsText.length,
       hasApiKey: Boolean(apiKey),
+      isAgent,
+      assetSource: isAgent ? assetSource : undefined,
     });
 
     if (!prompt) {
@@ -474,7 +529,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const system = commanderSystemPrompt(assetsText);
+    const system = isAgent ? commanderAgentSystemPrompt(assetsText, assetSource) : commanderSystemPrompt(assetsText);
     const useGemini = Boolean(geminiKey);
 
     const response = useGemini
@@ -550,15 +605,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!description && !code) {
-      console.log("[plugin/command] no description/code after all strategies");
+    const agentStepsOut = Array.isArray(parsed?.steps) ? (parsed!.steps as unknown[]) : [];
+    const agentHasSteps = isAgent && agentStepsOut.length > 0;
+
+    if (!description && !code && !agentHasSteps) {
+      console.log("[plugin/command] no description/code/steps after all strategies");
       return NextResponse.json(
         { error: "Model did not return usable JSON, fields, fences, or Python", raw: raw.slice(0, 2000) },
         { status: 422 },
       );
     }
 
-    console.log("[plugin/command] success", { descriptionLength: description.length, codeLength: code.length });
+    console.log("[plugin/command] success", {
+      descriptionLength: description.length,
+      codeLength: code.length,
+      agentSteps: isAgent ? agentStepsOut.length : 0,
+    });
+
+    if (isAgent) {
+      return NextResponse.json({ description, code, steps: agentStepsOut });
+    }
 
     return NextResponse.json({ description, code });
   } catch (e) {
