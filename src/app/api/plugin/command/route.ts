@@ -3,11 +3,7 @@ import {
   grandStudioApiKeyExistsInDatabase,
   isGrandStudioApiKeyFormat,
 } from "@/lib/plugin/grandStudioApiKey";
-import {
-  GRAND_STUDIO_ASSET_PRO,
-  GRAND_STUDIO_ASSETS,
-  combinedLibraryImportSteps,
-} from "@/lib/plugin/polyhavenImport";
+import { GRAND_STUDIO_ASSET_PRO } from "@/lib/plugin/polyhavenImport";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 const GEMINI_GENERATE_URL =
@@ -305,11 +301,10 @@ YOUR DIRECT ACCESS (placement & polish — not primitive construction):
 - /Game/StarterContent/Materials/* for assignment to imported meshes that need materials
 - /Game/GrandStudio/Imported/* for library-imported static meshes
 
-BUILDING FLOW FOR SCENES:
-1) Plan models (houses, trees, rocks, props).
-2) Emit "import" steps with real https URLs, names, source label "Grand Studio Asset Pro" or "Grand Studio Assets", destination /Game/GrandStudio/Imported/<name>.
-3) Emit "place" Python using only imported + scanned meshes.
-4) Emit "lighting" Python.
+BUILDING FLOW FOR SCENES (this endpoint / simple prompts):
+1) Assume the user may already have meshes under /Game/GrandStudio/Imported/ from the plugin.
+2) Prefer {"description","code"} with placement + lighting Python only — NO import steps, NO external URLs.
+3) Optional: a "steps" array with ONLY {"action":"place"|"lighting"|"detail","code":"..."} — never import actions with URLs from the server.
 
 Scale: 1 unit = 1 cm. Prefer cinematic lighting and ground borrowed from imported terrain meshes or careful placement — do not build houses from cubes.
 
@@ -349,11 +344,11 @@ Be CREATIVE and DETAILED. When user asks for a scene, make it look like a AAA ga
 
 WHEN USER SAYS HELLO OR ASKS A QUESTION: respond with description only, code can be empty string. Do not force code generation for conversations.
 
-WHEN USER ASKS TO BUILD SOMETHING: Prefer JSON with a "steps" array: import steps first (with valid URLs and source labels), then "place", then "lighting". If the scene is simple and uses only scanned assets, you may return {"description","code"} only, where code is placement+lighting (no BasicShapes).
+WHEN USER ASKS TO BUILD SOMETHING: Prefer {"description","code"} with placement + lighting only. Never emit import steps with URLs from the server.
 
 For chats / questions: {"description":"...","code":""} .
 
-If you return "steps", each import step must include "source": "${GRAND_STUDIO_ASSET_PRO}" or "${GRAND_STUDIO_ASSETS}".
+If you return "steps", only non-import actions (place / lighting / detail) with Python "code" — no imports.
 
 Escape every double-quote inside strings as \\" and newlines as \\n.
 
@@ -502,15 +497,15 @@ function parsePlanDocument(raw: string): PlanDocument | null {
   return null;
 }
 
-async function runComplexScenePipeline(
+async function runComplexTaskPlanOnly(
   prompt: string,
-  assetsText: string,
   geminiKey: string,
   openRouterKey: string,
   model: string,
-): Promise<{ description: string; code: string; steps: unknown[] }> {
+): Promise<{ description: string; code: string; taskPlan: PlanTask[] }> {
   const planningSystem = `You plan Unreal Engine 5.7 scenes for the Grand Studio Commander plugin.
-Imports use real meshes from "${GRAND_STUDIO_ASSET_PRO}" and "${GRAND_STUDIO_ASSETS}" (the server fills download URLs). Python steps then place meshes and add lighting.
+
+The Unreal plugin imports meshes DIRECTLY from Poly Haven (user-facing label: "${GRAND_STUDIO_ASSET_PRO}"). The SERVER never searches Poly Haven or Sketchfab and never returns download URLs.
 
 Return ONLY valid JSON (no markdown):
 {"summary":"One sentence for the user about what you will build","tasks":[ ... ]}
@@ -518,10 +513,12 @@ Return ONLY valid JSON (no markdown):
 Each task:
 - taskNumber: integer from 1
 - taskType: import | place | lighting | detail
-- description: short label shown to the user
+- description: short label for progress in the UI
 
-For import tasks add searchQuery (3D library keyword, e.g. house, tree, rock) and count (integer 1-10).
-Order tasks: all imports first, then place, then lighting, then detail. Use about 4-12 tasks total.`;
+For import tasks ONLY: add searchQuery (keyword for the plugin's Poly Haven filter, e.g. house, tree, rock) and count (integer 1-10).
+Order: all import tasks first, then place, then lighting, then detail. About 4-12 tasks total.
+
+The plugin will run Poly Haven locally for each import row, then call the server separately for place/lighting/detail Python only.`;
 
   const planRaw = await aiCompleteText({
     system: planningSystem,
@@ -532,72 +529,23 @@ Order tasks: all imports first, then place, then lighting, then detail. Use abou
   });
 
   const doc = parsePlanDocument(planRaw);
-  const tasks = (doc?.tasks ?? []).filter((t) => t && typeof t.taskType === "string");
+  const tasks = (doc?.tasks ?? []).filter((t) => t && typeof t.taskType === "string") as PlanTask[];
   if (tasks.length === 0) {
     throw new Error("Planner returned no tasks");
   }
 
   tasks.sort((a, b) => (Number(a.taskNumber) || 0) - (Number(b.taskNumber) || 0));
 
-  const finalSteps: unknown[] = [];
-  const importedAssetNames: string[] = [];
-
-  for (const task of tasks) {
-    const tType = String(task.taskType).toLowerCase();
-    if (tType === "import") {
-      const q = (task.searchQuery ?? "prop").trim() || "prop";
-      const c = Math.min(10, Math.max(1, Number(task.count) || 3));
-      const { steps } = await combinedLibraryImportSteps(q, c);
-      for (const st of steps) {
-        finalSteps.push(st);
-        if (st && typeof st === "object" && "name" in st) {
-          const n = (st as { name?: string }).name;
-          if (typeof n === "string" && n) importedAssetNames.push(n);
-        }
-      }
-      continue;
-    }
-
-    if (tType === "place" || tType === "lighting" || tType === "detail") {
-      const namesList = importedAssetNames.length
-        ? importedAssetNames.join(", ")
-        : "(use /Game/GrandStudio/Imported/<name> after imports)";
-      const userTask = `Original user request:\n${prompt}\n\nTask type: ${tType}\nTask description: ${task.description ?? ""}\n\nImported mesh base names (el.load_asset('/Game/GrandStudio/Imported/' + name)):\n${namesList}\n\nProject assets (truncated):\n${assetsText.slice(0, 12_000)}`;
-
-      const rawCode = await aiCompleteText({
-        system: TASK_CODE_SYSTEM,
-        user: userTask,
-        geminiKey,
-        openRouterKey,
-        model,
-      });
-      let code = extractCodeFromModelOutput(rawCode);
-      if (!code || !code.includes("import unreal")) {
-        code =
-          "import unreal\nunreal.log_warning('Grand Studio: generated task script was empty; skipped this step.')\n";
-      }
-      const progress =
-        typeof task.description === "string" && task.description.trim()
-          ? task.description.trim()
-          : tType === "place"
-            ? "Placing objects"
-            : tType === "lighting"
-              ? "Setting up lighting"
-              : "Adding details";
-      finalSteps.push({ action: tType, code, progress });
-    }
-  }
-
   const description =
-    (doc?.summary && doc.summary.trim()) || `Building your scene (${finalSteps.length} steps)`;
+    (doc?.summary && doc.summary.trim()) || `Building your scene (${tasks.length} tasks)`;
 
-  return { description, code: "", steps: finalSteps };
+  return { description, code: "", taskPlan: tasks };
 }
 
 /**
  * POST /api/plugin/command
  * Body: { prompt, assets, assetCount, apiKey }
- * Returns: { description, code, steps? }
+ * Returns: { description, code, steps? | taskPlan? }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -626,54 +574,18 @@ export async function POST(request: NextRequest) {
     const assetCount = bodyRaw.assetCount;
     const assetsText = formatAssetsForPrompt(bodyRaw.assets ?? []);
 
+    const geminiKey = typeof process.env.GEMINI_API_KEY === "string" ? process.env.GEMINI_API_KEY.trim() : "";
+    const openRouterKey =
+      typeof process.env.OPENROUTER_API_KEY === "string" ? process.env.OPENROUTER_API_KEY.trim() : "";
+
     console.log("[plugin/command] received", {
       promptLength: prompt.length,
       assetCount,
       assetsTextLength: assetsText.length,
       hasApiKey: Boolean(apiKey),
+      generateTaskStep: Boolean(bodyRaw.generateTaskStep),
     });
 
-    if (!prompt) {
-      return NextResponse.json({ error: "prompt is required" }, { status: 400 });
-    }
-
-    const importMatch = prompt.match(/^IMPORT:\s*(.*)$/i);
-    if (importMatch) {
-      const term = importMatch[1]?.trim() ?? "";
-      if (!term) {
-        return NextResponse.json(
-          { error: "IMPORT: requires a search term (e.g. IMPORT:tree)" },
-          { status: 400 },
-        );
-      }
-      try {
-        const { steps, descriptionParts } = await combinedLibraryImportSteps(term, 3);
-        if (steps.length === 0) {
-          const extra =
-            typeof process.env.SKETCHFAB_API_TOKEN === "string" && process.env.SKETCHFAB_API_TOKEN.trim()
-              ? ` ${GRAND_STUDIO_ASSETS} had no matches.`
-              : ` Add SKETCHFAB_API_TOKEN to enable ${GRAND_STUDIO_ASSETS}.`;
-          return NextResponse.json({
-            description: `No models found for "${term}" in ${GRAND_STUDIO_ASSET_PRO}.${extra}`,
-            code: "",
-            steps: [],
-          });
-        }
-        return NextResponse.json({
-          description: descriptionParts.join(" ") || `Importing ${steps.length} model(s) for "${term}".`,
-          code: "",
-          steps,
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.log("[plugin/command] IMPORT error", msg);
-        return NextResponse.json({ error: "Grand Studio library import failed", detail: msg }, { status: 502 });
-      }
-    }
-
-    const geminiKey = typeof process.env.GEMINI_API_KEY === "string" ? process.env.GEMINI_API_KEY.trim() : "";
-    const openRouterKey =
-      typeof process.env.OPENROUTER_API_KEY === "string" ? process.env.OPENROUTER_API_KEY.trim() : "";
     if (!geminiKey && !openRouterKey) {
       console.log("[plugin/command] missing GEMINI_API_KEY and OPENROUTER_API_KEY");
       return NextResponse.json(
@@ -685,14 +597,57 @@ export async function POST(request: NextRequest) {
     const openRouterModel = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
     const useGemini = Boolean(geminiKey);
 
+    if (bodyRaw.generateTaskStep === true) {
+      const originalPrompt = typeof bodyRaw.originalPrompt === "string" ? bodyRaw.originalPrompt.trim() : "";
+      if (!originalPrompt) {
+        return NextResponse.json({ error: "originalPrompt is required for generateTaskStep" }, { status: 400 });
+      }
+      const taskType =
+        typeof bodyRaw.taskType === "string" && bodyRaw.taskType.trim()
+          ? bodyRaw.taskType.trim().toLowerCase()
+          : "place";
+      const taskDescription = typeof bodyRaw.taskDescription === "string" ? bodyRaw.taskDescription.trim() : "";
+      const importedNames = Array.isArray(bodyRaw.importedAssetNames)
+        ? bodyRaw.importedAssetNames.filter((x): x is string => typeof x === "string")
+        : [];
+      const namesList = importedNames.length
+        ? importedNames.join(", ")
+        : "(none — use whatever is already under /Game/GrandStudio/Imported/)";
+      const userTask = `Original user request:\n${originalPrompt}\n\nTask type: ${taskType}\nTask description: ${taskDescription}\n\nImported mesh base names (use el.load_asset('/Game/GrandStudio/Imported/' + name)):\n${namesList}\n\nProject assets (truncated):\n${assetsText.slice(0, 12_000)}`;
+
+      try {
+        const rawCode = await aiCompleteText({
+          system: TASK_CODE_SYSTEM,
+          user: userTask,
+          geminiKey,
+          openRouterKey,
+          model: openRouterModel,
+        });
+        let code = extractCodeFromModelOutput(rawCode);
+        if (!code || !code.includes("import unreal")) {
+          code =
+            "import unreal\nunreal.log_warning('Grand Studio: generated task script was empty; skipped this step.')\n";
+        }
+        return NextResponse.json({ code, description: "" });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.log("[plugin/command] generateTaskStep error", msg);
+        return NextResponse.json({ error: "Task-step AI failed", detail: msg }, { status: 502 });
+      }
+    }
+
+    if (!prompt) {
+      return NextResponse.json({ error: "prompt is required" }, { status: 400 });
+    }
+
     if (isComplexSceneRequest(prompt)) {
       try {
-        const pipelineOut = await runComplexScenePipeline(prompt, assetsText, geminiKey, openRouterKey, openRouterModel);
-        console.log("[plugin/command] complex pipeline", { steps: pipelineOut.steps.length });
+        const pipelineOut = await runComplexTaskPlanOnly(prompt, geminiKey, openRouterKey, openRouterModel);
+        console.log("[plugin/command] complex taskPlan", { tasks: pipelineOut.taskPlan.length });
         return NextResponse.json(pipelineOut);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.log("[plugin/command] complex pipeline failed, falling back to single-pass AI", msg);
+        console.log("[plugin/command] complex taskPlan failed, falling back to single-pass AI", msg);
       }
     }
 
