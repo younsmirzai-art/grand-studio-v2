@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Reserved for future browser ↔ plugin WebSocket. Not used in the app today (UE plugin uses
+ * grandstudio.dev REST only). Optional override: NEXT_PUBLIC_WS_URL — not required for builds.
+ */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const DEFAULT_WS_URL = "wss://grandstudio-ws.mydreamvalid35.workers.dev/ws";

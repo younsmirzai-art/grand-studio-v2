@@ -17,15 +17,10 @@ import { getClient } from "@/lib/supabase/client";
 import type { ChatTurn, UE5Command } from "@/lib/types";
 import type { AssetEntry } from "@/lib/ue5/assetLibrary";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
-import { usePluginWebSocket } from "@/lib/hooks/usePluginWebSocket";
 import { getTemplateForPrompt } from "@/lib/ue5/sceneTemplates";
 import { STRIPE_PRICES } from "@/lib/stripe/config";
 
-import {
-  AICopilotPanel,
-  type AgentAssetSourceChoice,
-  type PluginSocketStatus,
-} from "@/components/workspace/AICopilotPanel";
+import { AICopilotPanel, type AgentAssetSourceChoice } from "@/components/workspace/AICopilotPanel";
 import { WorkspacePanel } from "@/components/workspace/WorkspacePanel";
 import { ViewportPanel } from "@/components/workspace/ViewportPanel";
 import SmartBuildView from "@/components/build/SmartBuildView";
@@ -103,11 +98,6 @@ export default function ProjectPage() {
   const autoCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastScreenshotTimeRef = useRef(0);
   const screenshotCountRef = useRef(0);
-  const pluginWsSendRef = useRef<(p: { pythonCode: string; description: string }) => boolean>(() => false);
-  const processedPluginWsResultsRef = useRef<Set<string>>(new Set());
-
-  const pluginWs = usePluginWebSocket({ enabled: Boolean(projectId) });
-  pluginWsSendRef.current = pluginWs.sendCommand;
 
   const buildParam = searchParams.get("build") === "1";
   const showSmartBuildView = buildParam && !!project?.initial_prompt && !smartBuildFinished;
@@ -162,27 +152,6 @@ export default function ProjectPage() {
     if (!projectId) return;
     refetchUsage();
   }, [projectId, refetchUsage]);
-
-  useEffect(() => {
-    const r = pluginWs.lastResult;
-    if (!r?.commandId) return;
-    if (processedPluginWsResultsRef.current.has(r.commandId)) return;
-    processedPluginWsResultsRef.current.add(r.commandId);
-    const text = r.success
-      ? "Executed in UE5!"
-      : `Error: ${r.error ?? r.message ?? "Unknown error"}`;
-    void (async () => {
-      const supabase = getClient();
-      await supabase.from("chat_turns").insert({
-        project_id: projectId,
-        agent_name: "Grand Studio",
-        agent_title: "UE5 Plugin",
-        content: text,
-        turn_type: "direct",
-      });
-      await refetchChat();
-    })();
-  }, [pluginWs.lastResult, projectId, refetchChat]);
 
   useEffect(() => {
     try {
@@ -383,10 +352,6 @@ export default function ProjectPage() {
   // Execute code
   const handleExecuteCode = useCallback(
     async (code: string, agentName?: string) => {
-      pluginWsSendRef.current({
-        pythonCode: code,
-        description: agentName ?? "Image to 3D",
-      });
       try {
         const res = await fetch("/api/ue5/execute", {
           method: "POST",
@@ -904,10 +869,6 @@ export default function ProjectPage() {
         try {
           setStreamingContent(`Using ${template.name} template...`);
           const templateRaw = `Using ${template.name} template.\n\n\`\`\`python\n${template.code}\n\`\`\``;
-          pluginWsSendRef.current({
-            pythonCode: template.code,
-            description: message.trim(),
-          });
           const execRes = await fetch("/api/build/execute", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1022,13 +983,6 @@ export default function ProjectPage() {
 
         const finalContent = content;
         const hasCode = !!extractPythonCode(finalContent);
-        const pythonForPlugin = extractPythonCode(finalContent);
-        if (pythonForPlugin) {
-          pluginWsSendRef.current({
-            pythonCode: pythonForPlugin,
-            description: message.trim(),
-          });
-        }
 
         if (!hasCode) {
           await supabase.from("chat_turns").insert({
@@ -1323,34 +1277,6 @@ export default function ProjectPage() {
               <span className="text-xs text-red-400">Disconnected — set up relay</span>
             </Link>
           )}
-          {(() => {
-            const ps: PluginSocketStatus = {
-              isConnected: pluginWs.isConnected,
-              isPluginOnline: pluginWs.isPluginOnline,
-              hasApiKey: pluginWs.hasApiKey,
-              keyFetchDone: pluginWs.keyFetchDone,
-            };
-            const ue5Ok = ps.keyFetchDone && ps.hasApiKey && ps.isConnected && ps.isPluginOnline;
-            return (
-              <div
-                className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-lg ${ue5Ok ? "bg-emerald-500/10" : "bg-red-500/10"}`}
-                title={
-                  !ps.keyFetchDone
-                    ? "Checking API key…"
-                    : !ps.hasApiKey
-                      ? "Generate an API key in Project Settings to connect the UE5 Commander plugin."
-                      : ue5Ok
-                        ? "WebSocket relay sees your UE5 plugin."
-                        : "Open Unreal with the Commander plugin using the same API key."
-                }
-              >
-                <span className={`w-2 h-2 rounded-full ${ue5Ok ? "bg-emerald-500" : "bg-red-500"}`} />
-                <span className={`text-xs ${ue5Ok ? "text-emerald-400" : "text-red-400"}`}>
-                  {ue5Ok ? "UE5 Plugin Connected" : "UE5 Plugin Offline"}
-                </span>
-              </div>
-            );
-          })()}
           <Link
             href={`/project/${projectId}/settings`}
             className="p-2 rounded-lg text-[#606068] hover:text-white hover:bg-white/5 transition"
@@ -1484,12 +1410,6 @@ export default function ProjectPage() {
         onClearPrefill={() => setPrefillMessage(null)}
         onDeleteChatTurn={handleDeleteChatTurn}
         onNewChat={handleCopilotNewChat}
-        pluginSocket={{
-          isConnected: pluginWs.isConnected,
-          isPluginOnline: pluginWs.isPluginOnline,
-          hasApiKey: pluginWs.hasApiKey,
-          keyFetchDone: pluginWs.keyFetchDone,
-        }}
       />
 
       {/* Image-to-3D Modal */}
