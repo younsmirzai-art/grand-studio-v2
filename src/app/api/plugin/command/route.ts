@@ -361,53 +361,243 @@ PLACEMENT + LIGHTING PATTERN (no BasicShapes; use real imported mesh paths):
 ${PLACEMENT_AND_LIGHTING_EXAMPLE}`;
 }
 
-function commanderAgentSystemPrompt(assetsText: string, assetSource: string): string {
-  const sourceRules =
-    assetSource === "my_assets"
-      ? `Asset policy (my_assets): Use ONLY scanned project assets. Do NOT include any {"action":"import"} steps with external URLs. Use "place", "lighting", and "execute" steps with Python referencing exact paths from the asset list below. NEVER use BasicShapes.`
-      : assetSource === "library"
-        ? `Asset policy (library): Every piece must come from {"action":"import"} steps with real https URLs. Never use BasicShapes. After imports to /Game/GrandStudio/Imported/, place and light.`
-        : `Asset policy (both): Use scanned assets where they fit; add {"action":"import"} steps for missing pieces with valid URLs. NEVER use BasicShapes for buildings or trees.`;
+const COMPLEX_SCENE_KEYWORDS = [
+  "village",
+  "town",
+  "city",
+  "forest",
+  "park",
+  "island",
+  "scene",
+  "environment",
+  "landscape",
+  "level",
+  "neighborhood",
+  "battlefield",
+  "castle",
+  "kingdom",
+  "world",
+  "street",
+  "map",
+  "arena",
+  "stadium",
+  "garden",
+  "farm",
+  "beach",
+  "mountain",
+  "desert",
+  "jungle",
+] as const;
 
-  return `You are Grand Studio AI Commander for Unreal Engine 5.7 (Grand Studio plugin). You are NOT a generic Unreal Engine assistant.
+function isComplexSceneRequest(prompt: string): boolean {
+  const p = prompt.toLowerCase();
+  for (const k of COMPLEX_SCENE_KEYWORDS) {
+    const esc = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(?:^|[^a-z0-9])${esc}(?:[^a-z0-9]|$)`, "i");
+    if (re.test(p)) return true;
+  }
+  return false;
+}
 
-CRITICAL: Never create Cube/Cylinder/Plane/Sphere/Cone from /Engine/BasicShapes/. Real meshes only via import steps, then placement Python.
+function isGreetingOrMetaQuestion(prompt: string): boolean {
+  const p = prompt.toLowerCase().trim();
+  if (!p) return false;
+  if (/^(hi|hello|hey|hiya|good morning|good afternoon|good evening|greetings)([!?. ,\u2014-])*$/i.test(p))
+    return true;
+  if (/^what can you (do|help)\b/.test(p)) return true;
+  if (/^who are you\b/.test(p)) return true;
+  if (/^how are you\b/.test(p)) return true;
+  if (p.length < 60 && /^thanks?\b/.test(p)) return true;
+  return false;
+}
 
-When mentioning asset sources, say "${GRAND_STUDIO_ASSET_PRO}" or "${GRAND_STUDIO_ASSETS}" only — never "Poly Haven" or "Sketchfab".
+type PlanTask = {
+  taskNumber?: number;
+  taskType?: string;
+  description?: string;
+  searchQuery?: string;
+  count?: number;
+};
 
-${sourceRules}
+type PlanDocument = { summary?: string; tasks?: PlanTask[] };
 
-Scanned project assets (exact paths — required for my_assets / helpful for both):
-${assetsText}
+function commanderChatOnlySystemPrompt(): string {
+  return `You are Grand Studio AI Commander inside Unreal Engine 5.7. The user may greet you or ask what you can do.
+Reply in a friendly, concise way (mention you can build scenes with real library imports and Python when they ask).
+Output ONLY valid JSON: {"description":"your reply","code":""}.
+Never include Python in code for greetings or capability questions — always leave code as empty string.`;
+}
 
-AGENT / BUILD MODE — reply with ONLY valid JSON (no markdown, no code fences):
-{"description":"short plan","steps":[
-  {"action":"import","name":"tree_small","source":"${GRAND_STUDIO_ASSET_PRO}","url":"https://...","destination":"/Game/GrandStudio/Imported/tree_small"},
-  {"action":"import","name":"house_medieval","source":"${GRAND_STUDIO_ASSETS}","url":"https://...","destination":"/Game/GrandStudio/Imported/house_medieval"},
-  {"action":"place","code":"import unreal\\n..."},
-  {"action":"lighting","code":"import unreal\\n..."}
-]}
+const TASK_CODE_SYSTEM = `You write ONE complete Python script for Unreal Engine 5.7. Start with import unreal.
 
-SCENE WORKFLOW:
-1) Plan counts (houses, trees, rocks, props).
-2) Emit all "import" steps first with correct source labels and https URLs.
-3) One "place" step: load_asset + spawn_actor_from_object for imported meshes (and scans).
-4) One "lighting" step: sun, sky, fog without fog_inscattering_color.
+Use el = unreal.EditorAssetLibrary and ed = unreal.EditorLevelLibrary.
 
 Rules:
-- Each "code" value must be complete runnable Python starting with import unreal.
-- "place" / "lighting" must NOT create BasicShapes.
-- NEVER use import_materials or import_textures on AssetImportTask.
-- NEVER use FHttpModule StartAllOutgoing.
-- Chit-chat: {"description":"friendly reply","steps":[]}
+- Spawn static meshes only with el.load_asset('...') then ed.spawn_actor_from_object. Paths must be under /Game/GrandStudio/Imported/ using the exact asset NAME tokens provided in the user message, e.g. /Game/GrandStudio/Imported/my_asset_name
+- NEVER use /Engine/BasicShapes/ or Cube/Sphere/Cylinder/Plane/Cone for scenery.
+- NEVER set import_materials or import_textures (not supported in UE 5.7 for this workflow).
+- NEVER use fog_inscattering_color on ExponentialHeightFog. Use fog_density, fog_height_falloff.
+- For lighting tasks: DirectionalLight, SkyAtmosphere, SkyLight, ExponentialHeightFog as appropriate.
+- Output ONLY Python. No markdown fences, no JSON wrapper.`;
 
-Escape embedded quotes and newlines inside JSON strings properly.`;
+async function aiCompleteText(params: {
+  system: string;
+  user: string;
+  geminiKey: string;
+  openRouterKey: string;
+  model: string;
+}): Promise<string> {
+  const useGemini = Boolean(params.geminiKey);
+  const response = useGemini
+    ? await fetchGeminiCompletion(params.geminiKey, params.system, params.user)
+    : await fetchOpenRouterCompletion(params.openRouterKey, params.model, params.system, params.user);
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`AI request failed: ${response.status} ${errText.slice(0, 300)}`);
+  }
+  const data = (await response.json()) as
+    | GeminiGenerateResponse
+    | { choices?: { message?: { content?: string } }[] };
+  return useGemini
+    ? extractGeminiText(data as GeminiGenerateResponse)
+    : ((data as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content ?? "");
+}
+
+function extractCodeFromModelOutput(raw: string): string {
+  const parsed = tryParsePluginJson(raw);
+  if (parsed && typeof parsed.code === "string" && parsed.code.trim()) {
+    return parsed.code.trim();
+  }
+  const fenced = extractPythonFromFences(raw);
+  if (fenced) return fenced;
+  const asCode = fallbackRawAsCode(raw);
+  if (asCode) return asCode;
+  const t = raw.trim();
+  if (t.includes("import unreal")) return naiveJsonishUnescape(t);
+  return "";
+}
+
+function parsePlanDocument(raw: string): PlanDocument | null {
+  const parsed = tryParsePluginJson(raw) as Record<string, unknown> | null;
+  if (parsed && Array.isArray(parsed.tasks)) {
+    return {
+      summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
+      tasks: parsed.tasks as PlanTask[],
+    };
+  }
+  const start = raw.indexOf("{");
+  if (start >= 0) {
+    try {
+      const o = JSON.parse(repairIncompleteJson(raw.slice(start))) as Record<string, unknown>;
+      if (Array.isArray(o.tasks)) {
+        return {
+          summary: typeof o.summary === "string" ? o.summary : undefined,
+          tasks: o.tasks as PlanTask[],
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+async function runComplexScenePipeline(
+  prompt: string,
+  assetsText: string,
+  geminiKey: string,
+  openRouterKey: string,
+  model: string,
+): Promise<{ description: string; code: string; steps: unknown[] }> {
+  const planningSystem = `You plan Unreal Engine 5.7 scenes for the Grand Studio Commander plugin.
+Imports use real meshes from "${GRAND_STUDIO_ASSET_PRO}" and "${GRAND_STUDIO_ASSETS}" (the server fills download URLs). Python steps then place meshes and add lighting.
+
+Return ONLY valid JSON (no markdown):
+{"summary":"One sentence for the user about what you will build","tasks":[ ... ]}
+
+Each task:
+- taskNumber: integer from 1
+- taskType: import | place | lighting | detail
+- description: short label shown to the user
+
+For import tasks add searchQuery (3D library keyword, e.g. house, tree, rock) and count (integer 1-10).
+Order tasks: all imports first, then place, then lighting, then detail. Use about 4-12 tasks total.`;
+
+  const planRaw = await aiCompleteText({
+    system: planningSystem,
+    user: `User request:\n${prompt}`,
+    geminiKey,
+    openRouterKey,
+    model,
+  });
+
+  const doc = parsePlanDocument(planRaw);
+  const tasks = (doc?.tasks ?? []).filter((t) => t && typeof t.taskType === "string");
+  if (tasks.length === 0) {
+    throw new Error("Planner returned no tasks");
+  }
+
+  tasks.sort((a, b) => (Number(a.taskNumber) || 0) - (Number(b.taskNumber) || 0));
+
+  const finalSteps: unknown[] = [];
+  const importedAssetNames: string[] = [];
+
+  for (const task of tasks) {
+    const tType = String(task.taskType).toLowerCase();
+    if (tType === "import") {
+      const q = (task.searchQuery ?? "prop").trim() || "prop";
+      const c = Math.min(10, Math.max(1, Number(task.count) || 3));
+      const { steps } = await combinedLibraryImportSteps(q, c);
+      for (const st of steps) {
+        finalSteps.push(st);
+        if (st && typeof st === "object" && "name" in st) {
+          const n = (st as { name?: string }).name;
+          if (typeof n === "string" && n) importedAssetNames.push(n);
+        }
+      }
+      continue;
+    }
+
+    if (tType === "place" || tType === "lighting" || tType === "detail") {
+      const namesList = importedAssetNames.length
+        ? importedAssetNames.join(", ")
+        : "(use /Game/GrandStudio/Imported/<name> after imports)";
+      const userTask = `Original user request:\n${prompt}\n\nTask type: ${tType}\nTask description: ${task.description ?? ""}\n\nImported mesh base names (el.load_asset('/Game/GrandStudio/Imported/' + name)):\n${namesList}\n\nProject assets (truncated):\n${assetsText.slice(0, 12_000)}`;
+
+      const rawCode = await aiCompleteText({
+        system: TASK_CODE_SYSTEM,
+        user: userTask,
+        geminiKey,
+        openRouterKey,
+        model,
+      });
+      let code = extractCodeFromModelOutput(rawCode);
+      if (!code || !code.includes("import unreal")) {
+        code =
+          "import unreal\nunreal.log_warning('Grand Studio: generated task script was empty; skipped this step.')\n";
+      }
+      const progress =
+        typeof task.description === "string" && task.description.trim()
+          ? task.description.trim()
+          : tType === "place"
+            ? "Placing objects"
+            : tType === "lighting"
+              ? "Setting up lighting"
+              : "Adding details";
+      finalSteps.push({ action: tType, code, progress });
+    }
+  }
+
+  const description =
+    (doc?.summary && doc.summary.trim()) || `Building your scene (${finalSteps.length} steps)`;
+
+  return { description, code: "", steps: finalSteps };
 }
 
 /**
  * POST /api/plugin/command
- * Body: { prompt, assets, assetCount, mode?, assetSource? }
- * Returns: { description, code } or agent: { description, code, steps }
+ * Body: { prompt, assets, assetCount, apiKey }
+ * Returns: { description, code, steps? }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -435,21 +625,12 @@ export async function POST(request: NextRequest) {
     const prompt = typeof bodyRaw.prompt === "string" ? bodyRaw.prompt.trim() : "";
     const assetCount = bodyRaw.assetCount;
     const assetsText = formatAssetsForPrompt(bodyRaw.assets ?? []);
-    const modeRaw = typeof bodyRaw.mode === "string" ? bodyRaw.mode.trim().toLowerCase() : "";
-    const isAgent = modeRaw === "agent";
-    const assetSourceRaw = typeof bodyRaw.assetSource === "string" ? bodyRaw.assetSource.trim().toLowerCase() : "";
-    const assetSource =
-      assetSourceRaw === "my_assets" || assetSourceRaw === "library" || assetSourceRaw === "both"
-        ? assetSourceRaw
-        : "both";
 
     console.log("[plugin/command] received", {
       promptLength: prompt.length,
       assetCount,
       assetsTextLength: assetsText.length,
       hasApiKey: Boolean(apiKey),
-      isAgent,
-      assetSource: isAgent ? assetSource : undefined,
     });
 
     if (!prompt) {
@@ -501,17 +682,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const system = isAgent ? commanderAgentSystemPrompt(assetsText, assetSource) : commanderSystemPrompt(assetsText);
+    const openRouterModel = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
     const useGemini = Boolean(geminiKey);
+
+    if (isComplexSceneRequest(prompt)) {
+      try {
+        const pipelineOut = await runComplexScenePipeline(prompt, assetsText, geminiKey, openRouterKey, openRouterModel);
+        console.log("[plugin/command] complex pipeline", { steps: pipelineOut.steps.length });
+        return NextResponse.json(pipelineOut);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.log("[plugin/command] complex pipeline failed, falling back to single-pass AI", msg);
+      }
+    }
+
+    const system = isGreetingOrMetaQuestion(prompt)
+      ? commanderChatOnlySystemPrompt()
+      : commanderSystemPrompt(assetsText);
 
     const response = useGemini
       ? await fetchGeminiCompletion(geminiKey, system, prompt)
-      : await fetchOpenRouterCompletion(
-          openRouterKey,
-          process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
-          system,
-          prompt,
-        );
+      : await fetchOpenRouterCompletion(openRouterKey, openRouterModel, system, prompt);
 
     console.log("[plugin/command]", useGemini ? "Gemini" : "OpenRouter", "status", response.status);
 
@@ -577,6 +768,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (isGreetingOrMetaQuestion(prompt)) {
+      code = "";
+    }
+
     const stepsOut = Array.isArray(parsed?.steps) ? (parsed!.steps as unknown[]) : [];
     const hasSteps = stepsOut.length > 0;
 
@@ -592,11 +787,10 @@ export async function POST(request: NextRequest) {
       descriptionLength: description.length,
       codeLength: code.length,
       steps: stepsOut.length,
-      isAgent,
     });
 
-    if (hasSteps || isAgent) {
-      return NextResponse.json({ description, code, steps: hasSteps ? stepsOut : [] });
+    if (hasSteps) {
+      return NextResponse.json({ description, code, steps: stepsOut });
     }
 
     return NextResponse.json({ description, code });

@@ -23,6 +23,7 @@ const SEARCH_MAP: Record<string, string[]> = {
 const TERM_TO_MATERIAL_CATEGORY: Record<string, string> = {
   tree: "plant",
   plant: "plant",
+  vegetation: "plant",
   chair: "furniture",
   table: "furniture",
   barrel: "furniture",
