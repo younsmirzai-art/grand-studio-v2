@@ -14,10 +14,14 @@ export interface SketchfabModel {
 
 export async function searchModels(
   query: string,
-  options: { count?: number; token?: string } = {}
+  options: { count?: number; token?: string; sortBy?: string } = {}
 ): Promise<SketchfabModel[]> {
   const count = options.count ?? 12;
-  const url = `${BASE_URL}/search?type=models&q=${encodeURIComponent(query)}&downloadable=true&count=${count}`;
+  const sort =
+    options.sortBy !== undefined && options.sortBy !== ""
+      ? `&sort_by=${encodeURIComponent(options.sortBy)}`
+      : "";
+  const url = `${BASE_URL}/search?type=models&q=${encodeURIComponent(query)}&downloadable=true&count=${count}${sort}`;
   const headers: Record<string, string> = { Accept: "application/json" };
   if (options.token) headers.Authorization = `Token ${options.token}`;
 

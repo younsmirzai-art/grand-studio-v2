@@ -3,7 +3,11 @@ import {
   grandStudioApiKeyExistsInDatabase,
   isGrandStudioApiKeyFormat,
 } from "@/lib/plugin/grandStudioApiKey";
-import { polyHavenHitsToImportSteps, polyHavenTopModelsWithFbx } from "@/lib/plugin/polyhavenImport";
+import {
+  GRAND_STUDIO_ASSET_PRO,
+  GRAND_STUDIO_ASSETS,
+  combinedLibraryImportSteps,
+} from "@/lib/plugin/polyhavenImport";
 
 const DEFAULT_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 const GEMINI_GENERATE_URL =
@@ -254,101 +258,60 @@ function extractClientApiKey(request: NextRequest, body: Record<string, unknown>
   return bodyKey || headerKey;
 }
 
-const HOUSE_WITH_MATERIALS_EXAMPLE = `import unreal
-editor = unreal.EditorLevelLibrary
+const PLACEMENT_AND_LIGHTING_EXAMPLE = `import unreal
 el = unreal.EditorAssetLibrary
-MAT_WALL = '/Game/StarterContent/Materials/M_Brick_Clay_Beveled'
-MAT_FLOOR_ROOF = '/Game/StarterContent/Materials/M_Wood_Floor_Walnut_Polished'
-MAT_GROUND = '/Game/StarterContent/Materials/M_Ground_Grass'
-
-def smat(act, mat_path):
-    if not act: return
-    smc = act.get_component_by_class(unreal.StaticMeshComponent)
-    mat = el.load_asset(mat_path)
-    if smc and mat:
-        smc.set_material(0, mat)
-
-def scube(loc, scale3d, mat_path):
-    a = el.load_asset('/Engine/BasicShapes/Cube')
-    if not a: return None
-    act = editor.spawn_actor_from_object(a, loc)
-    if not act: return None
-    act.set_actor_scale3d(scale3d)
-    smat(act, mat_path)
-    return act
-
-def splane(loc, scale3d, mat_path):
-    a = el.load_asset('/Engine/BasicShapes/Plane')
-    if not a: return None
-    act = editor.spawn_actor_from_object(a, loc)
-    if not act: return None
-    act.set_actor_scale3d(scale3d)
-    smat(act, mat_path)
-    return act
-
-# Units: centimeters. Default BasicShapes cube ~100; scales multiply that.
-splane(unreal.Vector(0, 0, 0), unreal.Vector(40, 40, 1), MAT_GROUND)
-scube(unreal.Vector(0, 0, 5), unreal.Vector(6, 6, 0.1), MAT_FLOOR_ROOF)
-# Four walls ~200 cm tall, door gap: two wall segments on south (+Y) side with space between
-scube(unreal.Vector(0, -300, 110), unreal.Vector(6, 0.2, 2), MAT_WALL)
-scube(unreal.Vector(0, 300, 110), unreal.Vector(6, 0.2, 2), MAT_WALL)
-scube(unreal.Vector(-300, 0, 110), unreal.Vector(0.2, 6, 2), MAT_WALL)
-scube(unreal.Vector(300, -150, 110), unreal.Vector(0.2, 3, 2), MAT_WALL)
-scube(unreal.Vector(300, 150, 110), unreal.Vector(0.2, 3, 2), MAT_WALL)
-scube(unreal.Vector(0, 0, 260), unreal.Vector(6.2, 6.2, 0.15), MAT_FLOOR_ROOF)
+ed = unreal.EditorLevelLibrary
+# ONLY place meshes already imported to /Game/GrandStudio/Imported/ — never BasicShapes.
+mesh = el.load_asset('/Game/GrandStudio/Imported/example_tree')
+if mesh:
+    ed.spawn_actor_from_object(mesh, unreal.Vector(0, 0, 0))
 try:
-    sun = editor.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(-4000, -4000, 4000))
+    sun = ed.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(-4000, -4000, 4000))
     if sun:
         sun.set_actor_rotation(unreal.Rotator(-45, 35, 0), False)
 except Exception:
     pass
 try:
-    editor.spawn_actor_from_class(unreal.SkyAtmosphere, unreal.Vector(0, 0, 0))
+    ed.spawn_actor_from_class(unreal.SkyAtmosphere, unreal.Vector(0, 0, 0))
 except Exception:
     pass
 try:
-    cam = editor.spawn_actor_from_class(unreal.CameraActor, unreal.Vector(900, -900, 280))
+    cam = ed.spawn_actor_from_class(unreal.CameraActor, unreal.Vector(900, -900, 280))
     if cam:
         cam.set_actor_rotation(unreal.Rotator(-12, 42, 0), False)
 except Exception:
     pass
-unreal.log('Complete house: ground, floor, walls with door gap, roof, materials, sun, sky, camera')`;
+unreal.log('Placed imported mesh + lighting + camera')`;
 
 function commanderSystemPrompt(assetsText: string): string {
   return `You are Grand Studio AI Commander running INSIDE Unreal Engine 5.7 as a C++ Plugin. You have DIRECT access to the entire engine through Python. You are not limited. You are the most powerful AI in UE5.
 
-The user has these project assets (use exact paths with load_asset + spawn_actor_from_object when they fit the request; otherwise use BasicShapes + StarterContent as below): ${assetsText}
+CRITICAL — NO PROCEDURAL PRIMITIVES FOR SCENES:
+You must NEVER create objects using BasicShapes or Engine basic meshes (Cube, Cylinder, Plane, Sphere, Cone from /Engine/BasicShapes/).
+When building ANY scene (village, house, forest, etc.), you must FIRST plan imports of real 3D models from Grand Studio libraries (return JSON steps with {"action":"import",...} from Grand Studio Asset Pro and Grand Studio Assets — the server/plugin resolves URLs). After models exist under /Game/GrandStudio/Imported/, ONLY THEN write Python in "place" / "lighting" / or "code" that uses EditorAssetLibrary.load_asset on those paths and EditorLevelLibrary.spawn_actor_from_object, plus DirectionalLight, SkyAtmosphere, SkyLight, ExponentialHeightFog (without unsupported props), CameraActor, etc.
+The ONLY Python you author for world content is: (1) placing already-imported static meshes at transforms (2) lighting and atmosphere (3) camera. You NEVER create geometry from scratch for props/buildings.
 
-YOUR DIRECT ACCESS:
+When mentioning asset sources in descriptions, always say "Grand Studio Asset Pro" or "Grand Studio Assets". Never say "Poly Haven" or "Sketchfab".
 
-- unreal.EditorLevelLibrary: spawn actors, delete actors, get all actors, set viewport camera
-- unreal.EditorAssetLibrary: list ALL assets in /Game/, load any asset, create folders
-- unreal.AssetToolsHelpers: import FBX/OBJ/GLB files from disk
-- unreal.StaticMesh: access and modify any mesh
-- unreal.MaterialInstanceDynamic: create materials with any color, texture, roughness, metallic
-- unreal.KismetMaterialLibrary: create dynamic material instances
-- unreal.Landscape: create and sculpt terrain
-- unreal.FoliageType: paint thousands of trees and plants
-- unreal.NiagaraActor: particle effects (snow, rain, fire, smoke)
-- unreal.ExponentialHeightFog: fog and atmosphere
-- unreal.DirectionalLight, PointLight, SpotLight: all lighting
-- unreal.SkyAtmosphere, SkyLight: sky and ambient light
-- unreal.PostProcessVolume: color grading, bloom, DOF
-- unreal.CameraActor: cinematic cameras
-- unreal.SoundBase, AmbientSound: audio
-- unreal.BlueprintGeneratedClass: spawn blueprint actors
-- All /Game/StarterContent/ materials and meshes
-- All user project assets found by scan
+The user has these project assets (exact paths — use load_asset + spawn_actor_from_object when they match): ${assetsText}
 
-BUILDING STANDARDS:
-Every building MUST have: floor, 4 walls, roof, door opening, at least 2 windows, material on EVERY surface.
-Materials: M_Brick_Clay_Beveled for walls, M_Wood_Floor_Walnut_Polished for floor/roof, M_Ground_Grass for ground.
-Every scene MUST have: ground plane, DirectionalLight, SkyAtmosphere, SkyLight, camera at end.
-Scale: 1 unit = 1 cm. Human = 180 units. Door = 100x200. Wall = 400-600 wide x 300 tall.
+YOUR DIRECT ACCESS (placement & polish — not primitive construction):
 
-NEVER build incomplete scenes. NEVER leave surfaces without materials. NEVER forget lighting.
+- unreal.EditorLevelLibrary: spawn actors from loaded assets, lighting classes, camera
+- unreal.EditorAssetLibrary: load imported meshes and StarterContent materials
+- unreal.MaterialInstanceDynamic / KismetMaterialLibrary: tint StarterContent materials
+- unreal.DirectionalLight, PointLight, SpotLight, SkyAtmosphere, SkyLight, ExponentialHeightFog (no fog_inscattering_color in 5.7)
+- unreal.PostProcessVolume, unreal.CameraActor, Niagara when appropriate
+- /Game/StarterContent/Materials/* for assignment to imported meshes that need materials
+- /Game/GrandStudio/Imported/* for library-imported static meshes
 
-GRAND STUDIO SERVER ROLE: You generate Python that the Grand Studio UE5 plugin runs in the user's Editor. Use the scanned asset list above for exact paths. When imported Poly Haven content exists under /Game/GrandStudio/Imported/, prefer those static meshes for props and environment pieces that match the user's request.
+BUILDING FLOW FOR SCENES:
+1) Plan models (houses, trees, rocks, props).
+2) Emit "import" steps with real https URLs, names, source label "Grand Studio Asset Pro" or "Grand Studio Assets", destination /Game/GrandStudio/Imported/<name>.
+3) Emit "place" Python using only imported + scanned meshes.
+4) Emit "lighting" Python.
+
+Scale: 1 unit = 1 cm. Prefer cinematic lighting and ground borrowed from imported terrain meshes or careful placement — do not build houses from cubes.
 
 MATERIAL KNOWLEDGE — StarterContent paths (assign with EditorAssetLibrary.load_asset):
 - Walls / masonry: /Game/StarterContent/Materials/M_Brick_Clay_Beveled, M_Brick_Clay_New, M_Brick_Cut_Stone
@@ -369,7 +332,7 @@ WEATHER AND ATMOSPHERE:
 When user asks for snow: Create a Niagara particle system for falling snow using this Python code pattern:
 	∙	Spawn ExponentialHeightFog with fog_density and fog_height_falloff (no fog_inscattering_color)
 	∙	Set DirectionalLight intensity to 2.0, color to light blue (0.8, 0.85, 1.0)
-	∙	For actual snow particles, use: unreal.EditorLevelLibrary.spawn_actor_from_class(unreal.NiagaraActor, location) if available, OR create many small white sphere actors falling from sky as simple snow
+	∙	For actual snow particles, use Niagara or particle systems only — never BasicShape spheres
 	∙	Set SkyAtmosphere with overcast look
 When user asks for rain: Similar but with darker fog and blue-grey lighting
 When user asks for sunset: DirectionalLight rotation (-15, -120, 0) with orange color (1.0, 0.6, 0.3)
@@ -378,7 +341,7 @@ When user asks for foggy: ExponentialHeightFog with high density 0.1
 ADVANCED FEATURES THE AI MUST KNOW:
 	∙	Landscape: unreal.EditorLevelLibrary.spawn_actor_from_class(unreal.Landscape, loc) for terrain
 	∙	Foliage: spawn many tree/bush actors with random position and rotation for forests
-	∙	Water: spawn water plane actor for lakes and rivers
+	∙	Water: use imported water meshes or supported water systems — not BasicShape planes as fake water unless no alternative
 	∙	Post Process: spawn PostProcessVolume for color grading and effects
 	∙	Camera: set_level_viewport_camera_info for cinematic views
 	∙	Sound: spawn AmbientSound actors for wind, rain, bird sounds
@@ -386,50 +349,57 @@ Be CREATIVE and DETAILED. When user asks for a scene, make it look like a AAA ga
 
 WHEN USER SAYS HELLO OR ASKS A QUESTION: respond with description only, code can be empty string. Do not force code generation for conversations.
 
-WHEN USER ASKS TO BUILD SOMETHING: respond with description explaining what you will build AND complete Python code that builds everything including materials and lighting.
+WHEN USER ASKS TO BUILD SOMETHING: Prefer JSON with a "steps" array: import steps first (with valid URLs and source labels), then "place", then "lighting". If the scene is simple and uses only scanned assets, you may return {"description","code"} only, where code is placement+lighting (no BasicShapes).
 
-Python may use up to 200 lines. End with unreal.log describing what was built.
+For chats / questions: {"description":"...","code":""} .
 
-For build requests reply with ONLY valid JSON (no markdown fences, no text outside JSON):
-{"description":"short friendly plan what you will build","code":"..."}
+If you return "steps", each import step must include "source": "${GRAND_STUDIO_ASSET_PRO}" or "${GRAND_STUDIO_ASSETS}".
 
-Escape every double-quote inside the code string as \\" and newlines as \\n.
+Escape every double-quote inside strings as \\" and newlines as \\n.
 
-EXACT PATTERN EXAMPLE (follow this structure; adapt sizes, add door/window cuts, use user assets when they match house parts):
-${HOUSE_WITH_MATERIALS_EXAMPLE}`;
+PLACEMENT + LIGHTING PATTERN (no BasicShapes; use real imported mesh paths):
+${PLACEMENT_AND_LIGHTING_EXAMPLE}`;
 }
 
 function commanderAgentSystemPrompt(assetsText: string, assetSource: string): string {
   const sourceRules =
     assetSource === "my_assets"
-      ? `Asset policy (my_assets): Use ONLY scanned project assets. Do NOT include any {"action":"import"} steps with external URLs. Use "place", "lighting", and "execute" steps with Python that references exact paths from the asset list below.`
+      ? `Asset policy (my_assets): Use ONLY scanned project assets. Do NOT include any {"action":"import"} steps with external URLs. Use "place", "lighting", and "execute" steps with Python referencing exact paths from the asset list below. NEVER use BasicShapes.`
       : assetSource === "library"
-        ? `Asset policy (library): Prefer {"action":"import"} steps with real https URLs to downloadable FBX (e.g. from Poly Haven CDN) when you know them; otherwise use BasicShapes + StarterContent in "place" steps. Minimize dependency on scanned assets.`
-        : `Asset policy (both): Use scanned assets where they fit; add {"action":"import"} steps only for props/environment clearly missing from the scan, with valid FBX URLs when possible. Then place and lighting.`;
+        ? `Asset policy (library): Every piece must come from {"action":"import"} steps with real https URLs. Never use BasicShapes. After imports to /Game/GrandStudio/Imported/, place and light.`
+        : `Asset policy (both): Use scanned assets where they fit; add {"action":"import"} steps for missing pieces with valid URLs. NEVER use BasicShapes for buildings or trees.`;
 
   return `You are Grand Studio AI Commander for Unreal Engine 5.7 (Grand Studio plugin). You are NOT a generic Unreal Engine assistant.
+
+CRITICAL: Never create Cube/Cylinder/Plane/Sphere/Cone from /Engine/BasicShapes/. Real meshes only via import steps, then placement Python.
+
+When mentioning asset sources, say "${GRAND_STUDIO_ASSET_PRO}" or "${GRAND_STUDIO_ASSETS}" only — never "Poly Haven" or "Sketchfab".
 
 ${sourceRules}
 
 Scanned project assets (exact paths — required for my_assets / helpful for both):
 ${assetsText}
 
-AGENT MODE — reply with ONLY valid JSON (no markdown, no code fences):
+AGENT / BUILD MODE — reply with ONLY valid JSON (no markdown, no code fences):
 {"description":"short plan","steps":[
-  {"action":"import","name":"safe_name","url":"https://...fbx","destination":"/Game/GrandStudio/Imported/safe_name"},
+  {"action":"import","name":"tree_small","source":"${GRAND_STUDIO_ASSET_PRO}","url":"https://...","destination":"/Game/GrandStudio/Imported/tree_small"},
+  {"action":"import","name":"house_medieval","source":"${GRAND_STUDIO_ASSETS}","url":"https://...","destination":"/Game/GrandStudio/Imported/house_medieval"},
   {"action":"place","code":"import unreal\\n..."},
   {"action":"lighting","code":"import unreal\\n..."}
 ]}
 
+SCENE WORKFLOW:
+1) Plan counts (houses, trees, rocks, props).
+2) Emit all "import" steps first with correct source labels and https URLs.
+3) One "place" step: load_asset + spawn_actor_from_object for imported meshes (and scans).
+4) One "lighting" step: sun, sky, fog without fog_inscattering_color.
+
 Rules:
-- Order: imports first (if any), then place, then lighting. Typically 3–8 steps.
 - Each "code" value must be complete runnable Python starting with import unreal.
-- Walls: brick/stone StarterContent; floors: wood; roofs: metal; ground: grass (paths under /Game/StarterContent/Materials/).
-- Use MaterialInstanceDynamic for colors; emissive for lights and glowing windows.
-- NEVER use fog_inscattering_color on ExponentialHeightFog.
+- "place" / "lighting" must NOT create BasicShapes.
 - NEVER use import_materials or import_textures on AssetImportTask.
 - NEVER use FHttpModule StartAllOutgoing.
-- If the user only chats (hi, thanks), return {"description":"friendly reply","steps":[]} and optionally "code":"".
+- Chit-chat: {"description":"friendly reply","steps":[]}
 
 Escape embedded quotes and newlines inside JSON strings properly.`;
 }
@@ -496,25 +466,27 @@ export async function POST(request: NextRequest) {
         );
       }
       try {
-        const hits = await polyHavenTopModelsWithFbx(term, 3);
-        if (hits.length === 0) {
+        const { steps, descriptionParts } = await combinedLibraryImportSteps(term, 3);
+        if (steps.length === 0) {
+          const extra =
+            typeof process.env.SKETCHFAB_API_TOKEN === "string" && process.env.SKETCHFAB_API_TOKEN.trim()
+              ? ` ${GRAND_STUDIO_ASSETS} had no matches.`
+              : ` Add SKETCHFAB_API_TOKEN to enable ${GRAND_STUDIO_ASSETS}.`;
           return NextResponse.json({
-            description: `No Poly Haven FBX models found for "${term}".`,
+            description: `No models found for "${term}" in ${GRAND_STUDIO_ASSET_PRO}.${extra}`,
             code: "",
             steps: [],
           });
         }
-        const steps = polyHavenHitsToImportSteps(hits);
-        const ids = hits.map((h) => h.id).join(", ");
         return NextResponse.json({
-          description: `Found ${hits.length} models for ${term}: ${ids}`,
+          description: descriptionParts.join(" ") || `Importing ${steps.length} model(s) for "${term}".`,
           code: "",
           steps,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.log("[plugin/command] IMPORT error", msg);
-        return NextResponse.json({ error: "Poly Haven import failed", detail: msg }, { status: 502 });
+        return NextResponse.json({ error: "Grand Studio library import failed", detail: msg }, { status: 502 });
       }
     }
 
@@ -605,10 +577,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const agentStepsOut = Array.isArray(parsed?.steps) ? (parsed!.steps as unknown[]) : [];
-    const agentHasSteps = isAgent && agentStepsOut.length > 0;
+    const stepsOut = Array.isArray(parsed?.steps) ? (parsed!.steps as unknown[]) : [];
+    const hasSteps = stepsOut.length > 0;
 
-    if (!description && !code && !agentHasSteps) {
+    if (!description && !code && !hasSteps) {
       console.log("[plugin/command] no description/code/steps after all strategies");
       return NextResponse.json(
         { error: "Model did not return usable JSON, fields, fences, or Python", raw: raw.slice(0, 2000) },
@@ -619,11 +591,12 @@ export async function POST(request: NextRequest) {
     console.log("[plugin/command] success", {
       descriptionLength: description.length,
       codeLength: code.length,
-      agentSteps: isAgent ? agentStepsOut.length : 0,
+      steps: stepsOut.length,
+      isAgent,
     });
 
-    if (isAgent) {
-      return NextResponse.json({ description, code, steps: agentStepsOut });
+    if (hasSteps || isAgent) {
+      return NextResponse.json({ description, code, steps: hasSteps ? stepsOut : [] });
     }
 
     return NextResponse.json({ description, code });

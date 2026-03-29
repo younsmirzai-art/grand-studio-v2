@@ -49,6 +49,43 @@ _result = {'ue_asset_path': _ue_asset_path, 'material_count': _material_count, '
 unreal.log('IMPORT_RESULT:' + json.dumps(_result))
 `;
 
+export function pythonStarterMaterialPathForCategory(category: string): string {
+  switch (category.toLowerCase()) {
+    case "plant":
+      return "/Game/StarterContent/Materials/M_Ground_Grass";
+    case "rock":
+      return "/Game/StarterContent/Materials/M_Rock_Slate";
+    case "building":
+      return "/Game/StarterContent/Materials/M_Brick_Clay_Beveled";
+    case "metal":
+      return "/Game/StarterContent/Materials/M_Metal_Burnished_Steel";
+    case "furniture":
+    default:
+      return "/Game/StarterContent/Materials/M_Wood_Floor_Walnut_Polished";
+  }
+}
+
+function buildMaterialFallbackPython(escapedMaterialPath: string): string {
+  return `
+if _ue_asset_path and (_import_status == 'mesh_only' or _material_count == 0):
+    _mat_fb2 = unreal.EditorAssetLibrary.load_asset('${escapedMaterialPath}')
+    _mesh_fb2 = unreal.EditorAssetLibrary.load_asset(_ue_asset_path)
+    if _mat_fb2 and _mesh_fb2:
+        try:
+            if hasattr(unreal.EditorStaticMeshLibrary, 'set_material'):
+                unreal.EditorStaticMeshLibrary.set_material(_mesh_fb2, 0, _mat_fb2)
+        except Exception as _e2:
+            unreal.log_warning('Starter material (mesh): ' + str(_e2))
+        try:
+            for _a2 in unreal.EditorLevelLibrary.get_all_level_actors():
+                _c2 = _a2.get_component_by_class(unreal.StaticMeshComponent)
+                if _c2 and _c2.static_mesh == _mesh_fb2:
+                    _c2.set_material(0, _mat_fb2)
+        except Exception:
+            pass
+`.trim();
+}
+
 export type UE5ImportCodeOptions = {
   /** Unique asset name under /Game/GrandStudio/Imported (avoids overwriting). */
   destinationName?: string;
@@ -56,6 +93,8 @@ export type UE5ImportCodeOptions = {
   replaceExisting?: boolean;
   /** If true, only import — do not spawn a temporary actor (batch import + place later). */
   skipSpawnActor?: boolean;
+  /** When set, applies StarterContent material if the import has no materials (plant, rock, building, furniture, metal). */
+  materialCategory?: string;
 };
 
 /**
@@ -89,6 +128,13 @@ if imported_paths and len(imported_paths) > 0:
             actor.set_actor_label('${safeLabel}')
             unreal.log('Asset placed in level!')`;
 
+  const matExtra =
+    options?.materialCategory !== undefined
+      ? `\n${buildMaterialFallbackPython(
+          pythonStarterMaterialPathForCategory(options.materialCategory).replace(/'/g, "\\'"),
+        )}`
+      : "";
+
   return `import unreal
 import urllib.request
 import os
@@ -109,7 +155,7 @@ task.set_editor_property('save', True)
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 imported_paths = task.get_editor_property('imported_object_paths')${spawnBlock}
 _import_file_type = '${fileType}'
-${VALIDATION_SNIPPET.trim()}
+${VALIDATION_SNIPPET.trim()}${matExtra}
 `;
 }
 
@@ -196,6 +242,18 @@ ${destNameBlock}
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
     imported_paths = task.get_editor_property('imported_object_paths')${spawnBlock}
     _import_file_type = model_file.split('.')[-1].lower() if '.' in model_file else 'glb'
-${VALIDATION_SNIPPET.trim().split("\n").map((l) => "    " + l).join("\n")}
+${VALIDATION_SNIPPET.trim()
+  .split("\n")
+  .map((l) => "    " + l)
+  .join("\n")}${
+    options?.materialCategory !== undefined
+      ? `\n${buildMaterialFallbackPython(
+          pythonStarterMaterialPathForCategory(options.materialCategory).replace(/'/g, "\\'"),
+        )
+          .split("\n")
+          .map((l) => (l.trim() ? `    ${l}` : l))
+          .join("\n")}`
+      : ""
+  }
 `;
 }
