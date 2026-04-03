@@ -188,7 +188,7 @@ export async function handleAssetRequest(
         })
       : (() => {
           const phPath = storageUrl!.split("?")[0].split("#")[0].toLowerCase();
-          const ext = phPath.endsWith(".fbx") ? "fbx" : "glb";
+          const ext = phPath.endsWith(".glb") ? "glb" : "fbx";
           const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
           return generateUE5ImportCode(
             storageUrl!,
@@ -293,7 +293,7 @@ export async function enrichCodeWithPolyHavenAssets(
 
   for (const imp of imports) {
     const phPath = imp.url.split("?")[0].split("#")[0].toLowerCase();
-    const ext = phPath.endsWith(".fbx") ? "fbx" : "glb";
+    const ext = phPath.endsWith(".glb") ? "glb" : "fbx";
     const filename = `${imp.label}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = imp.label.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
@@ -313,6 +313,7 @@ export async function enrichCodeWithPolyHavenAssets(
       `    task.set_editor_property('automated', True)`,
       `    task.set_editor_property('save', True)`,
       `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
+      `    imported_paths = task.get_editor_property('imported_object_paths')`,
       postImport,
       `    paths = task.get_editor_property('imported_object_paths')`,
       `    if paths and len(paths) > 0:`,

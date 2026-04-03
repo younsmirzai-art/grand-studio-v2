@@ -263,7 +263,7 @@ export function WorkspacePanel({
         return;
       }
       const phPath = data.url.split("?")[0].split("#")[0].toLowerCase();
-      const ext = phPath.endsWith(".fbx") ? "fbx" : "glb";
+      const ext = phPath.endsWith(".glb") ? "glb" : "fbx";
       const filename = `${assetId}.${ext}`;
       const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
       let code: string;

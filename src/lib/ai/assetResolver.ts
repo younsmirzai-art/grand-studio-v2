@@ -24,7 +24,7 @@ function meshExtensionFromDownloadUrl(url: string): string {
   const path = url.split("?")[0].split("#")[0].toLowerCase();
   if (path.endsWith(".glb")) return "glb";
   if (path.endsWith(".fbx")) return "fbx";
-  return "glb";
+  return "fbx";
 }
 
 export function parseImportTags(aiResponse: string): AssetImportRequest[] {
@@ -113,6 +113,7 @@ export function generateImportPython(
       `    task.set_editor_property('save', True)`,
       `    task.set_editor_property('replace_existing', True)`,
       `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
+      `    imported_paths = task.get_editor_property('imported_object_paths')`,
       postImport,
       `    unreal.log('Imported: ${imp.label ?? key}')`,
       `except Exception as e:`,

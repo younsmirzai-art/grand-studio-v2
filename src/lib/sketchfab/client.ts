@@ -62,5 +62,5 @@ export async function getDownloadUrl(
   });
   if (!res.ok) return null;
   const data = await res.json();
-  return data?.glb?.url ?? null;
+  return data?.glb?.url ?? data?.gltf?.url ?? data?.source?.url ?? null;
 }

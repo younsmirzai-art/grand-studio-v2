@@ -91,7 +91,8 @@ export function getThumbnailUrl(assetId: string, width = 256): string {
   return `${CDN_URL}/asset_img/thumbs/${assetId}.png?width=${width}`;
 }
 
-export type PolyHavenModelFormat = "glb" | "fbx";
+/** Poly Haven models API exposes FBX (not GLB); textures are separate map entries. */
+export type PolyHavenModelFormat = "fbx";
 
 function resolutionFallbackOrder(preferred: string): string[] {
   const order = [preferred, "1k", "2k", "4k", "8k"];
@@ -105,7 +106,7 @@ function resolutionFallbackOrder(preferred: string): string[] {
 
 /**
  * Pick a direct mesh download URL from a Poly Haven /files/{id} JSON payload.
- * Only reads top-level glb / fbx blocks (not glTF split archives or material map trees).
+ * Reads the top-level `fbx` block only (models have no `glb` key on Poly Haven).
  */
 export function pickPolyHavenModelFormatUrl(
   links: Record<string, unknown>,
@@ -130,16 +131,13 @@ export function pickPolyHavenModelFormatUrl(
   return null;
 }
 
-/** Prefer GLB (single file, embedded textures), then FBX. Never glTF — UE import needs companion .bin files. */
+/** Poly Haven models: FBX only (no GLB on API). Use StarterContent on the imported mesh asset after import. */
 export function resolvePolyHavenModelDownloadUrl(
   links: Record<string, unknown>,
   resolution = "1k"
 ): { url: string; format: PolyHavenModelFormat } | null {
-  const order: PolyHavenModelFormat[] = ["glb", "fbx"];
-  for (const fmt of order) {
-    const url = pickPolyHavenModelFormatUrl(links, fmt, resolution);
-    if (url) return { url, format: fmt };
-  }
+  const url = pickPolyHavenModelFormatUrl(links, "fbx", resolution);
+  if (url) return { url, format: "fbx" };
   return null;
 }
 

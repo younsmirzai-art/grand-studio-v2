@@ -47,14 +47,18 @@ export async function GET(request: NextRequest) {
     }
 
     const glbUrl = (step1Json?.glb as { url?: string } | undefined)?.url;
-    const downloadUrl = glbUrl ?? null;
+    const gltfUrl = (step1Json?.gltf as { url?: string } | undefined)?.url;
+    const sourceUrl = (step1Json?.source as { url?: string } | undefined)?.url;
+    const downloadUrl = glbUrl ?? gltfUrl ?? sourceUrl ?? null;
     debug.step1_glbUrl = glbUrl ?? null;
+    debug.step1_gltfUrl = gltfUrl ?? null;
+    debug.step1_sourceUrl = sourceUrl ?? null;
     debug.step1_downloadUrlUsed = downloadUrl;
 
     if (!downloadUrl || typeof downloadUrl !== "string") {
       return NextResponse.json({
         success: false,
-        error: "No glb.url in step 1 response",
+        error: "No glb, gltf, or source url in step 1 response",
         debug,
       });
     }

@@ -14,7 +14,6 @@ function polyHavenUrlMatchesAssetId(url: string, assetId: string): boolean {
     return (
       path.includes(`/${assetId}/`) ||
       path.includes(`/${assetId}_`) ||
-      path.endsWith(`/${assetId}.glb`) ||
       path.endsWith(`/${assetId}.fbx`)
     );
   } catch {
@@ -32,7 +31,7 @@ function getSupabase() {
 /**
  * 1) Check downloaded_assets cache for existing direct URL
  * 2) GET api.polyhaven.com/files/ASSET_ID
- * 3) Prefer GLB, then FBX — get direct download URL (no glTF — needs separate .bin)
+ * 3) Resolve FBX mesh URL only (Poly Haven models API has no GLB)
  * 4) Cache the direct URL in downloaded_assets (no file upload)
  * 5) Return direct Poly Haven URL for UE5 to download
  */

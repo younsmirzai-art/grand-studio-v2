@@ -36,12 +36,12 @@ export async function GET(request: NextRequest) {
     const filesData = await filesRes.json();
     log(`Step 3: Files response keys: ${Object.keys(filesData).join(", ")}`);
 
-    // GLB then FBX only — matches production (no glTF — needs .bin sidecar)
-    type Format = "glb" | "fbx";
+    // FBX only — Poly Haven models API has no GLB; production uses resolvePolyHavenModelDownloadUrl(fbx)
+    type Format = "fbx";
     let downloadUrl: string | null = null;
-    let ext: Format = "fbx";
+    const ext: Format = "fbx";
 
-    function pickUrl(formatKey: "glb" | "fbx"): string | null {
+    function pickUrl(formatKey: "fbx"): string | null {
       const block = filesData[formatKey];
       if (!block || typeof block !== "object") return null;
       const oneK = block["1k"] ?? block["2k"];
@@ -49,24 +49,14 @@ export async function GET(request: NextRequest) {
       return oneK.url ?? oneK[formatKey]?.url ?? null;
     }
 
-    if (filesData.glb) {
-      downloadUrl = pickUrl("glb");
-      if (downloadUrl) {
-        ext = "glb";
-        log(`Step 4: Found glb.1k/2k.url`);
-      }
-    }
-    if (!downloadUrl && filesData.fbx) {
+    if (filesData.fbx) {
       downloadUrl = pickUrl("fbx");
-      if (downloadUrl) {
-        ext = "fbx";
-        log(`Step 4: Found fbx.1k/2k.url (fallback)`);
-      }
+      if (downloadUrl) log(`Step 4: Found fbx.1k/2k.url`);
     }
     if (!downloadUrl) {
       return NextResponse.json({
         success: false,
-        error: "No glb or fbx URL in files response",
+        error: "No fbx URL in files response",
         logs,
         filesSample: JSON.stringify(filesData).slice(0, 800),
       });
