@@ -81,7 +81,11 @@ export function generateImportPython(
     const filename = `${(imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_")}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = (imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
-    const postImport = pythonPostImportValidationAndMaterialFallbackForLabel(imp.label ?? key, imp.assetId || key)
+    const postImport = pythonPostImportValidationAndMaterialFallbackForLabel(
+      imp.label ?? key,
+      imp.assetId || key,
+      destName
+    )
       .trim()
       .split("\n")
       .map((l) => `    ${l}`)

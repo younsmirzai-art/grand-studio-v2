@@ -85,33 +85,97 @@ export function pythonStarterMaterialPathForCategory(category: string): string {
   }
 }
 
-function buildMaterialFallbackPython(escapedMaterialPath: string): string {
+/** Always apply StarterContent material — FBX import often creates empty slots that still count as materials. */
+function buildAlwaysApplyStarterMaterialPython(
+  escapedStarterMatPath: string,
+  escapedMeshContentPath: string
+): string {
   return `
-if _ue_asset_path and (_material_count == 0 or _texture_count == 0):
-    unreal.log('Applying StarterContent material fallback (missing slots or no imported textures).')
-    _mat_fb2 = unreal.EditorAssetLibrary.load_asset('${escapedMaterialPath}')
-    _mesh_fb2 = unreal.EditorAssetLibrary.load_asset(_ue_asset_path)
-    if _mat_fb2 and _mesh_fb2:
+unreal.log('Applying StarterContent material to imported mesh.')
+_imported = unreal.EditorAssetLibrary.load_asset('${escapedMeshContentPath}')
+_mat = unreal.EditorAssetLibrary.load_asset('${escapedStarterMatPath}')
+if _imported and _mat:
+    for _actor in unreal.EditorLevelLibrary.get_all_level_actors():
+        _comp = _actor.get_component_by_class(unreal.StaticMeshComponent)
+        if not _comp:
+            continue
+        _sm = None
         try:
-            if hasattr(unreal.EditorStaticMeshLibrary, 'set_material'):
-                unreal.EditorStaticMeshLibrary.set_material(_mesh_fb2, 0, _mat_fb2)
-        except Exception as _e2:
-            unreal.log_warning('Starter material (mesh): ' + str(_e2))
-        try:
-            for _a2 in unreal.EditorLevelLibrary.get_all_level_actors():
-                _c2 = _a2.get_component_by_class(unreal.StaticMeshComponent)
-                if _c2 and _c2.static_mesh == _mesh_fb2:
-                    _c2.set_material(0, _mat_fb2)
+            _sm = _comp.get_static_mesh()
         except Exception:
-            pass
+            try:
+                _sm = _comp.static_mesh
+            except Exception:
+                _sm = None
+        if _sm == _imported:
+            try:
+                _n = _comp.get_num_materials()
+            except Exception:
+                try:
+                    _n = len(_comp.get_materials()) if hasattr(_comp, 'get_materials') else 1
+                except Exception:
+                    _n = 1
+            for _i in range(max(_n, 1)):
+                try:
+                    _comp.set_material(_i, _mat)
+                except Exception as _e_mat:
+                    unreal.log_warning('set_material slot %d: %s' % (_i, str(_e_mat)))
 `.trim();
 }
 
-/** Validation + category-based StarterContent fallback (after AssetImportTask). For inline/enriched import snippets. */
-export function pythonPostImportValidationAndMaterialFallbackForLabel(label: string, idHint?: string): string {
+/** Sketchfab: mesh UE path is folder + '/' + _dest_name (set before import task). */
+function buildAlwaysApplyStarterMaterialPythonSketchfab(
+  escapedStarterMatPath: string,
+  escapedMeshFolderPath: string
+): string {
+  return `
+unreal.log('Applying StarterContent material to imported mesh.')
+_mesh_ue_path = '${escapedMeshFolderPath}/' + _dest_name
+_imported = unreal.EditorAssetLibrary.load_asset(_mesh_ue_path)
+_mat = unreal.EditorAssetLibrary.load_asset('${escapedStarterMatPath}')
+if _imported and _mat:
+    for _actor in unreal.EditorLevelLibrary.get_all_level_actors():
+        _comp = _actor.get_component_by_class(unreal.StaticMeshComponent)
+        if not _comp:
+            continue
+        _sm = None
+        try:
+            _sm = _comp.get_static_mesh()
+        except Exception:
+            try:
+                _sm = _comp.static_mesh
+            except Exception:
+                _sm = None
+        if _sm == _imported:
+            try:
+                _n = _comp.get_num_materials()
+            except Exception:
+                try:
+                    _n = len(_comp.get_materials()) if hasattr(_comp, 'get_materials') else 1
+                except Exception:
+                    _n = 1
+            for _i in range(max(_n, 1)):
+                try:
+                    _comp.set_material(_i, _mat)
+                except Exception as _e_mat:
+                    unreal.log_warning('set_material slot %d: %s' % (_i, str(_e_mat)))
+`.trim();
+}
+
+/** Validation + always-on StarterContent materials (after AssetImportTask). For inline/enriched import snippets. */
+export function pythonPostImportValidationAndMaterialFallbackForLabel(
+  label: string,
+  idHint?: string,
+  destinationName?: string
+): string {
   const cat = inferMaterialCategoryFromLabels(label, idHint);
   const mat = pythonStarterMaterialPathForCategory(cat).replace(/'/g, "\\'");
-  return `${VALIDATION_SNIPPET.trim()}\n${buildMaterialFallbackPython(mat)}`;
+  const dest =
+    (destinationName ?? label)
+      .replace(/[^a-zA-Z0-9_]/g, "_")
+      .replace(/^_+|_+$/g, "") || "imported_mesh";
+  const meshPath = `${UE5_IMPORT_MESH_DESTINATION_PATH}/${dest}`.replace(/'/g, "\\'");
+  return `${VALIDATION_SNIPPET.trim()}\n${buildAlwaysApplyStarterMaterialPython(mat, meshPath)}`;
 }
 
 export type UE5ImportCodeOptions = {
@@ -164,7 +228,8 @@ if imported_paths and len(imported_paths) > 0:
   const matCategory =
     options?.materialCategory ?? inferMaterialCategoryFromLabels(label, options?.traceAssetId);
   const matPathEscaped = pythonStarterMaterialPathForCategory(matCategory).replace(/'/g, "\\'");
-  const matExtra = `\n${buildMaterialFallbackPython(matPathEscaped)}`;
+  const meshContentPathEscaped = `${UE5_IMPORT_MESH_DESTINATION_PATH}/${destinationName}`.replace(/'/g, "\\'");
+  const matExtra = `\n${buildAlwaysApplyStarterMaterialPython(matPathEscaped, meshContentPathEscaped)}`;
 
   const meshDestEscaped = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
 
@@ -234,12 +299,11 @@ export function generateSketchfabImportCode(
                 actor.set_actor_label('${safeLabel}')
                 unreal.log('Sketchfab model placed in level!')`;
 
+  const meshDestEscaped = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
   const matCategory =
     options?.materialCategory ?? inferMaterialCategoryFromLabels(label, options?.traceAssetId);
   const matPathEscaped = pythonStarterMaterialPathForCategory(matCategory).replace(/'/g, "\\'");
-  const matExtraAlways = `\n${buildMaterialFallbackPython(matPathEscaped)}`;
-
-  const meshDestEscaped = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
+  const matExtraAlways = `\n${buildAlwaysApplyStarterMaterialPythonSketchfab(matPathEscaped, meshDestEscaped)}`;
 
   return `import unreal
 import urllib.request

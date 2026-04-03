@@ -295,7 +295,7 @@ export async function enrichCodeWithPolyHavenAssets(
     const filename = `${imp.label}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = imp.label.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
-    const postImport = pythonPostImportValidationAndMaterialFallbackForLabel(imp.label)
+    const postImport = pythonPostImportValidationAndMaterialFallbackForLabel(imp.label, undefined, destName)
       .trim()
       .split("\n")
       .map((l) => `    ${l}`)
