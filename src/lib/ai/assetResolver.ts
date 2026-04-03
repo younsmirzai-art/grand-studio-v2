@@ -1,6 +1,6 @@
 import { getModelDownloadUrl } from "@/lib/polyhaven/client";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
-import { UE5_IMPORT_MESH_DESTINATION_PATH, pythonPostImportValidationAndMaterialFallbackForLabel } from "@/lib/ue5/importCode";
+import { UE5_IMPORT_DESTINATION_PATH } from "@/lib/ue5/importCode";
 
 const POLYHAVEN_RE = /\[POLYHAVEN_IMPORT:\s*([^\]]+)\]/g;
 const SKETCHFAB_RE = /\[SKETCHFAB_IMPORT:\s*([^\]]+)\]/g;
@@ -64,18 +64,14 @@ export function generateImportPython(
 ): string {
   if (imports.length === 0) return "";
 
-  const meshDestPy = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
+  const destPy = UE5_IMPORT_DESTINATION_PATH.replace(/'/g, "\\'");
 
   const lines: string[] = [
     "# --- Asset imports from Poly Haven / Sketchfab ---",
-    "import unreal, urllib.request, os, json",
+    "import unreal, urllib.request, os",
     "",
     "download_dir = 'C:/GrandStudio/Downloads'",
     "os.makedirs(download_dir, exist_ok=True)",
-    `try:`,
-    `    unreal.EditorAssetLibrary.make_directory('${meshDestPy}')`,
-    `except Exception:`,
-    `    pass`,
     "",
   ];
 
@@ -88,34 +84,25 @@ export function generateImportPython(
     const filename = `${(imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_")}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = (imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
-    const postImport = pythonPostImportValidationAndMaterialFallbackForLabel(
-      imp.label ?? key,
-      imp.assetId || key,
-      destName
-    )
-      .trim()
-      .split("\n")
-      .map((l) => `    ${l}`)
-      .join("\n");
+    const escapedUrl = url.replace(/'/g, "\\'");
+    const escapedLocal = localPath.replace(/'/g, "\\'");
+    const escapedDestName = destName.replace(/'/g, "\\'");
 
     lines.push(
       `# Import: ${imp.label ?? key}`,
       `try:`,
-      `    local_file = '${localPath}'`,
+      `    local_file = '${escapedLocal}'`,
       `    if not os.path.exists(local_file):`,
-      `        urllib.request.urlretrieve('${url}', local_file)`,
-      `        unreal.log('Downloaded: ${filename}')`,
+      `        urllib.request.urlretrieve('${escapedUrl}', local_file)`,
       `    task = unreal.AssetImportTask()`,
-      `    task.set_editor_property('filename', local_file)`,
-      `    task.set_editor_property('destination_path', '${meshDestPy}')`,
-      `    task.set_editor_property('destination_name', '${destName}')`,
-      `    task.set_editor_property('automated', True)`,
-      `    task.set_editor_property('save', True)`,
-      `    task.set_editor_property('replace_existing', True)`,
+      `    task.filename = local_file`,
+      `    task.destination_path = '${destPy}'`,
+      `    task.destination_name = '${escapedDestName}'`,
+      `    task.replace_existing = True`,
+      `    task.automated = True`,
+      `    task.save = True`,
       `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
-      `    imported_paths = task.get_editor_property('imported_object_paths')`,
-      postImport,
-      `    unreal.log('Imported: ${imp.label ?? key}')`,
+      `    unreal.log('Imported ${escapedDestName}')`,
       `except Exception as e:`,
       `    unreal.log_warning(f'Import failed for ${imp.label ?? key}: {e}')`,
       ``
@@ -156,7 +143,7 @@ export function stripImportTags(response: string): string {
 }
 
 /**
- * Resolves all asset import tags in an AI response by fetching real download
+ * Resolves all asset import Tags in an AI response by fetching real download
  * URLs from Poly Haven / Sketchfab, then returns the combined UE5 import code.
  */
 export async function resolveAssets(
@@ -186,7 +173,7 @@ export async function resolveAssets(
           }
         }
       } catch (e) {
-        console.warn(`[AssetResolver] Failed to resolve ${imp.source} asset:`, e);
+        console.warn(`[AssetResolver] Failed to resolve ${imp.source}`, e);
       }
     })
   );

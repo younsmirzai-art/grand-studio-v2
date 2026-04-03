@@ -891,13 +891,10 @@ export async function buildScene(params: BuildSceneParams): Promise<{
           name: job.name,
           source: "our library (Poly Haven)",
         });
-        const pathOnly = url.split("?")[0].split("#")[0].toLowerCase();
-        const ext = pathOnly.endsWith(".glb") ? "glb" : pathOnly.endsWith(".fbx") ? "fbx" : "fbx";
-        const filename = `${job.polyId}_${curGlobal}.${ext}`;
+        const filename = `${job.polyId}_${curGlobal}.fbx`;
         const code = generateUE5ImportCode(url, filename, job.name, {
           traceAssetId: job.polyId,
           destinationName: destName,
-          skipSpawnActor: true,
         });
         cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
       } else if (job.source === "sketchfab" && job.sketchfabUid) {
@@ -916,7 +913,6 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         const code = generateSketchfabImportCode(dl, zip, job.name, {
           traceAssetId: job.sketchfabUid,
           destinationName: destName,
-          skipSpawnActor: true,
         });
         cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
       } else {
@@ -936,7 +932,7 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         .select("ue_asset_path")
         .eq("ue5_command_id", cmdId)
         .maybeSingle();
-      const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/Meshes/${destName}`;
+      const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/${destName}`;
       importedAssets.push({
         jobId: job.id,
         path: uePath,

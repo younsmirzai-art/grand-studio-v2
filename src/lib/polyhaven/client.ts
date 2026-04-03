@@ -120,6 +120,13 @@ export function pickPolyHavenModelFormatUrl(
     const resBlock = fb[res];
     if (!resBlock || typeof resBlock !== "object" || resBlock === null) continue;
     const rb = resBlock as Record<string, unknown>;
+    if (formatKey === "fbx") {
+      const fbxNested = rb.fbx;
+      if (fbxNested && typeof fbxNested === "object" && fbxNested !== null && "url" in fbxNested) {
+        const u = (fbxNested as { url?: unknown }).url;
+        if (typeof u === "string" && u.length > 0) return u;
+      }
+    }
     const top = rb.url;
     if (typeof top === "string" && top.length > 0) return top;
     const nested = rb[formatKey];
@@ -131,14 +138,19 @@ export function pickPolyHavenModelFormatUrl(
   return null;
 }
 
-/** Poly Haven models: FBX only (no GLB on API). Use StarterContent on the imported mesh asset after import. */
+function polyHavenMeshUrlEndsWithFbx(url: string): boolean {
+  const path = url.split("?")[0].split("#")[0].toLowerCase();
+  return path.endsWith(".fbx");
+}
+
+/** Poly Haven models: FBX file URL only (`files.fbx.{res}.fbx.url`). */
 export function resolvePolyHavenModelDownloadUrl(
   links: Record<string, unknown>,
   resolution = "1k"
 ): { url: string; format: PolyHavenModelFormat } | null {
   const url = pickPolyHavenModelFormatUrl(links, "fbx", resolution);
-  if (url) return { url, format: "fbx" };
-  return null;
+  if (!url || !polyHavenMeshUrlEndsWithFbx(url)) return null;
+  return { url, format: "fbx" };
 }
 
 export async function getModelDownloadUrl(assetId: string, resolution = "1k"): Promise<string | null> {

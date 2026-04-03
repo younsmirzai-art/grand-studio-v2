@@ -206,10 +206,8 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
         if (storageUrl) {
           usedPolyIds.add(pick.id);
           await recordUsage(userId, "polyhaven_import");
-          const phPath = storageUrl.split("?")[0].split("#")[0].toLowerCase();
-          const ext = phPath.endsWith(".glb") ? "glb" : "fbx";
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-          const filename = `${label}.${ext}`;
+          const filename = `${label}.fbx`;
           const importCode = generateUE5ImportCode(storageUrl, filename, label, { traceAssetId: pick.id });
           const commandId = await queueWithRelayCheck(projectId, importCode, "import");
           if (!commandId) continue;
