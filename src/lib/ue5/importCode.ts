@@ -1,6 +1,22 @@
 /** Import status classification for post-import validation. */
 export type ImportStatus = "textured" | "materials_only" | "mesh_only" | "failed";
 
+/** UE content path for static meshes — keeps meshes out of the same folder as imported materials. */
+export const UE5_IMPORT_MESH_DESTINATION_PATH = "/Game/GrandStudio/Imported/Meshes";
+
+export function inferMaterialCategoryFromLabels(name: string, id?: string): string {
+  const s = `${name} ${id ?? ""}`.toLowerCase();
+  if (/\b(tree|trees|plant|plants|palm|bush|bushes|vine|fern|foliage|grass)\b/.test(s)) return "plant";
+  if (/\b(rock|rocks|stone|stones|boulder|boulders|cliff|pebble)\b/.test(s)) return "rock";
+  if (/\b(house|houses|building|buildings|cabin|barn|tower|hut|structure|castle)\b/.test(s)) return "building";
+  if (/\b(barrel|barrels|crate|crates|cask)\b/.test(s)) return "barrel";
+  if (/\b(chair|chairs|table|tables|desk|desks|sofa|sofas|couch|bed|beds|furniture|shelf|shelves|armchair)\b/.test(s)) {
+    return "furniture";
+  }
+  if (/\b(metal|steel|iron|chrome|car|cars|vehicle|vehicles|robot|robots|pipe|pipes)\b/.test(s)) return "metal";
+  return "furniture";
+}
+
 /**
  * Python snippet: validates import result (material/texture count, status) and prints IMPORT_RESULT line.
  * Expects: task (AssetImportTask), _import_file_type (str e.g. 'fbx').
@@ -52,6 +68,7 @@ unreal.log('IMPORT_RESULT:' + json.dumps(_result))
 export function pythonStarterMaterialPathForCategory(category: string): string {
   switch (category.toLowerCase()) {
     case "plant":
+    case "vegetation":
       return "/Game/StarterContent/Materials/M_Ground_Grass";
     case "rock":
       return "/Game/StarterContent/Materials/M_Rock_Slate";
@@ -59,6 +76,9 @@ export function pythonStarterMaterialPathForCategory(category: string): string {
       return "/Game/StarterContent/Materials/M_Brick_Clay_Beveled";
     case "metal":
       return "/Game/StarterContent/Materials/M_Metal_Burnished_Steel";
+    case "barrel":
+    case "crate":
+      return "/Game/StarterContent/Materials/M_Wood_Oak";
     case "furniture":
     default:
       return "/Game/StarterContent/Materials/M_Wood_Floor_Walnut_Polished";
@@ -67,7 +87,8 @@ export function pythonStarterMaterialPathForCategory(category: string): string {
 
 function buildMaterialFallbackPython(escapedMaterialPath: string): string {
   return `
-if _ue_asset_path and (_import_status == 'mesh_only' or _material_count == 0):
+if _ue_asset_path and (_material_count == 0 or _texture_count == 0):
+    unreal.log('Applying StarterContent material fallback (missing slots or no imported textures).')
     _mat_fb2 = unreal.EditorAssetLibrary.load_asset('${escapedMaterialPath}')
     _mesh_fb2 = unreal.EditorAssetLibrary.load_asset(_ue_asset_path)
     if _mat_fb2 and _mesh_fb2:
@@ -86,14 +107,24 @@ if _ue_asset_path and (_import_status == 'mesh_only' or _material_count == 0):
 `.trim();
 }
 
+/** Validation + category-based StarterContent fallback (after AssetImportTask). For inline/enriched import snippets. */
+export function pythonPostImportValidationAndMaterialFallbackForLabel(label: string, idHint?: string): string {
+  const cat = inferMaterialCategoryFromLabels(label, idHint);
+  const mat = pythonStarterMaterialPathForCategory(cat).replace(/'/g, "\\'");
+  return `${VALIDATION_SNIPPET.trim()}\n${buildMaterialFallbackPython(mat)}`;
+}
+
 export type UE5ImportCodeOptions = {
   /** Logged in dev when set (Poly Haven import trace). */
   traceAssetId?: string;
-  /** Unique asset name under /Game/GrandStudio/Imported (avoids overwriting). */
+  /** Unique asset name under /Game/GrandStudio/Imported/Meshes (avoids overwriting). */
   destinationName?: string;
   /** If true, only import — do not spawn a temporary actor (batch import + place later). */
   skipSpawnActor?: boolean;
-  /** When set, applies StarterContent material if the import has no materials (plant, rock, building, furniture, metal). */
+  /**
+   * StarterContent material fallback category (plant, rock, building, barrel, furniture, metal).
+   * If omitted, inferred from label / traceAssetId.
+   */
   materialCategory?: string;
 };
 
@@ -130,17 +161,21 @@ if imported_paths and len(imported_paths) > 0:
             actor.set_actor_label('${safeLabel}')
             unreal.log('Asset placed in level!')`;
 
-  const matExtra =
-    options?.materialCategory !== undefined
-      ? `\n${buildMaterialFallbackPython(
-          pythonStarterMaterialPathForCategory(options.materialCategory).replace(/'/g, "\\'"),
-        )}`
-      : "";
+  const matCategory =
+    options?.materialCategory ?? inferMaterialCategoryFromLabels(label, options?.traceAssetId);
+  const matPathEscaped = pythonStarterMaterialPathForCategory(matCategory).replace(/'/g, "\\'");
+  const matExtra = `\n${buildMaterialFallbackPython(matPathEscaped)}`;
+
+  const meshDestEscaped = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
 
   return `import unreal
 import urllib.request
 import os
 os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
+try:
+    unreal.EditorAssetLibrary.make_directory('${meshDestEscaped}')
+except Exception:
+    pass
 url = '${downloadUrl.replace(/'/g, "\\'")}'
 local_path = '${localPath}'
 unreal.log('Download started.')
@@ -149,7 +184,7 @@ unreal.log(f'Downloaded: {local_path}')
 unreal.log('Import started.')
 task = unreal.AssetImportTask()
 task.set_editor_property('filename', local_path)
-task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
+task.set_editor_property('destination_path', '${meshDestEscaped}')
 task.set_editor_property('destination_name', '${destinationName}')
 task.set_editor_property('replace_existing', True)
 task.set_editor_property('automated', True)
@@ -198,6 +233,13 @@ export function generateSketchfabImportCode(
             if actor:
                 actor.set_actor_label('${safeLabel}')
                 unreal.log('Sketchfab model placed in level!')`;
+
+  const matCategory =
+    options?.materialCategory ?? inferMaterialCategoryFromLabels(label, options?.traceAssetId);
+  const matPathEscaped = pythonStarterMaterialPathForCategory(matCategory).replace(/'/g, "\\'");
+  const matExtraAlways = `\n${buildMaterialFallbackPython(matPathEscaped)}`;
+
+  const meshDestEscaped = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
 
   return `import unreal
 import urllib.request
@@ -249,9 +291,13 @@ else:
             if not os.path.exists(dest):
                 shutil.copy2(tex_file, dest)
 ${destNameBlock}
+    try:
+        unreal.EditorAssetLibrary.make_directory('${meshDestEscaped}')
+    except Exception:
+        pass
     task = unreal.AssetImportTask()
     task.set_editor_property('filename', model_file)
-    task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
+    task.set_editor_property('destination_path', '${meshDestEscaped}')
     task.set_editor_property('destination_name', _dest_name)
     task.set_editor_property('replace_existing', True)
     task.set_editor_property('automated', True)
@@ -262,15 +308,10 @@ ${destNameBlock}
 ${VALIDATION_SNIPPET.trim()
   .split("\n")
   .map((l) => "    " + l)
-  .join("\n")}${
-    options?.materialCategory !== undefined
-      ? `\n${buildMaterialFallbackPython(
-          pythonStarterMaterialPathForCategory(options.materialCategory).replace(/'/g, "\\'"),
-        )
-          .split("\n")
-          .map((l) => (l.trim() ? `    ${l}` : l))
-          .join("\n")}`
-      : ""
-  }
+  .join("\n")}${matExtraAlways
+  .trim()
+  .split("\n")
+  .map((l) => `    ${l}`)
+  .join("\n")}
 `;
 }

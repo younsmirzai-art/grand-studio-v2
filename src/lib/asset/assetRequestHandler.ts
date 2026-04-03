@@ -7,7 +7,12 @@ import { searchAssets } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { createServerClient } from "@/lib/supabase/server";
-import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
+import {
+  generateUE5ImportCode,
+  generateSketchfabImportCode,
+  UE5_IMPORT_MESH_DESTINATION_PATH,
+  pythonPostImportValidationAndMaterialFallbackForLabel,
+} from "@/lib/ue5/importCode";
 
 export interface AssetRequestResult {
   chatMessage: string;
@@ -267,14 +272,21 @@ export async function enrichCodeWithPolyHavenAssets(
 
   if (imports.length === 0) return code;
 
+  const meshDestPy = UE5_IMPORT_MESH_DESTINATION_PATH.replace(/'/g, "\\'");
+
   const importLines: string[] = [
     "# --- Auto-added Poly Haven assets ---",
     "import unreal",
     "import urllib.request",
     "import os",
+    "import json",
     "",
     "download_dir = 'C:/GrandStudio/Downloads'",
     "os.makedirs(download_dir, exist_ok=True)",
+    `try:`,
+    `    unreal.EditorAssetLibrary.make_directory('${meshDestPy}')`,
+    `except Exception:`,
+    `    pass`,
     "",
   ];
 
@@ -282,17 +294,24 @@ export async function enrichCodeWithPolyHavenAssets(
     const ext = imp.url.includes("sketchfab") ? "glb" : imp.url.endsWith(".glb") ? "glb" : "gltf";
     const filename = `${imp.label}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
-    const ue5Path = `/Game/GrandStudio/Imports/${imp.label}`;
+    const destName = imp.label.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
+    const postImport = pythonPostImportValidationAndMaterialFallbackForLabel(imp.label)
+      .trim()
+      .split("\n")
+      .map((l) => `    ${l}`)
+      .join("\n");
     importLines.push(
       `try:`,
       `    urllib.request.urlretrieve('${imp.url}', '${localPath}')`,
       `    task = unreal.AssetImportTask()`,
       `    task.set_editor_property('filename', '${localPath}')`,
-      `    task.set_editor_property('destination_path', '${ue5Path}')`,
+      `    task.set_editor_property('destination_path', '${meshDestPy}')`,
+      `    task.set_editor_property('destination_name', '${destName}')`,
       `    task.set_editor_property('replace_existing', True)`,
       `    task.set_editor_property('automated', True)`,
       `    task.set_editor_property('save', True)`,
       `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
+      postImport,
       `    paths = task.get_editor_property('imported_object_paths')`,
       `    if paths and len(paths) > 0:`,
       `        asset = unreal.EditorAssetLibrary.load_asset(str(paths[0]))`,

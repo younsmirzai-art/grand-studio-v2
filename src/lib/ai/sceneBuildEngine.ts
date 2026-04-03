@@ -935,7 +935,7 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         .select("ue_asset_path")
         .eq("ue5_command_id", cmdId)
         .maybeSingle();
-      const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/${destName}`;
+      const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/Meshes/${destName}`;
       importedAssets.push({
         jobId: job.id,
         path: uePath,
