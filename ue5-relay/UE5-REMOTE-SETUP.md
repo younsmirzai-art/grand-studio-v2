@@ -6,7 +6,15 @@ When the relay sends code to Unreal Engine 5, you may see:
 UE5 returned 400: { "errorMessage": "Object Default__PythonScriptLibrary cannot be accessed remotely, check remote control project settings." }
 ```
 
-That means your **UE5 project** is not allowing the Python Script object to be called over Web Remote Control. Do the following in your Unreal Engine project.
+That usually means **`PUT /remote/object/call` on `Default__PythonScriptLibrary` is blocked** by Web Remote Control security defaults.
+
+**Relay behavior (grand-studio `relay.py`):** execution is tried in this order:
+
+1. **`POST` / `PUT` `/remote/script/run`** with `scriptPath` + `scriptText` (and PascalCase variants) — runs editor Python **without** calling `PythonScriptLibrary` through `object/call`.
+2. **`POST` / `PUT` `/remote/exec`** with alternate JSON bodies (if your engine build registers that route).
+3. **Fallback:** legacy `PUT /remote/object/call` → `ExecutePythonCommand` (may still need the preset / allow‑list below).
+
+To see which HTTP routes your editor actually exposes, open **`GET http://localhost:30010/remote/info`** in a browser or `curl` while `WebControl.StartServer` is running.
 
 ---
 
@@ -14,8 +22,9 @@ That means your **UE5 project** is not allowing the Python Script object to be c
 
 1. In Unreal Editor: **Edit → Plugins**.
 2. Search for and **enable**:
-   - **Remote Control API** (under *Messaging*)
-   - **Python Script Plugin** (under *Scripting*)
+   - **Web Remote Control** (and/or **Remote Control API**, depending on your UE version — under *Messaging* / *Remote*).
+   - **Remote Control API** if listed separately (under *Messaging*).
+   - **Python Script Plugin** (under *Scripting*).
 3. Restart the editor when asked.
 
 ---
@@ -31,9 +40,9 @@ That means your **UE5 project** is not allowing the Python Script object to be c
 
 ---
 
-## 3. Expose Python for remote access (fix the 400 error)
+## 3. Expose Python for remote access (only if script/run still fails)
 
-The 400 error happens because `Default__PythonScriptLibrary` is not exposed to Remote Control. Expose it via a **Remote Control Preset**:
+If **`/remote/script/run` is not available** (check `/remote/info`) or returns an error, the relay falls back to **`object/call`** on `PythonScriptLibrary`. That path often requires exposing the call via a **Remote Control Preset**:
 
 1. **Create a preset**
    - In the Content Browser: right‑click → **Miscellaneous → Remote Control Preset**.
@@ -72,4 +81,7 @@ With the server running (`WebControl.StartServer`) and Python exposed for remote
 python relay.py
 ```
 
-Then send code from Grand Studio again. If the 400 persists, double‑check that the preset is saved and that the exposed function is the one that runs Python (ExecutePythonCommand or your Blueprint wrapper).
+Then send code from Grand Studio again.
+
+- If execution still fails, check the relay log for which HTTP route succeeded (`_relay_via` in the result) or paste the combined error (it lists each attempt).
+- If the **400** persists on the fallback only, double‑check that the preset is saved and that the exposed function is the one that runs Python (`ExecutePythonCommand` or your Blueprint wrapper).

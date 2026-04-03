@@ -32,6 +32,9 @@ FORCE_HEARTBEAT_UE5_CONNECTED = False
 IMPORT_MAX_ATTEMPTS = 5
 IMPORT_RETRY_WAIT_SEC = 10
 
+# Preferred order: endpoints that run editor Python without calling Default__PythonScriptLibrary via object/call
+# (that path often returns 400 "cannot be accessed remotely" unless explicitly allow-listed).
+
 supabase = None
 
 
@@ -89,26 +92,101 @@ def send_heartbeat():
         pass
 
 
-def execute_in_ue5(python_code, timeout=30):
-    """Send Python code to UE5 via Web Remote Control. Use longer timeout for heavy imports."""
+def _ue5_json_body(response):
+    if not response.content:
+        return {}
     try:
-        payload = {
-            "objectPath": "/Script/PythonScriptPlugin.Default__PythonScriptLibrary",
-            "functionName": "ExecutePythonCommand",
-            "parameters": {"PythonCommand": python_code},
-        }
+        return response.json()
+    except ValueError:
+        return {"raw": response.text}
+
+
+def _execute_python_via_object_call(python_code, timeout, base_url):
+    """Legacy path: PUT /remote/object/call → PythonScriptLibrary (often blocked by RC settings)."""
+    payload = {
+        "objectPath": "/Script/PythonScriptPlugin.Default__PythonScriptLibrary",
+        "functionName": "ExecutePythonCommand",
+        "parameters": {"PythonCommand": python_code},
+    }
+    try:
         response = requests.put(
-            f"{UE5_URL}/remote/object/call",
+            f"{base_url}/remote/object/call",
             json=payload,
             timeout=timeout,
         )
-        if response.status_code == 200:
-            return {"success": True, "result": response.json()}
-        else:
-            return {
-                "success": False,
-                "error": f"UE5 returned {response.status_code}: {response.text}",
-            }
+    except requests.exceptions.ConnectionError:
+        raise
+    if response.status_code == 200:
+        return {"success": True, "result": _ue5_json_body(response)}
+    return {
+        "success": False,
+        "error": f"UE5 returned {response.status_code}: {response.text[:2000]}",
+    }
+
+
+def execute_in_ue5(python_code, timeout=30):
+    """Send Python to UE5 via Web Remote Control.
+
+    Tries, in order:
+      - POST/PUT /remote/script/run (scriptPath + scriptText) — avoids remote-blocking PythonScriptLibrary
+      - Same with ScriptPath/ScriptText (PascalCase) for some engine builds
+      - POST/PUT /remote/exec with alternate bodies if the route exists
+      - Fallback: PUT /remote/object/call on Default__PythonScriptLibrary (may require RC preset / allow-list)
+    """
+    base = UE5_URL.rstrip("/")
+    attempts_desc = []
+
+    script_attempts = [
+        ("POST", "/remote/script/run", {"scriptPath": "", "scriptText": python_code}),
+        ("PUT", "/remote/script/run", {"scriptPath": "", "scriptText": python_code}),
+        ("POST", "/remote/script/run", {"ScriptPath": "", "ScriptText": python_code}),
+        ("PUT", "/remote/script/run", {"ScriptPath": "", "ScriptText": python_code}),
+    ]
+    exec_attempts = [
+        ("POST", "/remote/exec", {"scriptText": python_code}),
+        ("PUT", "/remote/exec", {"scriptText": python_code}),
+        ("POST", "/remote/exec", {"command": python_code}),
+    ]
+
+    try:
+        for method, path, payload in script_attempts + exec_attempts:
+            url = f"{base}{path}"
+            try:
+                if method == "POST":
+                    response = requests.post(url, json=payload, timeout=timeout)
+                else:
+                    response = requests.put(url, json=payload, timeout=timeout)
+            except requests.exceptions.ConnectionError:
+                raise
+            except requests.exceptions.RequestException as req_e:
+                attempts_desc.append(f"{method} {path}: request error {req_e}")
+                continue
+
+            if response.status_code in (200, 204):
+                body = _ue5_json_body(response) if response.status_code == 200 else {}
+                return {
+                    "success": True,
+                    "result": body,
+                    "_relay_via": f"{method} {path}",
+                }
+            snippet = (response.text or "")[:400].replace("\n", " ")
+            attempts_desc.append(f"{method} {path} → HTTP {response.status_code}: {snippet}")
+            if response.status_code == 404:
+                continue
+
+        # Last resort: object/call on PythonScriptLibrary (often hits "cannot be accessed remotely")
+        fallback = _execute_python_via_object_call(python_code, timeout, base)
+        if fallback.get("success"):
+            fallback["_relay_via"] = "PUT /remote/object/call PythonScriptLibrary"
+            return fallback
+        attempts_desc.append("PUT /remote/object/call: " + str(fallback.get("error", "")))
+
+        return {
+            "success": False,
+            "error": "Could not run Python in UE5. Tried script/run and exec routes, then object/call. "
+            + " | ".join(attempts_desc[:8]),
+        }
+
     except requests.exceptions.ConnectionError:
         return {
             "success": False,
@@ -372,6 +450,8 @@ def poll_commands():
                 if ue5_result["success"]:
                     ue5_connected = True
                     print("         Success!")
+                    if ue5_result.get("_relay_via"):
+                        print(f"         UE5 route: {ue5_result['_relay_via']}")
                     if cmd_type == "import":
                         print("         Import FINISH — success")
                         print(
