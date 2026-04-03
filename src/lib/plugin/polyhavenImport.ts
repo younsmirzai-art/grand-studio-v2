@@ -1,3 +1,4 @@
+import { resolvePolyHavenModelDownloadUrl, type PolyHavenModelFormat } from "@/lib/polyhaven/client";
 import { searchModels, getDownloadUrl } from "@/lib/sketchfab/client";
 
 const USER_AGENT = "GrandStudio/1.0 (contact@grandstudio.dev)";
@@ -35,7 +36,7 @@ const TERM_TO_MATERIAL_CATEGORY: Record<string, string> = {
   food: "furniture",
 };
 
-export type PolyHavenImportHit = { id: string; name: string; fbxUrl: string };
+export type PolyHavenImportHit = { id: string; name: string; downloadUrl: string; format: PolyHavenModelFormat };
 
 export type PluginImportStep = {
   action: "import";
@@ -43,7 +44,7 @@ export type PluginImportStep = {
   url: string;
   destination: string;
   source?: string;
-  importType?: "fbx" | "zip";
+  importType?: PolyHavenModelFormat | "zip";
   materialCategory?: string;
 };
 
@@ -71,18 +72,6 @@ function assetMatchesFilterKeywords(assetId: string, displayName: string, keywor
   return keywords.some((kw) => keywordMatchesAssetText(haystack, kw));
 }
 
-function pickFbxUrl(filesRoot: Record<string, unknown>): string | null {
-  const fbxCat = filesRoot.fbx as Record<string, unknown> | undefined;
-  if (!fbxCat) return null;
-  for (const res of ["2k", "4k", "1k"] as const) {
-    const resObj = fbxCat[res] as Record<string, unknown> | undefined;
-    if (!resObj) continue;
-    const inner = resObj.fbx as { url?: string } | undefined;
-    if (inner?.url) return inner.url;
-  }
-  return null;
-}
-
 async function fetchPolyHavenModelKeysForQuery(searchQuery: string): Promise<Record<string, PolyHavenSearchRow>> {
   const q = encodeURIComponent(searchQuery.trim());
   const url = `https://api.polyhaven.com/assets?t=models&s=${q}`;
@@ -106,7 +95,7 @@ function slugName(name: string, suffix: string): string {
   return joined.length >= 4 ? joined : `model_${short || "sf"}`;
 }
 
-export async function polyHavenTopModelsWithFbx(searchTerm: string, limit = 3): Promise<PolyHavenImportHit[]> {
+export async function polyHavenTopModelsWithMesh(searchTerm: string, limit = 3): Promise<PolyHavenImportHit[]> {
   const filterKeywords = filterKeywordsForUserTerm(searchTerm);
   const raw = await fetchPolyHavenModelKeysForQuery(searchTerm);
 
@@ -129,9 +118,9 @@ export async function polyHavenTopModelsWithFbx(searchTerm: string, limit = 3): 
     });
     if (!filesRes.ok) continue;
     const files = (await filesRes.json()) as Record<string, unknown>;
-    const fbxUrl = pickFbxUrl(files);
-    if (!fbxUrl) continue;
-    out.push({ id, name, fbxUrl });
+    const resolved = resolvePolyHavenModelDownloadUrl(files, "1k");
+    if (!resolved) continue;
+    out.push({ id, name, downloadUrl: resolved.url, format: resolved.format });
   }
 
   return out;
@@ -144,10 +133,10 @@ export function polyHavenHitsToImportSteps(hits: PolyHavenImportHit[], searchTer
     return {
       action: "import",
       name,
-      url: h.fbxUrl,
+      url: h.downloadUrl,
       destination: `/Game/GrandStudio/Imported/Meshes/${name}`,
       source: GRAND_STUDIO_ASSET_PRO,
-      importType: "fbx",
+      importType: h.format,
       materialCategory: matCat,
     };
   });
@@ -197,7 +186,7 @@ export async function combinedLibraryImportSteps(
   searchTerm: string,
   targetTotal = 3,
 ): Promise<{ steps: PluginImportStep[]; counts: PerSourceCount; descriptionParts: string[] }> {
-  const proHits = await polyHavenTopModelsWithFbx(searchTerm, targetTotal);
+  const proHits = await polyHavenTopModelsWithMesh(searchTerm, targetTotal);
   let steps = polyHavenHitsToImportSteps(proHits, searchTerm);
   const counts: PerSourceCount = { pro: proHits.length, assets: 0 };
   const descriptionParts: string[] = [];

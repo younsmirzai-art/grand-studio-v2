@@ -134,12 +134,12 @@ export function pickPolyHavenModelFormatUrl(
   return null;
 }
 
-/** Prefer GLB, then FBX, then glTF — matches UE-oriented download pipeline. */
+/** Prefer GLB (embedded textures), then glTF, then FBX (often geometry-only). */
 export function resolvePolyHavenModelDownloadUrl(
   links: Record<string, unknown>,
   resolution = "1k"
 ): { url: string; format: PolyHavenModelFormat } | null {
-  const order: PolyHavenModelFormat[] = ["glb", "fbx", "gltf"];
+  const order: PolyHavenModelFormat[] = ["glb", "gltf", "fbx"];
   for (const fmt of order) {
     const url = pickPolyHavenModelFormatUrl(links, fmt, resolution);
     if (url) return { url, format: fmt };

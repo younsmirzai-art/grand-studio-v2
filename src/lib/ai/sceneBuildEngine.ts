@@ -891,7 +891,14 @@ export async function buildScene(params: BuildSceneParams): Promise<{
           name: job.name,
           source: "our library (Poly Haven)",
         });
-        const ext = url.toLowerCase().includes(".fbx") ? "fbx" : "glb";
+        const pathOnly = url.split("?")[0].split("#")[0].toLowerCase();
+        const ext = pathOnly.endsWith(".glb")
+          ? "glb"
+          : pathOnly.endsWith(".gltf")
+            ? "gltf"
+            : pathOnly.endsWith(".fbx")
+              ? "fbx"
+              : "glb";
         const filename = `${job.polyId}_${curGlobal}.${ext}`;
         const code = generateUE5ImportCode(url, filename, job.name, {
           traceAssetId: job.polyId,

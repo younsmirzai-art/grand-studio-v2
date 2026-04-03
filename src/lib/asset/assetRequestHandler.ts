@@ -187,7 +187,14 @@ export async function handleAssetRequest(
           destinationName: `sf_${sketchfabUid}`,
         })
       : (() => {
-          const ext = storageUrl!.endsWith(".glb") ? "glb" : storageUrl!.endsWith(".fbx") ? "fbx" : "gltf";
+          const phPath = storageUrl!.split("?")[0].split("#")[0].toLowerCase();
+          const ext = phPath.endsWith(".glb")
+            ? "glb"
+            : phPath.endsWith(".gltf")
+              ? "gltf"
+              : phPath.endsWith(".fbx")
+                ? "fbx"
+                : "glb";
           const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
           return generateUE5ImportCode(
             storageUrl!,

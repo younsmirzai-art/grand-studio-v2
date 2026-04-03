@@ -33,7 +33,7 @@ function getSupabase() {
 /**
  * 1) Check downloaded_assets cache for existing direct URL
  * 2) GET api.polyhaven.com/files/ASSET_ID
- * 3) Prefer GLB, then FBX, then GLTF — get direct download URL
+ * 3) Prefer GLB, then GLTF, then FBX — get direct download URL
  * 4) Cache the direct URL in downloaded_assets (no file upload)
  * 5) Return direct Poly Haven URL for UE5 to download
  */

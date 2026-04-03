@@ -20,6 +20,14 @@ export interface ResolvedAssets {
   importCode: string;
 }
 
+function meshExtensionFromDownloadUrl(url: string): string {
+  const path = url.split("?")[0].split("#")[0].toLowerCase();
+  if (path.endsWith(".glb")) return "glb";
+  if (path.endsWith(".gltf")) return "gltf";
+  if (path.endsWith(".fbx")) return "fbx";
+  return "glb";
+}
+
 export function parseImportTags(aiResponse: string): AssetImportRequest[] {
   const imports: AssetImportRequest[] = [];
 
@@ -77,7 +85,7 @@ export function generateImportPython(
     const url = storageUrls.get(key);
     if (!url) continue;
 
-    const ext = url.endsWith(".glb") ? "glb" : "gltf";
+    const ext = meshExtensionFromDownloadUrl(url);
     const filename = `${(imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_")}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = (imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";

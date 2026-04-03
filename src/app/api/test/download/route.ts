@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const filesData = await filesRes.json();
     log(`Step 3: Files response keys: ${Object.keys(filesData).join(", ")}`);
 
-    // Prefer GLB (single file), then FBX, then GLTF (last resort)
+    // Prefer GLB (embedded textures), then GLTF, then FBX — matches production resolver
     type Format = "glb" | "fbx" | "gltf";
     let downloadUrl: string | null = null;
     let ext: Format = "gltf";
@@ -56,13 +56,6 @@ export async function GET(request: NextRequest) {
         log(`Step 4: Found glb.1k/2k.url`);
       }
     }
-    if (!downloadUrl && filesData.fbx) {
-      downloadUrl = pickUrl("fbx");
-      if (downloadUrl) {
-        ext = "fbx";
-        log(`Step 4: Found fbx.1k/2k.url (single file)`);
-      }
-    }
     if (!downloadUrl && filesData.gltf) {
       const gltf = filesData.gltf;
       const oneK = gltf["1k"] ?? gltf["2k"];
@@ -70,8 +63,15 @@ export async function GET(request: NextRequest) {
         downloadUrl = oneK.url ?? oneK.gltf?.url ?? null;
         if (downloadUrl) {
           ext = "gltf";
-          log(`Step 4: Found gltf.1k/2k.url (multi-file, last resort)`);
+          log(`Step 4: Found gltf.1k/2k.url`);
         }
+      }
+    }
+    if (!downloadUrl && filesData.fbx) {
+      downloadUrl = pickUrl("fbx");
+      if (downloadUrl) {
+        ext = "fbx";
+        log(`Step 4: Found fbx.1k/2k.url (geometry-only fallback)`);
       }
     }
     if (!downloadUrl && filesData["1k"]?.gltf?.url) {
