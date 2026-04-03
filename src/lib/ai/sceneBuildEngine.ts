@@ -894,6 +894,7 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         const ext = url.toLowerCase().includes(".fbx") ? "fbx" : "glb";
         const filename = `${job.polyId}_${curGlobal}.${ext}`;
         const code = generateUE5ImportCode(url, filename, job.name, {
+          traceAssetId: job.polyId,
           destinationName: destName,
           replaceExisting: false,
           skipSpawnActor: true,
@@ -913,6 +914,7 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         });
         const zip = `sf_${job.sketchfabUid}_${curGlobal}.zip`;
         const code = generateSketchfabImportCode(dl, zip, job.name, {
+          traceAssetId: job.sketchfabUid,
           destinationName: destName,
           replaceExisting: false,
           skipSpawnActor: true,

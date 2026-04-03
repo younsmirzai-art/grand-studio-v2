@@ -209,7 +209,7 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           const ext = storageUrl.endsWith(".glb") ? "glb" : storageUrl.endsWith(".fbx") ? "fbx" : "gltf";
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename = `${label}.${ext}`;
-          const importCode = generateUE5ImportCode(storageUrl, filename, label);
+          const importCode = generateUE5ImportCode(storageUrl, filename, label, { traceAssetId: pick.id });
           const commandId = await queueWithRelayCheck(projectId, importCode, "import");
           if (!commandId) continue;
           console.log("IMPORT: UE5 import code generated and queued");
@@ -251,13 +251,17 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
       }
       if (!pick && results[0]?.uid) pick = results[0];
       if (pick?.uid) {
-        usedSfUids.add(pick.uid);
         console.log(`IMPORT: Downloading model: ${pick.name} from Sketchfab`);
         const downloadUrl = await fetchSketchfabDownloadUrl(pick.uid, projectId);
         if (downloadUrl) {
+          usedSfUids.add(pick.uid);
           await recordUsage(userId, "sketchfab_import");
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-          const importCode = generateSketchfabImportCode(downloadUrl, `${pick.uid}.zip`, label);
+          const importCode = generateSketchfabImportCode(downloadUrl, `${pick.uid}.zip`, label, {
+            traceAssetId: pick.uid,
+            destinationName: `sf_${pick.uid}`,
+            replaceExisting: false,
+          });
           const commandId = await queueWithRelayCheck(projectId, importCode, "import");
           if (!commandId) continue;
           console.log("IMPORT: UE5 import code generated and queued");

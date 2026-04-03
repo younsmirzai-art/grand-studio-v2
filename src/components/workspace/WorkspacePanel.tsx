@@ -267,7 +267,11 @@ export function WorkspacePanel({
       const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
       let code: string;
       try {
-        code = generateUE5ImportCode(data.url, filename, label, { traceAssetId: assetId });
+        code = generateUE5ImportCode(data.url, filename, label, {
+          traceAssetId: assetId,
+          destinationName: assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label,
+          replaceExisting: false,
+        });
       } catch (e) {
         console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
         setPhDownloading(null);
@@ -329,6 +333,7 @@ export function WorkspacePanel({
   }, [sfQuery]);
 
   const downloadSketchfab = useCallback(async (uid: string, name: string) => {
+    console.log(`USER SELECTED MODEL: name=${name}, id=${uid}`);
     setSfDownloading(uid);
     toast.info("Downloading 3D model (this may take a moment for large files)…");
     try {
@@ -357,7 +362,11 @@ export function WorkspacePanel({
       const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
       let code: string;
       try {
-        code = generateSketchfabImportCode(data.url, `${uid}.zip`, label);
+        code = generateSketchfabImportCode(data.url, `${uid}.zip`, label, {
+          traceAssetId: uid,
+          destinationName: `sf_${uid}`,
+          replaceExisting: false,
+        });
       } catch (e) {
         console.error("[Import Sketchfab] generateSketchfabImportCode failed:", e);
         setSfDownloading(null);

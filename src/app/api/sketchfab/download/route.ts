@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "uid is required" }, { status: 400 });
     }
 
+    console.log(`DOWNLOAD REQUESTED: uid=${uid}`);
+
     const limitCheck = await checkUsageLimit(userId, "sketchfab_import");
     if (!limitCheck.allowed) {
       return NextResponse.json({ error: UPGRADE_MSG, limitReached: true }, { status: 403 });
@@ -46,18 +48,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = getServiceClient();
 
-    // Check cache
-    const { data: existing } = await supabase
-      .from("downloaded_assets")
-      .select("storage_url")
-      .eq("source", "sketchfab")
-      .eq("source_id", uid)
-      .maybeSingle();
-
-    if (existing?.storage_url) {
-      return NextResponse.json({ url: existing.storage_url });
-    }
-
+    // Sketchfab download links expire after a few minutes. Never reuse cached URLs — a stale URL can fail or, worse, be inconsistent with a cluttered local extract dir on the client.
     const downloadUrl = await getDownloadUrl(uid, token);
     if (!downloadUrl) {
       return NextResponse.json(

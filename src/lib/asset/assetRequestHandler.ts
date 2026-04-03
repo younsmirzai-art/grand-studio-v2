@@ -91,15 +91,6 @@ async function downloadSketchfabToSupabase(uid: string): Promise<string | null> 
 
   const supabase = createServerClient();
 
-  const { data: existing } = await supabase
-    .from("downloaded_assets")
-    .select("storage_url")
-    .eq("source", "sketchfab")
-    .eq("source_id", uid)
-    .maybeSingle();
-
-  if (existing?.storage_url) return existing.storage_url;
-
   const downloadUrl = await getSketchfabDownloadUrl(uid, token);
   if (!downloadUrl) return null;
 
@@ -139,6 +130,7 @@ export async function handleAssetRequest(
   let storageUrl: string | null = null;
   let assetName = query;
   let sourceLabel = "";
+  let polyHavenAssetId: string | null = null;
 
   if (platform === "polyhaven" || platform === "both") {
     console.log("[handleAssetRequest] Searching Poly Haven for query:", query);
@@ -152,6 +144,7 @@ export async function handleAssetRequest(
       if (storageUrl) {
         assetName = best.name;
         sourceLabel = "Poly Haven";
+        polyHavenAssetId = best.id;
       }
     }
   }
@@ -184,11 +177,26 @@ export async function handleAssetRequest(
   const label = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
   const importCode =
     sourceLabel === "Sketchfab" && sketchfabUid
-      ? generateSketchfabImportCode(storageUrl, `${sketchfabUid}.zip`, label)
+      ? generateSketchfabImportCode(storageUrl, `${sketchfabUid}.zip`, label, {
+          traceAssetId: sketchfabUid,
+          destinationName: `sf_${sketchfabUid}`,
+          replaceExisting: false,
+        })
       : (() => {
           const ext = storageUrl!.endsWith(".glb") ? "glb" : storageUrl!.endsWith(".fbx") ? "fbx" : "gltf";
           const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
-          return generateUE5ImportCode(storageUrl!, filename, label);
+          return generateUE5ImportCode(
+            storageUrl!,
+            filename,
+            label,
+            polyHavenAssetId
+              ? {
+                  traceAssetId: polyHavenAssetId,
+                  destinationName: polyHavenAssetId.replace(/[^a-zA-Z0-9_]/g, "_"),
+                  replaceExisting: false,
+                }
+              : undefined
+          );
         })();
   const chatMessage = `Found ${assetName} in our library! Importing to your UE5 scene now… ✨`;
 

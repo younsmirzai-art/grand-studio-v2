@@ -176,6 +176,9 @@ export function generateSketchfabImportCode(
   label: string,
   options?: SketchfabImportCodeOptions
 ): string {
+  if (options?.traceAssetId) {
+    console.log(`GENERATING IMPORT FOR: assetId=${options.traceAssetId}, url=${downloadUrl}`);
+  }
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
   const baseName = zipFilename.replace(/\.zip$/i, "");
   const zipPath = `C:/GrandStudio/Downloads/${zipFilename}`;
@@ -213,6 +216,8 @@ extract_dir = '${extractDir}'
 unreal.log('Download started.')
 urllib.request.urlretrieve('${escapedUrl}', zip_path)
 unreal.log(f'Downloaded ZIP: {zip_path}')
+if os.path.isdir(extract_dir):
+    shutil.rmtree(extract_dir)
 os.makedirs(extract_dir, exist_ok=True)
 with zipfile.ZipFile(zip_path, 'r') as z:
     z.extractall(extract_dir)
@@ -220,8 +225,19 @@ unreal.log(f'Extracted to: {extract_dir}')
 model_file = None
 for ext in ['.glb', '.fbx', '.gltf', '.obj']:
     found = glob.glob(os.path.join(extract_dir, '**', '*' + ext), recursive=True)
+    found = [p for p in found if '__MACOSX' not in p]
     if found:
-        model_file = found[0]
+        scored = []
+        for p in found:
+            rel = os.path.relpath(p, extract_dir)
+            depth = rel.count(os.sep)
+            try:
+                sz = os.path.getsize(p)
+            except OSError:
+                sz = 0
+            scored.append((depth, -sz, p))
+        scored.sort()
+        model_file = scored[0][2]
         break
 if not model_file:
     unreal.log_error('No 3D model file found in ZIP')
