@@ -3,8 +3,8 @@ import { createServerClient } from "@/lib/supabase/server";
 const PLAN_LIMITS: Record<string, Record<string, number>> = {
   free: {
     ai_message: 10,
-    polyhaven_import: 5,
-    sketchfab_import: 3,
+    polyhaven_import: 999999,
+    sketchfab_import: 999999,
     screenshot: 5,
     max_projects: 2,
     meshy_generate: 0,
