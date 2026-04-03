@@ -91,8 +91,6 @@ export type UE5ImportCodeOptions = {
   traceAssetId?: string;
   /** Unique asset name under /Game/GrandStudio/Imported (avoids overwriting). */
   destinationName?: string;
-  /** Default true; use false when each import uses a unique destinationName. */
-  replaceExisting?: boolean;
   /** If true, only import — do not spawn a temporary actor (batch import + place later). */
   skipSpawnActor?: boolean;
   /** When set, applies StarterContent material if the import has no materials (plant, rock, building, furniture, metal). */
@@ -101,7 +99,7 @@ export type UE5ImportCodeOptions = {
 
 /**
  * UE5 5.7+: AssetImportTask has no import_materials / import_textures on the task.
- * Minimal import: filename, destination_path, destination_name, replace_existing, automated, save only.
+ * Minimal import: filename, destination_path, destination_name, replace_existing=True, automated, save only.
  */
 export function generateUE5ImportCode(
   downloadUrl: string,
@@ -116,7 +114,6 @@ export function generateUE5ImportCode(
   const baseName = filename.includes(".") ? filename.replace(/\.[^.]+$/, "") : filename;
   const defaultDest = baseName.replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;
   const destinationName = (options?.destinationName ?? defaultDest).replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;
-  const replaceExisting = options?.replaceExisting ?? true;
   const skipSpawn = options?.skipSpawnActor === true;
   const localPath = `C:/GrandStudio/Downloads/${filename}`;
   const fileType = filename.includes(".") ? filename.split(".").pop()!.toLowerCase() : "glb";
@@ -154,7 +151,7 @@ task = unreal.AssetImportTask()
 task.set_editor_property('filename', local_path)
 task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
 task.set_editor_property('destination_name', '${destinationName}')
-task.set_editor_property('replace_existing', ${replaceExisting ? "True" : "False"})
+task.set_editor_property('replace_existing', True)
 task.set_editor_property('automated', True)
 task.set_editor_property('save', True)
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
@@ -184,7 +181,6 @@ export function generateSketchfabImportCode(
   const zipPath = `C:/GrandStudio/Downloads/${zipFilename}`;
   const extractDir = `C:/GrandStudio/Downloads/${baseName}_extracted`;
   const escapedUrl = downloadUrl.replace(/'/g, "\\'");
-  const replaceExisting = options?.replaceExisting ?? true;
   const skipSpawn = options?.skipSpawnActor === true;
   const destOverride = options?.destinationName?.replace(/[^a-zA-Z0-9_]/g, "_");
   const destNameBlock = destOverride
@@ -257,7 +253,7 @@ ${destNameBlock}
     task.set_editor_property('filename', model_file)
     task.set_editor_property('destination_path', '/Game/GrandStudio/Imported')
     task.set_editor_property('destination_name', _dest_name)
-    task.set_editor_property('replace_existing', ${replaceExisting ? "True" : "False"})
+    task.set_editor_property('replace_existing', True)
     task.set_editor_property('automated', True)
     task.set_editor_property('save', True)
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])

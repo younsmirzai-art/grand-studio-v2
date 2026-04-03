@@ -896,7 +896,6 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         const code = generateUE5ImportCode(url, filename, job.name, {
           traceAssetId: job.polyId,
           destinationName: destName,
-          replaceExisting: false,
           skipSpawnActor: true,
         });
         cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
@@ -916,7 +915,6 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         const code = generateSketchfabImportCode(dl, zip, job.name, {
           traceAssetId: job.sketchfabUid,
           destinationName: destName,
-          replaceExisting: false,
           skipSpawnActor: true,
         });
         cmdId = await queueUE5Command(projectId, code, { commandType: "import" });

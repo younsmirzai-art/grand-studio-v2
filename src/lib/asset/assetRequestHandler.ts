@@ -180,7 +180,6 @@ export async function handleAssetRequest(
       ? generateSketchfabImportCode(storageUrl, `${sketchfabUid}.zip`, label, {
           traceAssetId: sketchfabUid,
           destinationName: `sf_${sketchfabUid}`,
-          replaceExisting: false,
         })
       : (() => {
           const ext = storageUrl!.endsWith(".glb") ? "glb" : storageUrl!.endsWith(".fbx") ? "fbx" : "gltf";
@@ -193,7 +192,6 @@ export async function handleAssetRequest(
               ? {
                   traceAssetId: polyHavenAssetId,
                   destinationName: polyHavenAssetId.replace(/[^a-zA-Z0-9_]/g, "_"),
-                  replaceExisting: false,
                 }
               : undefined
           );
@@ -291,6 +289,7 @@ export async function enrichCodeWithPolyHavenAssets(
       `    task = unreal.AssetImportTask()`,
       `    task.set_editor_property('filename', '${localPath}')`,
       `    task.set_editor_property('destination_path', '${ue5Path}')`,
+      `    task.set_editor_property('replace_existing', True)`,
       `    task.set_editor_property('automated', True)`,
       `    task.set_editor_property('save', True)`,
       `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,

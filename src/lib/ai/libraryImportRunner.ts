@@ -260,7 +260,6 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           const importCode = generateSketchfabImportCode(downloadUrl, `${pick.uid}.zip`, label, {
             traceAssetId: pick.uid,
             destinationName: `sf_${pick.uid}`,
-            replaceExisting: false,
           });
           const commandId = await queueWithRelayCheck(projectId, importCode, "import");
           if (!commandId) continue;

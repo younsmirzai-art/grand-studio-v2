@@ -270,7 +270,6 @@ export function WorkspacePanel({
         code = generateUE5ImportCode(data.url, filename, label, {
           traceAssetId: assetId,
           destinationName: assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label,
-          replaceExisting: false,
         });
       } catch (e) {
         console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
@@ -365,7 +364,6 @@ export function WorkspacePanel({
         code = generateSketchfabImportCode(data.url, `${uid}.zip`, label, {
           traceAssetId: uid,
           destinationName: `sf_${uid}`,
-          replaceExisting: false,
         });
       } catch (e) {
         console.error("[Import Sketchfab] generateSketchfabImportCode failed:", e);
