@@ -99,7 +99,7 @@ async function downloadSketchfabToSupabase(uid: string): Promise<string | null> 
   const downloadUrl = await getSketchfabDownloadUrl(uid, token);
   if (!downloadUrl) return null;
 
-  const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
+  const ext = downloadUrl.toLowerCase().includes(".glb") ? "glb" : "zip";
   await supabase.from("downloaded_assets").upsert(
     {
       source: "sketchfab",
@@ -188,13 +188,7 @@ export async function handleAssetRequest(
         })
       : (() => {
           const phPath = storageUrl!.split("?")[0].split("#")[0].toLowerCase();
-          const ext = phPath.endsWith(".glb")
-            ? "glb"
-            : phPath.endsWith(".gltf")
-              ? "gltf"
-              : phPath.endsWith(".fbx")
-                ? "fbx"
-                : "glb";
+          const ext = phPath.endsWith(".fbx") ? "fbx" : "glb";
           const filename = `${assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
           return generateUE5ImportCode(
             storageUrl!,
@@ -298,7 +292,8 @@ export async function enrichCodeWithPolyHavenAssets(
   ];
 
   for (const imp of imports) {
-    const ext = imp.url.includes("sketchfab") ? "glb" : imp.url.endsWith(".glb") ? "glb" : "gltf";
+    const phPath = imp.url.split("?")[0].split("#")[0].toLowerCase();
+    const ext = phPath.endsWith(".fbx") ? "fbx" : "glb";
     const filename = `${imp.label}.${ext}`;
     const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = imp.label.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";

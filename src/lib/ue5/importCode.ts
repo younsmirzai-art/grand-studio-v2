@@ -19,7 +19,7 @@ export function inferMaterialCategoryFromLabels(name: string, id?: string): stri
 
 /**
  * Python snippet: validates import result (material/texture count, status) and prints IMPORT_RESULT line.
- * Expects: task (AssetImportTask), _import_file_type (str: glb, gltf, fbx, etc.).
+ * Expects: task (AssetImportTask), _import_file_type (str: glb, fbx, obj, etc.).
  */
 const VALIDATION_SNIPPET = `
 import json
@@ -262,7 +262,7 @@ ${VALIDATION_SNIPPET.trim()}${matExtra}
 }
 
 /**
- * Sketchfab import: API returns a ZIP URL. Download ZIP, extract, prefer .glb/.gltf (textures) before .fbx/.obj.
+ * Sketchfab import: API returns a ZIP URL. Download ZIP, extract — prefer .glb (embedded) before .fbx/.obj (no .gltf).
  * UE5 5.7+: same minimal AssetImportTask as generateUE5ImportCode (no import_materials / FbxImportUI on task).
  */
 export type SketchfabImportCodeOptions = UE5ImportCodeOptions;
@@ -325,7 +325,7 @@ with zipfile.ZipFile(zip_path, 'r') as z:
     z.extractall(extract_dir)
 unreal.log(f'Extracted to: {extract_dir}')
 model_file = None
-for ext in ['.glb', '.gltf', '.fbx', '.obj']:
+for ext in ['.glb', '.fbx', '.obj']:
     found = glob.glob(os.path.join(extract_dir, '**', '*' + ext), recursive=True)
     found = [p for p in found if '__MACOSX' not in p]
     if found:

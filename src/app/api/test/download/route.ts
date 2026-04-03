@@ -36,17 +36,17 @@ export async function GET(request: NextRequest) {
     const filesData = await filesRes.json();
     log(`Step 3: Files response keys: ${Object.keys(filesData).join(", ")}`);
 
-    // Prefer GLB (embedded textures), then GLTF, then FBX — matches production resolver
-    type Format = "glb" | "fbx" | "gltf";
+    // GLB then FBX only — matches production (no glTF — needs .bin sidecar)
+    type Format = "glb" | "fbx";
     let downloadUrl: string | null = null;
-    let ext: Format = "gltf";
+    let ext: Format = "fbx";
 
-    function pickUrl(formatKey: "glb" | "fbx" | "gltf"): string | null {
+    function pickUrl(formatKey: "glb" | "fbx"): string | null {
       const block = filesData[formatKey];
       if (!block || typeof block !== "object") return null;
       const oneK = block["1k"] ?? block["2k"];
       if (!oneK) return null;
-      return oneK.url ?? oneK[formatKey]?.url ?? oneK.gltf?.url ?? null;
+      return oneK.url ?? oneK[formatKey]?.url ?? null;
     }
 
     if (filesData.glb) {
@@ -56,33 +56,17 @@ export async function GET(request: NextRequest) {
         log(`Step 4: Found glb.1k/2k.url`);
       }
     }
-    if (!downloadUrl && filesData.gltf) {
-      const gltf = filesData.gltf;
-      const oneK = gltf["1k"] ?? gltf["2k"];
-      if (oneK) {
-        downloadUrl = oneK.url ?? oneK.gltf?.url ?? null;
-        if (downloadUrl) {
-          ext = "gltf";
-          log(`Step 4: Found gltf.1k/2k.url`);
-        }
-      }
-    }
     if (!downloadUrl && filesData.fbx) {
       downloadUrl = pickUrl("fbx");
       if (downloadUrl) {
         ext = "fbx";
-        log(`Step 4: Found fbx.1k/2k.url (geometry-only fallback)`);
+        log(`Step 4: Found fbx.1k/2k.url (fallback)`);
       }
-    }
-    if (!downloadUrl && filesData["1k"]?.gltf?.url) {
-      downloadUrl = filesData["1k"].gltf.url;
-      ext = "gltf";
-      log(`Step 4 (alt): Found 1k.gltf.url`);
     }
     if (!downloadUrl) {
       return NextResponse.json({
         success: false,
-        error: "No glb, fbx, or gltf URL in files response",
+        error: "No glb or fbx URL in files response",
         logs,
         filesSample: JSON.stringify(filesData).slice(0, 800),
       });

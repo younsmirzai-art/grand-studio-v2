@@ -57,7 +57,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ext = downloadUrl.includes(".glb") ? "glb" : "gltf";
+    const low = downloadUrl.toLowerCase();
+    const ext = low.includes(".glb") ? "glb" : low.includes(".zip") ? "zip" : "bin";
     await supabase.from("downloaded_assets").upsert({
       source: "sketchfab",
       source_id: uid,

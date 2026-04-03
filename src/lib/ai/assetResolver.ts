@@ -23,7 +23,6 @@ export interface ResolvedAssets {
 function meshExtensionFromDownloadUrl(url: string): string {
   const path = url.split("?")[0].split("#")[0].toLowerCase();
   if (path.endsWith(".glb")) return "glb";
-  if (path.endsWith(".gltf")) return "gltf";
   if (path.endsWith(".fbx")) return "fbx";
   return "glb";
 }
