@@ -87,6 +87,8 @@ if _ue_asset_path and (_import_status == 'mesh_only' or _material_count == 0):
 }
 
 export type UE5ImportCodeOptions = {
+  /** Logged in dev when set (Poly Haven import trace). */
+  traceAssetId?: string;
   /** Unique asset name under /Game/GrandStudio/Imported (avoids overwriting). */
   destinationName?: string;
   /** Default true; use false when each import uses a unique destinationName. */
@@ -107,6 +109,9 @@ export function generateUE5ImportCode(
   label: string,
   options?: UE5ImportCodeOptions
 ): string {
+  if (options?.traceAssetId) {
+    console.log(`GENERATING IMPORT FOR: assetId=${options.traceAssetId}, url=${downloadUrl}`);
+  }
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
   const baseName = filename.includes(".") ? filename.replace(/\.[^.]+$/, "") : filename;
   const defaultDest = baseName.replace(/[^a-zA-Z0-9_]/g, "_") || safeLabel;

@@ -4,8 +4,24 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { resolvePolyHavenModelDownloadUrl } from "@/lib/polyhaven/client";
 
 const USER_AGENT = "GrandStudio/1.0";
+
+function polyHavenUrlMatchesAssetId(url: string, assetId: string): boolean {
+  try {
+    const path = new URL(url).pathname;
+    return (
+      path.includes(`/${assetId}/`) ||
+      path.includes(`/${assetId}_`) ||
+      path.endsWith(`/${assetId}.glb`) ||
+      path.endsWith(`/${assetId}.fbx`) ||
+      path.endsWith(`/${assetId}.gltf`)
+    );
+  } catch {
+    return url.includes(assetId);
+  }
+}
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,8 +47,15 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
     .eq("source_id", assetId)
     .maybeSingle();
 
-  if (existing?.storage_url) {
+  if (existing?.storage_url && polyHavenUrlMatchesAssetId(existing.storage_url, assetId)) {
     return existing.storage_url;
+  }
+  if (existing?.storage_url) {
+    console.warn(
+      "[polyhaven] Ignoring cached URL for",
+      assetId,
+      "(path does not match asset id); re-resolving from API"
+    );
   }
 
   const filesRes = await fetch(`https://api.polyhaven.com/files/${assetId}`, {
@@ -41,40 +64,11 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
   });
   if (!filesRes.ok) return null;
 
-  const filesData = await filesRes.json();
-
-  type Format = "glb" | "fbx" | "gltf";
-  let downloadUrl: string | null = null;
-  let ext: Format = "gltf";
-
-  function pickUrl(formatKey: "glb" | "fbx" | "gltf"): string | null {
-    const block = filesData[formatKey];
-    if (!block || typeof block !== "object") return null;
-    const oneK = block["1k"] ?? block["2k"];
-    if (!oneK) return null;
-    const u = oneK.url ?? oneK[formatKey]?.url ?? oneK.gltf?.url ?? null;
-    return u || null;
-  }
-
-  if (filesData.glb) {
-    downloadUrl = pickUrl("glb");
-    if (downloadUrl) ext = "glb";
-  }
-  if (!downloadUrl && filesData.fbx) {
-    downloadUrl = pickUrl("fbx");
-    if (downloadUrl) ext = "fbx";
-  }
-  if (!downloadUrl && filesData.gltf) {
-    const gltf = filesData.gltf;
-    const oneK = gltf["1k"] ?? gltf["2k"];
-    if (oneK) downloadUrl = oneK.url ?? oneK.gltf?.url ?? null;
-    if (downloadUrl) ext = "gltf";
-  }
-  if (!downloadUrl && filesData["1k"]?.gltf?.url) {
-    downloadUrl = filesData["1k"].gltf.url;
-    ext = "gltf";
-  }
-  if (!downloadUrl) return null;
+  const filesData = (await filesRes.json()) as Record<string, unknown>;
+  const resolved = resolvePolyHavenModelDownloadUrl(filesData, "1k");
+  if (!resolved) return null;
+  const downloadUrl = resolved.url;
+  const ext = resolved.format;
 
   await supabase.from("downloaded_assets").upsert(
     {

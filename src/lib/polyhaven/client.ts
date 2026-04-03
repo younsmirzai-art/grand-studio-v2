@@ -91,14 +91,60 @@ export function getThumbnailUrl(assetId: string, width = 256): string {
   return `${CDN_URL}/asset_img/thumbs/${assetId}.png?width=${width}`;
 }
 
-/** Poly Haven /files/{id} returns modelFiles: gltf[resolution].gltf.url or gltf[resolution].url */
-function pickModelUrl(links: Record<string, unknown>, formatKey: "gltf" | "fbx", resolution: string): string | null {
-  const formatBlock = links[formatKey] as Record<string, { url?: string; gltf?: { url?: string } }> | undefined;
-  if (!formatBlock) return null;
-  const resKey = ["1k", "2k"].includes(resolution) ? resolution : "1k";
-  const resBlock = formatBlock[resKey] ?? formatBlock["1k"] ?? formatBlock["2k"];
-  if (!resBlock) return null;
-  return resBlock.url ?? resBlock.gltf?.url ?? null;
+export type PolyHavenModelFormat = "glb" | "fbx" | "gltf";
+
+function resolutionFallbackOrder(preferred: string): string[] {
+  const order = [preferred, "1k", "2k", "4k", "8k"];
+  const seen = new Set<string>();
+  return order.filter((r) => {
+    if (seen.has(r)) return false;
+    seen.add(r);
+    return true;
+  });
+}
+
+/**
+ * Pick a direct mesh download URL from a Poly Haven /files/{id} JSON payload.
+ * Only reads top-level glb / fbx / gltf blocks (not material map trees).
+ */
+export function pickPolyHavenModelFormatUrl(
+  links: Record<string, unknown>,
+  formatKey: PolyHavenModelFormat,
+  resolution = "1k"
+): string | null {
+  const formatBlock = links[formatKey];
+  if (!formatBlock || typeof formatBlock !== "object" || formatBlock === null) return null;
+  const fb = formatBlock as Record<string, unknown>;
+  for (const res of resolutionFallbackOrder(resolution)) {
+    const resBlock = fb[res];
+    if (!resBlock || typeof resBlock !== "object" || resBlock === null) continue;
+    const rb = resBlock as Record<string, unknown>;
+    const top = rb.url;
+    if (typeof top === "string" && top.length > 0) return top;
+    const nested = rb[formatKey];
+    if (nested && typeof nested === "object" && nested !== null && "url" in nested) {
+      const u = (nested as { url?: unknown }).url;
+      if (typeof u === "string" && u.length > 0) return u;
+    }
+    if (formatKey === "gltf" && rb.gltf && typeof rb.gltf === "object") {
+      const u = (rb.gltf as { url?: unknown }).url;
+      if (typeof u === "string" && u.length > 0) return u;
+    }
+  }
+  return null;
+}
+
+/** Prefer GLB, then FBX, then glTF — matches UE-oriented download pipeline. */
+export function resolvePolyHavenModelDownloadUrl(
+  links: Record<string, unknown>,
+  resolution = "1k"
+): { url: string; format: PolyHavenModelFormat } | null {
+  const order: PolyHavenModelFormat[] = ["glb", "fbx", "gltf"];
+  for (const fmt of order) {
+    const url = pickPolyHavenModelFormatUrl(links, fmt, resolution);
+    if (url) return { url, format: fmt };
+  }
+  return null;
 }
 
 export async function getModelDownloadUrl(assetId: string, resolution = "1k"): Promise<string | null> {
@@ -110,15 +156,10 @@ export async function getModelDownloadUrl(assetId: string, resolution = "1k"): P
   const keys = Object.keys(links);
   console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> links keys:", keys);
 
-  let gltf = pickModelUrl(links, "gltf", resolution);
-  if (gltf) {
-    console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> URL found (gltf)");
-    return gltf;
-  }
-  const fbx = pickModelUrl(links, "fbx", resolution);
-  if (fbx) {
-    console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> URL found (fbx)");
-    return fbx;
+  const resolved = resolvePolyHavenModelDownloadUrl(links, resolution);
+  if (resolved) {
+    console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> URL found (" + resolved.format + ")");
+    return resolved.url;
   }
   console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> NO download URL");
   return null;

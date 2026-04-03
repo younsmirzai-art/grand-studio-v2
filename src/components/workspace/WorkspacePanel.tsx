@@ -235,6 +235,7 @@ export function WorkspacePanel({
   }, [phQuery, phSubTab]);
 
   const downloadPolyHaven = useCallback(async (assetId: string, type: string, displayName: string) => {
+    console.log(`USER SELECTED MODEL: name=${displayName}, id=${assetId}`);
     setPhDownloading(assetId);
     toast.info("Downloading 3D model (this may take a moment for large files)…");
     const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
@@ -266,7 +267,7 @@ export function WorkspacePanel({
       const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
       let code: string;
       try {
-        code = generateUE5ImportCode(data.url, filename, label);
+        code = generateUE5ImportCode(data.url, filename, label, { traceAssetId: assetId });
       } catch (e) {
         console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
         setPhDownloading(null);

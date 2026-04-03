@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "model" || type === "models") {
+      console.log(`DOWNLOAD REQUESTED: assetId=${assetId}`);
       const limitCheck = await checkUsageLimit(userId, "polyhaven_import");
       if (!limitCheck.allowed) {
         return NextResponse.json({ error: UPGRADE_MSG, limitReached: true }, { status: 403 });
