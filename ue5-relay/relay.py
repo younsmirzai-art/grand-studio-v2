@@ -6,6 +6,7 @@ import glob
 import zipfile
 import shutil
 import requests
+from urllib.parse import urlparse, unquote
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -329,13 +330,20 @@ def handle_relay_download_command(cmd):
     except Exception as e:
         return {"success": False, "error": f"Primary download failed: {e}"}
 
-    diffuse_url = ctx.get("diffuse_url")
-    diffuse_filename = ctx.get("diffuse_filename")
+    diffuse_url = ctx.get("diffuse_url") or ctx.get("diffuseUrl")
+    diffuse_filename = ctx.get("diffuse_filename") or ctx.get("diffuseFilename")
+    if diffuse_url and not diffuse_filename:
+        try:
+            path = unquote(urlparse(str(diffuse_url)).path.split("?")[0])
+            base = os.path.basename(path)
+            diffuse_filename = base if base else "diffuse.jpg"
+        except Exception:
+            diffuse_filename = "diffuse.jpg"
     if diffuse_url and diffuse_filename:
         dname = os.path.basename(str(diffuse_filename).replace("\\", "/"))
         dpath = os.path.join(DOWNLOADS_DIR, dname)
         try:
-            print(f"         Relay diffuse: -> {dpath}")
+            print(f"Downloading diffuse texture: {diffuse_url} -> {dpath}")
             _relay_stream_download(diffuse_url, dpath)
         except Exception as e:
             return {"success": False, "error": f"Diffuse download failed: {e}"}
@@ -384,6 +392,60 @@ def handle_relay_download_command(cmd):
             print(f"         Sketchfab model copied to {dest_model}")
         except Exception as e:
             return {"success": False, "error": f"Copy model failed: {e}"}
+
+        tex_exts = (".png", ".jpg", ".jpeg", ".webp", ".tga")
+        skip_tokens = (
+            "normal",
+            "rough",
+            "metal",
+            "metallic",
+            "ao",
+            "ambient",
+            "opacity",
+            "emit",
+            "emissive",
+            "orm",
+            "packed",
+        )
+        tex_candidates = []
+        for ext in tex_exts:
+            for path in glob.glob(
+                os.path.join(extract_dir, "**", "*" + ext), recursive=True
+            ):
+                rel = path.replace("\\", "/").lower()
+                if "__macosx" in rel:
+                    continue
+                base = os.path.basename(rel)
+                if any(t in base for t in skip_tokens):
+                    continue
+                if any(
+                    k in base
+                    for k in (
+                        "diffuse",
+                        "albedo",
+                        "basecolor",
+                        "base_color",
+                    )
+                ):
+                    depth = rel.count("/")
+                    try:
+                        sz = os.path.getsize(path)
+                    except OSError:
+                        sz = 0
+                    tex_candidates.append((depth, -sz, path))
+        if tex_candidates:
+            tex_candidates.sort()
+            src_tex = tex_candidates[0][2]
+            _, tex_ext = os.path.splitext(src_tex)
+            tex_ext = (tex_ext or ".png").lower()
+            dest_tex = os.path.join(DOWNLOADS_DIR, f"{import_stem}_diffuse{tex_ext}")
+            try:
+                shutil.copy2(src_tex, dest_tex)
+                print(
+                    f"         Sketchfab relay copied diffuse texture: {src_tex} -> {dest_tex}"
+                )
+            except Exception as tex_e:
+                print(f"         Sketchfab relay: diffuse copy skipped: {tex_e}")
 
     return {"success": True, "result": {"relay_download": "ok", "kind": kind}}
 

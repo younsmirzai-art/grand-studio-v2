@@ -57,6 +57,20 @@ export async function queueRelayDownloadThenImport(
   importCode: string,
   importContext?: ImportContext
 ): Promise<{ downloadCommandId: string; importCommandId: string }> {
+  const payload = relayDownloadToDbPayload(download);
+  console.log(
+    "[queueRelayDownloadThenImport] project=%s relay_download=%s",
+    projectId,
+    JSON.stringify({
+      kind: download.kind,
+      url: download.url?.slice(0, 120),
+      filename: download.filename,
+      diffuseUrl: download.diffuseUrl != null ? `${String(download.diffuseUrl).slice(0, 80)}…` : null,
+      diffuseFilename: download.diffuseFilename ?? null,
+      importStem: download.importStem ?? null,
+      dbPayloadKeys: Object.keys(payload),
+    })
+  );
   const downloadCommandId = await queueRelayDownloadCommand(projectId, download);
   const importCommandId = await queueUE5Command(projectId, importCode, {
     commandType: "import",

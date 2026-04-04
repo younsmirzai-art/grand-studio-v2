@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
         importContext && typeof importContext === "object"
           ? (importContext as ImportContext)
           : undefined;
-      const { importCommandId } = await queueRelayDownloadThenImport(
+      const { downloadCommandId, importCommandId } = await queueRelayDownloadThenImport(
         projectId,
         relayDownload,
         codeToRun,
@@ -150,6 +150,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         commandId: importCommandId,
+        downloadCommandId,
         message:
           "Relay will download file(s) locally, then UE5 will import. Waiting for local relay…",
       });

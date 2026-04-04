@@ -99,7 +99,84 @@ else:
 `;
 }
 
-export type SketchfabImportCodeOptions = UE5ImportCodeOptions;
+export type SketchfabImportCodeOptions = UE5ImportCodeOptions & {
+  /**
+   * If true (default), UE tries C:/GrandStudio/Downloads/{importStem}_diffuse.* after relay may copy a texture from the Sketchfab ZIP.
+   */
+  relayDiffuseTexture?: boolean;
+};
+
+/** UE Python: pick first existing {importStem}_diffuse.(jpg|png|…) and apply like Poly diffuse. */
+export function buildOptionalDiffuseByDownloadStemPython(
+  importStem: string,
+  meshDestinationName: string
+): string {
+  const dest = meshDestinationName.replace(/[^a-zA-Z0-9_]/g, "_") || "mesh";
+  const stemEsc = importStem.replace(/'/g, "\\'");
+  const texBase =
+    `${importStem.replace(/[^a-zA-Z0-9_]/g, "_")}_skfb_diffuse`
+      .replace(/[^a-zA-Z0-9_]/g, "_")
+      .slice(0, 45) || "skfb_diffuse";
+  const texDestPy = UE5_TEXTURES_PATH.replace(/'/g, "\\'");
+  const matDestPy = UE5_MATERIALS_PATH.replace(/'/g, "\\'");
+  const texAssetPath = `${UE5_TEXTURES_PATH}/${texBase}`.replace(/'/g, "\\'");
+  const meshAssetPath = `${UE5_IMPORT_DESTINATION_PATH}/${dest}`.replace(/'/g, "\\'");
+  const miName = `MI_${texBase}`.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 50) || "MI_skfb_diffuse";
+
+  return `
+# Optional Sketchfab diffuse from relay (C:/GrandStudio/Downloads/{stem}_diffuse.*)
+_stem_d = r'C:/GrandStudio/Downloads/${stemEsc}_diffuse'
+_tex_path = None
+for _e in ('.jpg', '.jpeg', '.png', '.webp', '.tga', '.exr'):
+    _cand = _stem_d + _e
+    if unreal.Paths.file_exists(_cand):
+        _tex_path = _cand
+        break
+if _tex_path:
+    _tex_task2 = unreal.AssetImportTask()
+    _tex_task2.filename = _tex_path
+    _tex_task2.destination_path = '${texDestPy}'
+    _tex_task2.destination_name = '${texBase}'
+    _tex_task2.replace_existing = True
+    _tex_task2.automated = True
+    _tex_task2.save = True
+    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([_tex_task2])
+    _tex2 = unreal.EditorAssetLibrary.load_asset('${texAssetPath}')
+    _mesh_path2 = '${meshAssetPath}'
+    _mesh2 = unreal.EditorAssetLibrary.load_asset(_mesh_path2)
+    if _tex2 and _mesh2:
+        _parent_paths2 = [
+            '/Game/StarterContent/Materials/M_AssetPlatform.M_AssetPlatform',
+            '/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall',
+        ]
+        _parent2 = None
+        for _pp2 in _parent_paths2:
+            _c2 = unreal.EditorAssetLibrary.load_asset(_pp2)
+            if _c2:
+                _parent2 = _c2
+                break
+        if _parent2:
+            _fac2 = unreal.MaterialInstanceConstantFactoryNew()
+            _fac2.set_editor_property('initial_parent', _parent2)
+            _tools2 = unreal.AssetToolsHelpers.get_asset_tools()
+            _mi2 = _tools2.create_asset('${miName}', '${matDestPy}', unreal.MaterialInstanceConstant, _fac2)
+            if _mi2:
+                for _pn2 in ('Texture', 'BaseColor', 'Diffuse'):
+                    try:
+                        unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(_mi2, _pn2, _tex2)
+                        break
+                    except Exception:
+                        pass
+                try:
+                    _mesh2.set_material(0, _mi2)
+                except Exception:
+                    try:
+                        unreal.EditorStaticMeshLibrary.set_material(_mesh2, 0, _mi2)
+                    except Exception:
+                        unreal.log_warning('Sketchfab: could not assign diffuse material')
+                unreal.EditorAssetLibrary.save_asset(_mesh_path2)
+`;
+}
 
 /**
  * Import a mesh from a file already on disk (relay downloaded). No urllib / no network in UE5.
@@ -170,6 +247,10 @@ export function generateSketchfabLocalImportCode(
   const logName = destinationName.replace(/'/g, "\\'");
   const stemEscaped = importStem.replace(/'/g, "\\'");
   const destPy = UE5_IMPORT_DESTINATION_PATH.replace(/'/g, "\\'");
+  const wantDiffuse = options?.relayDiffuseTexture !== false;
+  const diffuseTail = wantDiffuse
+    ? buildOptionalDiffuseByDownloadStemPython(importStem, destinationName)
+    : "";
 
   return `import unreal
 _base = r'C:/GrandStudio/Downloads/${stemEscaped}_model'
@@ -191,5 +272,5 @@ else:
     task.save = True
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
     unreal.log('Imported ${logName}')
-`;
+${diffuseTail}`;
 }

@@ -72,6 +72,36 @@ const TEMPLATES = Object.entries(SCENE_TEMPLATES).map(([key, t]) => ({
   time: "~30s",
 }));
 
+const UE5_COMMAND_POLL_MS = 2000;
+
+async function fetchUe5CommandStatus(commandId: string): Promise<{
+  status: string;
+  error_log?: string | null;
+}> {
+  const res = await fetch(`/api/ue5/command-status?id=${encodeURIComponent(commandId)}`, {
+    credentials: "include",
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    status?: string;
+    error_log?: string | null;
+  };
+  if (!res.ok) {
+    throw new Error(data?.error ?? `HTTP ${res.status}`);
+  }
+  return { status: data.status ?? "unknown", error_log: data.error_log };
+}
+
+async function waitUe5CommandTerminal(commandId: string): Promise<"success" | "error"> {
+  for (;;) {
+    const { status } = await fetchUe5CommandStatus(commandId);
+    if (status === "success" || status === "error") {
+      return status;
+    }
+    await new Promise((r) => setTimeout(r, UE5_COMMAND_POLL_MS));
+  }
+}
+
 type TabId = "polyhaven" | "sketchfab" | "templates" | "scene" | "history" | "aigenerator";
 
 interface PHResult {
@@ -142,6 +172,7 @@ export function WorkspacePanel({
   const [phResults, setPhResults] = useState<PHResult[]>([]);
   const [phLoading, setPhLoading] = useState(false);
   const [phDownloading, setPhDownloading] = useState<string | null>(null);
+  const [phImportPhaseLabel, setPhImportPhaseLabel] = useState<string | null>(null);
   const [phImportedId, setPhImportedId] = useState<string | null>(null);
 
   // Sketchfab state
@@ -149,6 +180,7 @@ export function WorkspacePanel({
   const [sfResults, setSfResults] = useState<SFResult[]>([]);
   const [sfLoading, setSfLoading] = useState(false);
   const [sfDownloading, setSfDownloading] = useState<string | null>(null);
+  const [sfImportPhaseLabel, setSfImportPhaseLabel] = useState<string | null>(null);
   const [sfImportedId, setSfImportedId] = useState<string | null>(null);
 
   // Recent imports (from ue5_import_assets) for badges + UE path
@@ -239,7 +271,7 @@ export function WorkspacePanel({
       `IMPORT CLICKED: model=${displayName}, id=${assetId}, generating code… projectId=${projectId ?? "(missing)"}`
     );
     setPhDownloading(assetId);
-    toast.info("Downloading 3D model (this may take a moment for large files)…");
+    setPhImportPhaseLabel("Downloading model…");
     const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
     try {
       const res = await fetch("/api/polyhaven/download", {
@@ -252,7 +284,6 @@ export function WorkspacePanel({
       if (!res.ok) {
         const reason = data?.error ?? `HTTP ${res.status}`;
         console.error("[Import Poly Haven] Download API error:", reason, data);
-        setPhDownloading(null);
         if (data?.limitReached) onLimitReached?.(reason);
         else toast.error(`Import failed: ${reason}`);
         return;
@@ -260,7 +291,6 @@ export function WorkspacePanel({
       if (!data.url) {
         const reason = data?.error ?? "No URL in response";
         console.error("[Import Poly Haven] No url in response:", data);
-        setPhDownloading(null);
         toast.error(`Import failed: ${reason}`);
         return;
       }
@@ -285,7 +315,6 @@ export function WorkspacePanel({
         });
       } catch (e) {
         console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
-        setPhDownloading(null);
         toast.error("Import failed: could not generate import code");
         return;
       }
@@ -313,15 +342,35 @@ export function WorkspacePanel({
       });
       const execData = await execRes.json().catch(() => ({}));
       if (execData.commandId) {
-        console.log(`COMMAND QUEUED: id=${execData.commandId}`);
+        console.log(
+          `COMMAND QUEUED: import=${execData.commandId} download=${execData.downloadCommandId ?? "(none)"}`
+        );
       }
       if (!execRes.ok || !execData.commandId) {
         const reason = execData?.error ?? `HTTP ${execRes.status}`;
         console.error("[Import Poly Haven] UE5 execute error:", reason, execData);
-        setPhDownloading(null);
         toast.error(`Import failed: ${reason}`);
         return;
       }
+      const downloadId = execData.downloadCommandId as string | undefined;
+      const importId = execData.commandId as string;
+      if (!downloadId) {
+        toast.error("Import failed: relay did not queue a download command");
+        return;
+      }
+      setPhImportPhaseLabel("Downloading model…");
+      const dlStatus = await waitUe5CommandTerminal(downloadId);
+      if (dlStatus === "error") {
+        toast.error("Downloading model failed (check relay is running)");
+        return;
+      }
+      setPhImportPhaseLabel("Importing to UE5…");
+      const imStatus = await waitUe5CommandTerminal(importId);
+      if (imStatus === "error") {
+        toast.error("UE5 import failed");
+        return;
+      }
+      setPhImportPhaseLabel("Done!");
       const name = displayName || assetId.replace(/_/g, " ");
       toast.success(`${name} imported to UE5!`);
       setPhImportedId(assetId);
@@ -329,10 +378,10 @@ export function WorkspacePanel({
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error("[Import Poly Haven] Error:", e);
-      setPhDownloading(null);
       toast.error(`Import failed: ${message}`);
     } finally {
       setPhDownloading(null);
+      setPhImportPhaseLabel(null);
     }
   }, [projectId, onLimitReached]);
 
@@ -359,7 +408,7 @@ export function WorkspacePanel({
       `IMPORT CLICKED: model=${name}, id=${uid}, generating code… projectId=${projectId ?? "(missing)"}`
     );
     setSfDownloading(uid);
-    toast.info("Downloading 3D model (this may take a moment for large files)…");
+    setSfImportPhaseLabel("Downloading model…");
     try {
       const res = await fetch("/api/sketchfab/download", {
         method: "POST",
@@ -371,7 +420,6 @@ export function WorkspacePanel({
       if (!res.ok) {
         const reason = data?.error ?? `HTTP ${res.status}`;
         console.error("[Import Sketchfab] Download API error:", reason, data);
-        setSfDownloading(null);
         if (data?.limitReached) onLimitReached?.(reason);
         else toast.error(`Import failed: ${reason}`);
         return;
@@ -379,7 +427,6 @@ export function WorkspacePanel({
       if (!data.url) {
         const reason = data?.error ?? "No URL in response";
         console.error("[Import Sketchfab] No url in response:", data);
-        setSfDownloading(null);
         toast.error(`Import failed: ${reason}`);
         return;
       }
@@ -393,7 +440,6 @@ export function WorkspacePanel({
         });
       } catch (e) {
         console.error("[Import Sketchfab] generateSketchfabLocalImportCode failed:", e);
-        setSfDownloading(null);
         toast.error("Import failed: could not generate import code");
         return;
       }
@@ -420,25 +466,45 @@ export function WorkspacePanel({
       });
       const execData = await execRes.json().catch(() => ({}));
       if (execData.commandId) {
-        console.log(`COMMAND QUEUED: id=${execData.commandId}`);
+        console.log(
+          `COMMAND QUEUED: import=${execData.commandId} download=${execData.downloadCommandId ?? "(none)"}`
+        );
       }
       if (!execRes.ok || !execData.commandId) {
         const reason = execData?.error ?? `HTTP ${execRes.status}`;
         console.error("[Import Sketchfab] UE5 execute error:", reason, execData);
-        setSfDownloading(null);
         toast.error(`Import failed: ${reason}`);
         return;
       }
+      const downloadId = execData.downloadCommandId as string | undefined;
+      const importId = execData.commandId as string;
+      if (!downloadId) {
+        toast.error("Import failed: relay did not queue a download command");
+        return;
+      }
+      setSfImportPhaseLabel("Downloading model…");
+      const dlStatus = await waitUe5CommandTerminal(downloadId);
+      if (dlStatus === "error") {
+        toast.error("Downloading model failed (check relay is running)");
+        return;
+      }
+      setSfImportPhaseLabel("Importing to UE5…");
+      const imStatus = await waitUe5CommandTerminal(importId);
+      if (imStatus === "error") {
+        toast.error("UE5 import failed");
+        return;
+      }
+      setSfImportPhaseLabel("Done!");
       toast.success(`${name} imported to UE5!`);
       setSfImportedId(uid);
       setTimeout(() => setSfImportedId(null), 3000);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error("[Import Sketchfab] Error:", e);
-      setSfDownloading(null);
       toast.error(`Import failed: ${message}`);
     } finally {
       setSfDownloading(null);
+      setSfImportPhaseLabel(null);
     }
   }, [projectId, onLimitReached]);
 
@@ -660,8 +726,8 @@ export function WorkspacePanel({
                           >
                             {phDownloading === id ? (
                               <>
-                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                Downloading…
+                                <Loader2 className="w-2.5 h-2.5 animate-spin shrink-0" />
+                                <span className="truncate">{phImportPhaseLabel ?? "Downloading model…"}</span>
                               </>
                             ) : phImportedId === id ? (
                               <>
@@ -746,7 +812,7 @@ export function WorkspacePanel({
                         {phDownloading === r.id ? (
                           <>
                             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                            <span className="truncate">Downloading model…</span>
+                            <span className="truncate">{phImportPhaseLabel ?? "Downloading model…"}</span>
                           </>
                         ) : phImportedId === r.id ? (
                           <>
@@ -838,7 +904,7 @@ export function WorkspacePanel({
                         {sfDownloading === r.uid ? (
                           <>
                             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                            <span className="truncate">Downloading model…</span>
+                            <span className="truncate">{sfImportPhaseLabel ?? "Downloading model…"}</span>
                           </>
                         ) : sfImportedId === r.uid ? (
                           <>
