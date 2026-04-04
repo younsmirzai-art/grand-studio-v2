@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
-import { queueUE5Command } from "@/lib/ue5/commands";
 
 function escapePyString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -706,10 +705,16 @@ export async function POST(request: NextRequest) {
       quality: selectedQuality,
     });
 
-    const commandId = await queueUE5Command(projectId, python);
-    await recordUsage(user.id, "world_import");
-
-    return NextResponse.json({ success: true, commandId });
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "World Explorer can no longer queue Python through the website relay. Use the Grand Studio Commander plugin or run Cesium setup scripts locally in UE5.",
+        code: "RELAY_REMOVED",
+        pythonPreviewLength: python.length,
+      },
+      { status: 503 }
+    );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: message }, { status: 500 });

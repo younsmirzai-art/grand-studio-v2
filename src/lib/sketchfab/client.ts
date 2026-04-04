@@ -53,14 +53,51 @@ export async function searchModels(
   );
 }
 
-export async function getDownloadUrl(
+export type SketchfabDownloadPick = {
+  url: string;
+  sizeBytes: number | null;
+  fileNameHint: string;
+};
+
+/** Prefer source archive (often ZIP) when Sketchfab provides it, then GLB/GLTF. */
+export async function getSketchfabDownloadPick(
   uid: string,
   token: string
-): Promise<string | null> {
+): Promise<SketchfabDownloadPick | null> {
   const res = await fetch(`${BASE_URL}/models/${uid}/download`, {
     headers: { Authorization: `Token ${token}` },
   });
   if (!res.ok) return null;
-  const data = await res.json();
-  return data?.glb?.url ?? data?.gltf?.url ?? data?.source?.url ?? null;
+  const data = (await res.json()) as Record<string, unknown>;
+  const source = data.source as { url?: string; size?: number } | undefined;
+  const glb = data.glb as { url?: string; size?: number } | undefined;
+  const gltf = data.gltf as { url?: string; size?: number } | undefined;
+
+  let url: string | null = null;
+  let sizeBytes: number | null = null;
+  let ext = "bin";
+
+  if (source?.url) {
+    url = source.url;
+    sizeBytes = typeof source.size === "number" ? source.size : null;
+    const p = url.split("?")[0].toLowerCase();
+    if (p.endsWith(".zip")) ext = "zip";
+    else if (p.endsWith(".glb")) ext = "glb";
+  } else if (glb?.url) {
+    url = glb.url;
+    sizeBytes = typeof glb.size === "number" ? glb.size : null;
+    ext = "glb";
+  } else if (gltf?.url) {
+    url = gltf.url;
+    sizeBytes = typeof gltf.size === "number" ? gltf.size : null;
+    ext = "gltf";
+  }
+
+  if (!url) return null;
+  return { url, sizeBytes, fileNameHint: `${uid}.${ext}` };
+}
+
+export async function getDownloadUrl(uid: string, token: string): Promise<string | null> {
+  const pick = await getSketchfabDownloadPick(uid, token);
+  return pick?.url ?? null;
 }

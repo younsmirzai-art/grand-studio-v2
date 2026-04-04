@@ -104,29 +104,13 @@ export async function POST(request: NextRequest) {
       turn_type: "discussion",
     });
 
-    const { data: cmd, error } = await supabase
-      .from("ue5_commands")
-      .insert({
-        project_id: projectId,
-        code: finalCode,
-        status: "pending",
-      })
-      .select("id")
-      .single();
-
-    console.log("[BUILD EXECUTE] Supabase result:", { id: cmd?.id, error: error?.message });
-
-    if (error || !cmd) {
-      const errMsg = error?.message ?? "Failed to queue UE5 command";
-      return NextResponse.json(
-        { error: errMsg },
-        { status: 500 }
-      );
-    }
+    console.log("[BUILD EXECUTE] Saved chat turn; UE command queue disabled (relay removed).");
 
     return NextResponse.json({
       success: true,
-      commandId: cmd.id,
+      commandId: null,
+      message: "Build saved to chat. Run Python in Unreal with the Grand Studio Commander plugin or paste into the editor — the website no longer queues commands to a local relay.",
+      code: finalCode,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

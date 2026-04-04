@@ -4,7 +4,6 @@ import { askGrandStudioAI, isGreetingOrQuestion } from "@/lib/ai/grandStudioAI";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
-import { queueUE5Command } from "@/lib/ue5/commands";
 import { rateLimitAI } from "@/lib/api/rateLimit";
 import { resolveAssets, combineCodeWithImports, stripImportTags } from "@/lib/ai/assetResolver";
 import type { ChatTurn } from "@/lib/types";
@@ -86,9 +85,7 @@ export async function POST(request: NextRequest) {
         ? combineCodeWithImports(fixedCode, assetImportCode)
         : fixedCode;
       const validation = validateUE5Code(codeWithImports);
-      if (validation.valid) {
-        await queueUE5Command(projectId, codeWithImports);
-      } else {
+      if (!validation.valid) {
         console.warn("[/api/agents/direct] Code validation failed:", validation.errors);
       }
     }

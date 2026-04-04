@@ -1,5 +1,3 @@
-import { createServerClient } from "@/lib/supabase/server";
-import { queueRelayDownloadThenImport } from "@/lib/ue5/commands";
 import { handleAssetRequest } from "@/lib/asset/assetRequestHandler";
 import { runSequentialLibraryImports, MAX_IMPORTS_PER_STEP } from "@/lib/ai/libraryImportRunner";
 import type { ImportProgressEvent } from "@/lib/ai/agentImportTypes";
@@ -25,12 +23,6 @@ export function getImportCountForAction(action: string): number {
   return Math.min(MAX_IMPORTS_PER_STEP, map[a] ?? 5);
 }
 
-/**
- * How many library imports for this step given asset source and scanned matches.
- * - my_assets: never import
- * - library: always up to getImportCountForAction (max 5)
- * - both: import enough to reach 5 assets in category when scan has fewer than 5
- */
 export function computeImportCountForStep(
   action: string,
   assetSource: "my_assets" | "library" | "both",
@@ -45,9 +37,6 @@ export function computeImportCountForStep(
   return Math.min(MAX_IMPORTS_PER_STEP, gap);
 }
 
-/**
- * Poly Haven / Sketchfab: search via internal API → download → generateUE5ImportCode → UE5 queue.
- */
 export async function importSequentialLibraryAssets(
   action: string,
   userPrompt: string,
@@ -88,7 +77,9 @@ export function findAssetsForAction(action: string, scannedAssets: ScannedAsset[
   };
 
   const keywords = matchers[lowerAction] ?? [];
-  let found = rows.filter((r) => keywords.some((k) => r.path.toLowerCase().includes(k) || r.name.toLowerCase().includes(k))).map((r) => r.path);
+  let found = rows
+    .filter((r) => keywords.some((k) => r.path.toLowerCase().includes(k) || r.name.toLowerCase().includes(k)))
+    .map((r) => r.path);
   if (keywords.length === 0) found = rows.slice(0, 20).map((r) => r.path);
 
   const minNeeded: Record<string, number> = {
@@ -107,70 +98,18 @@ export function findAssetsForAction(action: string, scannedAssets: ScannedAsset[
   return { found: found.slice(0, 30), missing };
 }
 
-async function waitForCommand(commandId: string, timeoutMs = 120000): Promise<{ status: string; result?: unknown; error_log?: string }> {
-  const supabase = createServerClient();
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const { data } = await supabase
-      .from("ue5_commands")
-      .select("status, result, error_log")
-      .eq("id", commandId)
-      .maybeSingle();
-    if (data?.status === "success" || data?.status === "error") {
-      return { status: data.status, result: data.result, error_log: data.error_log ?? undefined };
-    }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  return { status: "timeout" };
-}
-
 export async function importMissingAssets(
   missingTypes: string[],
   projectId: string,
-  userId: string,
-  sceneImportTotal: { value: number }
+  _userId: string,
+  _sceneImportTotal: { value: number }
 ): Promise<{ newAssetPaths: string[]; imported: Array<{ asset: string; source: "polyhaven" | "sketchfab" | "none" }> }> {
-  console.log("AGENT: importMissingAssets BEFORE", { missingTypes, projectId });
+  console.log("AGENT: importMissingAssets (relay removed)", { missingTypes, projectId });
   const imported: Array<{ asset: string; source: "polyhaven" | "sketchfab" | "none" }> = [];
-  const newAssetPaths: string[] = [];
-  const supabase = createServerClient();
-
-  for (let mi = 0; mi < missingTypes.length; mi++) {
-    const m = missingTypes[mi];
+  for (const m of missingTypes) {
     const query = `import ${m} from our 3d library`;
     const result = await handleAssetRequest(query, projectId);
-    if (!result || !result.relayDownload) {
-      imported.push({ asset: m, source: "none" });
-      continue;
-    }
-    const fn = result.relayDownload.filename.toLowerCase();
-    const fileType = fn.endsWith(".zip") ? "zip" : fn.split(".").pop() ?? "fbx";
-    const { importCommandId: commandId } = await queueRelayDownloadThenImport(
-      projectId,
-      result.relayDownload,
-      result.importCode,
-      {
-        source_provider: result.platformUsed === "sketchfab" ? "sketchfab" : "polyhaven",
-        source_url: result.relayDownload.url,
-        file_type: fileType,
-      }
-    );
-    const done = await waitForCommand(commandId, 180000);
-    const source = result.platformUsed === "sketchfab" ? "sketchfab" : "polyhaven";
-    imported.push({ asset: result.assetName || m, source });
-    if (done.status === "success") {
-      sceneImportTotal.value += 1;
-      const { data: importRow } = await supabase
-        .from("ue5_import_assets")
-        .select("ue_asset_path")
-        .eq("ue5_command_id", commandId)
-        .maybeSingle();
-      if (importRow?.ue_asset_path && typeof importRow.ue_asset_path === "string") {
-        newAssetPaths.push(importRow.ue_asset_path);
-      }
-    }
+    imported.push({ asset: result?.assetName ?? m, source: "none" });
   }
-
-  console.log("AGENT: importMissingAssets AFTER", { count: imported.length, paths: newAssetPaths.length });
-  return { newAssetPaths, imported };
+  return { newAssetPaths: [], imported };
 }

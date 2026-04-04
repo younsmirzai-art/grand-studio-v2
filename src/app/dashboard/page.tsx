@@ -6,7 +6,7 @@ import { STRIPE_PRICES } from "@/lib/stripe/config";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard, Sparkles, Music, Globe2 } from "lucide-react";
+import { Plus, Folder, Clock, LogOut, Search, Plug, CreditCard, Sparkles, Music, Globe2, Download } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
 
@@ -25,6 +25,17 @@ export default function DashboardPage() {
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState("");
+  const [downloadHistory, setDownloadHistory] = useState<
+    Array<{
+      id: string;
+      asset_name: string;
+      asset_source: string;
+      asset_id: string;
+      download_url: string;
+      file_size: string | null;
+      downloaded_at: string;
+    }>
+  >([]);
 
   useEffect(() => {
     const auth = createAuthClient();
@@ -50,6 +61,22 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) fetchProjects();
   }, [user, fetchProjects]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    fetch("/api/download/history", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && Array.isArray(d.items)) setDownloadHistory(d.items);
+      })
+      .catch(() => {
+        if (!cancelled) setDownloadHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -216,7 +243,7 @@ export default function DashboardPage() {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-[#606068] hover:text-white hover:bg-white/5 transition"
         >
           <Plug className="w-3.5 h-3.5" />
-          Connect UE5
+          UE5 import help
         </Link>
         <Link
           href="/support"
@@ -296,6 +323,41 @@ export default function DashboardPage() {
             className="w-full pl-10 pr-4 py-2.5 bg-[#111114] border border-white/5 rounded-xl text-sm text-white placeholder:text-[#606068] outline-none focus:border-[#2196F3]/40 transition"
           />
         </div>
+
+        {downloadHistory.length > 0 && (
+          <div className="mb-10 rounded-2xl border border-white/5 bg-[#111114] p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Download className="w-4 h-4 text-[#2196F3]" />
+              <h2 className="text-sm font-semibold text-white">Recent model downloads</h2>
+            </div>
+            <p className="text-xs text-[#606068] mb-4">
+              Re-download packages you prepared from the workspace. Open a project and use the 3D Library for new models.
+            </p>
+            <ul className="space-y-2 max-h-56 overflow-y-auto scrollbar-thin pr-1">
+              {downloadHistory.map((row) => (
+                <li
+                  key={row.id}
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 border-b border-white/5 last:border-0 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="text-white font-medium truncate">{row.asset_name}</p>
+                    <p className="text-[10px] text-[#606068]">
+                      {row.asset_source} · {row.file_size ?? "—"} · {new Date(row.downloaded_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <a
+                    href={row.download_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#2196F3]/20 text-[#2196F3] text-xs font-semibold hover:bg-[#2196F3]/30 transition"
+                  >
+                    Download again
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

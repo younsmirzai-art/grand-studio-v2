@@ -61,46 +61,13 @@ export async function POST(request: NextRequest) {
       turn_type: "discussion",
     });
 
-    const { data: cmd, error: insertError } = await supabase
-      .from("ue5_commands")
-      .insert({
-        project_id: projectId,
-        code: finalCode,
-        status: "pending",
-      })
-      .select("id")
-      .single();
-
-    if (insertError || !cmd) {
-      return NextResponse.json(
-        { error: insertError?.message ?? "Failed to queue UE5 command" },
-        { status: 500 }
-      );
-    }
-
-    const commandId = cmd.id as string;
-
-    let result: { status: string; result?: string; error_log?: string } | null = null;
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const { data } = await supabase
-        .from("ue5_commands")
-        .select("status, result, error_log")
-        .eq("id", commandId)
-        .single();
-
-      if (data?.status === "success" || data?.status === "error") {
-        result = data as { status: string; result?: string; error_log?: string };
-        break;
-      }
-    }
-
     return NextResponse.json({
-      success: result?.status === "success",
+      success: true,
       description: aiResponse.description,
       code: finalCode,
-      executionResult: result,
-      commandId,
+      executionResult: null,
+      commandId: null,
+      message: "Code generated and logged. Remote UE execution via relay is disabled — use the Commander plugin to run in-editor.",
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

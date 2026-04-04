@@ -2,8 +2,6 @@ import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { createServerAuthClient, createServerClient } from "@/lib/supabase/server";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
-import { queueUE5Command } from "@/lib/ue5/commands";
-import { generateScanCode } from "@/lib/ue5/assetScanner";
 import { askAIForSceneJSON } from "@/lib/ai/sceneAI";
 import { buildScene, type BuildSceneParams } from "@/lib/ai/sceneBuildEngine";
 import type { AssetSourceMode, SceneRequest } from "@/lib/ai/sceneSchema";
@@ -156,20 +154,10 @@ export async function POST(request: NextRequest) {
           emit(controller, {
             type: "step_start",
             stepNumber: 0,
-            description: "Scanning your UE5 project…",
+            description:
+              "Project scan is stale. Cloud relay scan is disabled — refresh with the Commander plugin, or continuing with cached / library-only data.",
           });
-          await queueUE5Command(projectId, generateScanCode(), { commandType: "scan_assets" });
-          for (let i = 0; i < 12; i++) {
-            await new Promise((r) => setTimeout(r, 5000));
-            latest = await fetchLatestScan(user.id, projectId);
-            if (
-              latest.assets.length > 0
-              && latest.scannedAt
-              && Date.now() - new Date(latest.scannedAt).getTime() < 20 * 60 * 1000
-            ) {
-              break;
-            }
-          }
+          latest = await fetchLatestScan(user.id, projectId);
           emit(controller, { type: "step_complete", stepNumber: 0, success: true });
         }
 

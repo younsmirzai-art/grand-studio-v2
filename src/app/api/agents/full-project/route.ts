@@ -4,7 +4,6 @@ import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
-import { queueUE5Command } from "@/lib/ue5/commands";
 import { rateLimitBuild } from "@/lib/api/rateLimit";
 import type { ChatTurn } from "@/lib/types";
 
@@ -62,9 +61,7 @@ export async function POST(request: NextRequest) {
     if (pythonCode) {
       const { fixedCode } = autoFixUE5Code(pythonCode);
       const validation = validateUE5Code(fixedCode);
-      if (validation.valid) {
-        await queueUE5Command(projectId, fixedCode);
-      } else {
+      if (!validation.valid) {
         console.warn("[full-project] Code validation failed:", validation.errors);
       }
     }

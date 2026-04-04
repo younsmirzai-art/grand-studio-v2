@@ -1,14 +1,5 @@
-import { createServerClient } from "@/lib/supabase/server";
-import { queueRelayDownloadThenImport, queueUE5Command } from "@/lib/ue5/commands";
-import {
-  diffuseFileExtensionFromUrl,
-  generateSketchfabLocalImportCode,
-  generateUE5ImportCode,
-} from "@/lib/ue5/importCode";
 import { searchAssets as searchPolyHaven } from "@/lib/polyhaven/client";
-import { downloadPolyHavenModelToStorage as downloadPolyHavenModel } from "@/lib/polyhaven/downloadToSupabase";
-import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
-import { isRelayOnline } from "@/lib/ue5/relayStatus";
+import { searchModels as searchSketchfab } from "@/lib/sketchfab/client";
 import type { SceneRequest, SceneObject, SceneObjectCategory, AssetSourceMode } from "@/lib/ai/sceneSchema";
 import {
   updateAgentProgress,
@@ -95,16 +86,6 @@ const SEARCH_MAP: Record<string, string[]> = {
 const MAX_IMPORTS_PER_SCENE = 15;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Clears relay download temp folder only — not /Game/GrandStudio/Imported. Runs once per agent import session. */
-const CLEAN_DOWNLOADS_PYTHON = `import os
-import shutil
-dl_path = 'C:/GrandStudio/Downloads'
-if os.path.exists(dl_path):
-    shutil.rmtree(dl_path)
-os.makedirs(dl_path)
-unreal.log('Cleaned downloads folder')
-`;
 
 function keywordsForType(objectType: string): string[] {
   const t = objectType.toLowerCase().trim();
@@ -214,43 +195,6 @@ export type AssetCandidate = {
   sketchfabUid?: string;
   downloadCount: number;
 };
-
-async function waitRelayWithRetries(maxAttempts = 5): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
-    if (await isRelayOnline()) return true;
-    await sleep(15000);
-  }
-  return false;
-}
-
-/** Before each import: wait 20s between attempts, up to 5 times; if still offline, skip this import. */
-async function ensureRelayBeforeImport(): Promise<boolean> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    if (await isRelayOnline()) return true;
-    await sleep(20_000);
-  }
-  return false;
-}
-
-async function waitForCommand(commandId: string, timeoutMs = 300000): Promise<{ status: string; error?: string }> {
-  const supabase = createServerClient();
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    const { data } = await supabase
-      .from("ue5_commands")
-      .select("status, error_log")
-      .eq("id", commandId)
-      .maybeSingle();
-    if (data?.status === "success") return { status: "success" };
-    if (data?.status === "error") return { status: "error", error: data.error_log ?? "Unknown error" };
-    await sleep(3000);
-  }
-  return { status: "timeout", error: "Command timeout" };
-}
-
-function isHeavyBuildingType(t: string): boolean {
-  return /house|building|castle|skyscraper|shop|hospital|church|tavern|hospital/i.test(t);
-}
 
 function scaleToHalfExtent(scale: SceneRequest["scale"]): number {
   if (scale === "small") return 1500;
@@ -827,16 +771,7 @@ export async function buildScene(params: BuildSceneParams): Promise<{
   let importedCount = params.resumeImportedCount;
 
   if (phaseStart === "import" || phaseStart === "search") {
-    if (importedCount === 0) {
-      if (await waitRelayWithRetries()) {
-        const cleanId = await queueUE5Command(
-          projectId,
-          `import unreal\n${CLEAN_DOWNLOADS_PYTHON}`,
-          { commandType: "execute" },
-        );
-        await waitForCommand(cleanId, 120_000);
-      }
-    }
+    let warnedLibrarySkipped = false;
 
     for (let i = importedCount; i < toImport.length; i++) {
       const elapsedChunk = Date.now() - chunkStartTime;
@@ -846,7 +781,7 @@ export async function buildScene(params: BuildSceneParams): Promise<{
         (elapsedChunk > IMPORT_STOP_AFTER_ELAPSED_MS && importedCount >= 3);
       if (stopEarlyForPlacement) {
         log(
-          `DEADLINE APPROACHING: skipping remaining imports, jumping to placement with ${importedCount} imported models`,
+          `DEADLINE APPROACHING: skipping remaining import queue, jumping to placement with ${importedCount} imported models`,
         );
         break;
       }
@@ -873,134 +808,17 @@ export async function buildScene(params: BuildSceneParams): Promise<{
       }
 
       const job = toImport[i];
-      const curGlobal = i + 1;
-      if (!(await ensureRelayBeforeImport())) {
-        await emit({
-          type: "error",
-          message: `Relay offline — skipping import ${curGlobal}/${totalImports} (${job.name}). Will retry placement with other assets.`,
-        });
+      if (job.source === "polyhaven" || job.source === "sketchfab") {
+        if (!warnedLibrarySkipped) {
+          await emit({
+            type: "error",
+            message:
+              "Library models are not pushed into UE5 from the cloud anymore. Use the workspace 3D Library to download ZIP packs, or run the agent with scanned project assets.",
+          });
+          warnedLibrarySkipped = true;
+        }
         continue;
       }
-
-      const destName = `${job.objectType.replace(/[^a-zA-Z0-9_]/g, "_")}_${job.source}_${String(curGlobal).padStart(3, "0")}`.slice(0, 55);
-
-      let cmdId: string | undefined;
-      if (job.source === "polyhaven" && job.polyId) {
-        const polyBundle = await downloadPolyHavenModel(job.polyId);
-        if (!polyBundle?.meshUrl) continue;
-        await emit({
-          type: "importing",
-          current: curGlobal,
-          total: totalImports,
-          name: job.name,
-          source: "our library (Poly Haven)",
-        });
-        const filename = `${job.polyId}_${curGlobal}.fbx`;
-        const diffuseExt =
-          polyBundle.diffuseUrl != null && polyBundle.diffuseUrl.length > 0
-            ? diffuseFileExtensionFromUrl(polyBundle.diffuseUrl)
-            : "jpg";
-        const diffuseFilename =
-          polyBundle.diffuseUrl != null && polyBundle.diffuseUrl.length > 0
-            ? `${destName}_diffuse.${diffuseExt}`
-            : undefined;
-        const code = generateUE5ImportCode(polyBundle.meshUrl, filename, job.name, {
-          traceAssetId: job.polyId,
-          destinationName: destName,
-          diffuseDiskFilename: diffuseFilename,
-        });
-        const pair = await queueRelayDownloadThenImport(
-          projectId,
-          {
-            kind: "polyhaven_fbx",
-            url: polyBundle.meshUrl,
-            filename,
-            diffuseUrl: polyBundle.diffuseUrl ?? undefined,
-            diffuseFilename,
-          },
-          code,
-          {
-            source_provider: "polyhaven",
-            source_url: polyBundle.meshUrl,
-            file_type: "fbx",
-          }
-        );
-        cmdId = pair.importCommandId;
-      } else if (job.source === "sketchfab" && job.sketchfabUid) {
-        const token = process.env.SKETCHFAB_API_TOKEN;
-        if (!token) continue;
-        const dl = await getSketchfabDownloadUrl(job.sketchfabUid, token);
-        if (!dl) continue;
-        await emit({
-          type: "importing",
-          current: curGlobal,
-          total: totalImports,
-          name: job.name,
-          source: "our library (Sketchfab)",
-        });
-        const zip = `sf_${job.sketchfabUid}_${curGlobal}.zip`;
-        const importStem = `sf_${job.sketchfabUid}`;
-        const code = generateSketchfabLocalImportCode(importStem, job.name, {
-          traceAssetId: job.sketchfabUid,
-          destinationName: destName,
-        });
-        const pair = await queueRelayDownloadThenImport(
-          projectId,
-          {
-            kind: "sketchfab_zip",
-            url: dl,
-            filename: zip,
-            importStem,
-          },
-          code,
-          {
-            source_provider: "sketchfab",
-            source_url: dl,
-            file_type: "zip",
-          }
-        );
-        cmdId = pair.importCommandId;
-      } else {
-        continue;
-      }
-
-      if (!cmdId) continue;
-      const result = await waitForCommand(cmdId);
-      if (result.status !== "success") {
-        await emit({ type: "error", message: `Import failed: ${job.name}` });
-        continue;
-      }
-
-      const supabase = createServerClient();
-      const { data: row } = await supabase
-        .from("ue5_import_assets")
-        .select("ue_asset_path")
-        .eq("ue5_command_id", cmdId)
-        .maybeSingle();
-      const uePath = row?.ue_asset_path ?? `/Game/GrandStudio/Imported/${destName}`;
-      importedAssets.push({
-        jobId: job.id,
-        path: uePath,
-        objectType: job.objectType,
-        category: job.category,
-      });
-      importedCount += 1;
-
-      const arr = pathsReadyByType.get(job.objectType.toLowerCase()) ?? [];
-      if (!arr.includes(uePath)) arr.push(uePath);
-      pathsReadyByType.set(job.objectType.toLowerCase(), arr);
-
-      await updateAgentProgress(progressRowId, {
-        imported_assets: importedAssets,
-        imported_count: importedCount,
-        import_queue: toImport.map(serCandidate),
-        total_imports: totalImports,
-        cumulative_elapsed_ms: cumulativeBase + (Date.now() - chunkStartTime),
-      });
-
-      const minGapMs = isHeavyBuildingType(job.objectType) ? 35_000 : 25_000;
-      await sleep(minGapMs);
-      if (importedCount > 0 && importedCount % 3 === 0) await sleep(15_000);
     }
   }
 
@@ -1035,14 +853,11 @@ export async function buildScene(params: BuildSceneParams): Promise<{
       await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
       return { outcome: "paused", sessionId };
     }
-    await emit({ type: "placing", message: `Placing ${pathsBySlot.length} objects in your scene…` });
-    const slots = computeSlots(sceneRequest, pathsBySlot);
-    const py = generatePlacementCode(sceneRequest, slots);
-    if (await waitRelayWithRetries()) {
-      const placeId = await queueUE5Command(projectId, py, { commandType: "execute" });
-      await waitForCommand(placeId, 600000);
-      await sleep(10000);
-    }
+    await emit({
+      type: "placing",
+      message: `Layout ready for ${pathsBySlot.length} objects (remote UE placement disabled — use Commander or manual placement).`,
+    });
+    void generatePlacementCode(sceneRequest, computeSlots(sceneRequest, pathsBySlot));
     await updateAgentProgress(progressRowId, { placement_done: true, phase: "screenshot" });
   }
 
@@ -1056,22 +871,17 @@ export async function buildScene(params: BuildSceneParams): Promise<{
       await emit({ type: "chunk_pause", message: "Saving progress, will continue automatically…", sessionId });
       return { outcome: "paused", sessionId };
     }
-    if (await waitRelayWithRetries()) {
-      const sid = await queueUE5Command(projectId, " ", { commandType: "screenshot" });
-      await waitForCommand(sid, 120000);
-      await sleep(5000);
-    }
     await updateAgentProgress(progressRowId, { screenshot_done: true });
   }
 
   const totalMs = cumulativeBase + (Date.now() - chunkStartTime);
   const counts = rows.map((r) => `${r.obj.count} ${r.obj.type}`).join(", ");
   log(
-    `AGENT COMPLETE: all ${totalImports} imports done, placement done, total time across chunks ≈ ${Math.round(totalMs / 1000)}s (this chunk ≈ ${Math.round((Date.now() - chunkStartTime) / 1000)}s)`,
+    `AGENT COMPLETE: import queue skipped (relay removed), layout summary, total time across chunks ≈ ${Math.round(totalMs / 1000)}s (this chunk ≈ ${Math.round((Date.now() - chunkStartTime) / 1000)}s)`,
   );
   await emit({
     type: "complete",
-    summary: `${sceneRequest.scene_type} built! ${counts}. (${pathsBySlot.length} instances placed.) Total time ≈ ${Math.round(totalMs / 1000)}s.`,
+    summary: `${sceneRequest.scene_type} plan complete: ${counts}. ${pathsBySlot.length} asset path(s) from your project scan are referenced (download library packs from the workspace for more).`,
   });
   await updateAgentProgress(progressRowId, {
     status: "completed",

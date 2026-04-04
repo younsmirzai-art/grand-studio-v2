@@ -10,6 +10,7 @@ import {
   Sparkles,
   Camera,
   ScanSearch,
+  Download,
 } from "lucide-react";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUIStore } from "@/lib/stores/uiStore";
@@ -60,7 +61,6 @@ export default function ProjectPage() {
     setFullProjectRunning,
     isFullProjectRunning,
     setFullProjectPaused,
-    isRelayConnected,
     ue5Commands,
     godEyeLog,
   } = useProjectStore();
@@ -359,6 +359,14 @@ export default function ProjectPage() {
           body: JSON.stringify({ projectId, code, agentName: agentName ?? "Grand Studio" }),
         });
         const data = await res.json();
+        if (res.status === 410) {
+          toast.info(
+            typeof data.error === "string"
+              ? data.error
+              : "Python is no longer queued from the website. Use the Grand Studio Commander plugin or paste into the editor."
+          );
+          return;
+        }
         if (!res.ok) {
           toast.error(data.error ?? "Failed to queue UE5 command");
           throw new Error(data.error);
@@ -1263,20 +1271,16 @@ export default function ProjectPage() {
               )}
             </span>
           )}
-          {isRelayConnected ? (
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="text-xs text-emerald-400">Connected</span>
-            </div>
-          ) : (
-            <Link
-              href="/connect"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition"
-            >
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-              <span className="text-xs text-red-400">Disconnected — set up relay</span>
-            </Link>
-          )}
+          <div
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#1A1A1F] border border-white/5"
+            title="Download models from the 3D Library tab, then import in UE5 Content Browser. Optional: Commander plugin for in-editor scripts."
+          >
+            <Download className="w-3.5 h-3.5 text-[#2196F3] shrink-0" />
+            <span className="text-xs text-[#A0A0A8] hidden md:inline">
+              Library → download ZIP → drag into UE5
+            </span>
+            <span className="text-xs text-[#A0A0A8] md:hidden">UE5 import</span>
+          </div>
           <Link
             href={`/project/${projectId}/settings`}
             className="p-2 rounded-lg text-[#606068] hover:text-white hover:bg-white/5 transition"
@@ -1377,9 +1381,9 @@ export default function ProjectPage() {
       {/* BOTTOM STATUS BAR                                                */}
       {/* ================================================================ */}
       <div className="h-8 shrink-0 bg-[#0A0A0B] border-t border-white/5 flex items-center justify-between px-4 text-xs text-[#606068]">
-        <div className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${isRelayConnected ? "bg-emerald-500" : "bg-red-500"}`} />
-          {isRelayConnected ? "Relay Connected" : "Disconnected"}
+        <div className="flex items-center gap-1.5 text-[#606068]">
+          <Download className="w-3 h-3 text-[#2196F3]" />
+          <span>Manual UE5 import · optional Commander plugin</span>
         </div>
         <div>{currentStatus.label}</div>
         <div>

@@ -142,28 +142,28 @@ const STEPS = [
   {
     num: "01",
     icon: Download,
-    title: "DOWNLOAD",
-    desc: "Download the free relay bridge for Windows. One small file connects Grand Studio to your Unreal Engine.",
-    ctaLabel: "Download for Windows",
-    ctaHref: "/api/relay/setup-script",
+    title: "SIGN IN",
+    desc: "Create a free account and open a project. Everything runs in your browser — no bridge app required.",
+    ctaLabel: "Go to dashboard",
+    ctaHref: "/dashboard",
   },
   {
     num: "02",
     icon: Play,
     title: "OPEN UE5",
-    desc: "Open Unreal Engine 5, go to Edit > Plugins, enable Web Remote Control, restart UE5.",
+    desc: "Open your Unreal Engine 5 project. Optional: install the Grand Studio Commander plugin for in-editor AI scripts.",
   },
   {
     num: "03",
     icon: MessageSquare,
-    title: "DESCRIBE",
-    desc: "Tell the AI what you want to build. A castle, a forest, a city, anything you can imagine.",
+    title: "BROWSE MODELS",
+    desc: "Use the 3D Library in the workspace to download Poly Haven and community packs as ZIP files.",
   },
   {
     num: "04",
     icon: Code,
-    title: "BUILD",
-    desc: "AI writes Python code, imports real 3D models from our professional asset library, and builds your scene live.",
+    title: "IMPORT",
+    desc: "Unzip if needed, then drag FBX or GLB into the Content Browser. AI can still help plan scenes and write Python for the plugin.",
   },
 ];
 
@@ -673,14 +673,14 @@ export default function HomePage() {
               <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center">
                 <Download className="w-7 h-7 text-[#2196F3]" />
               </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">1. Download the Relay</h3>
-              <p className="text-sm text-[#A0A0A8] mb-4">One-click setup for Windows. Connects Grand Studio to UE5.</p>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">1. Open a project</h3>
+              <p className="text-sm text-[#A0A0A8] mb-4">Sign in and create a project. No relay or bridge installer required.</p>
               <a
-                href="/api/relay/setup-script"
+                href="/dashboard"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-[#2196F3]/20 border border-[#2196F3]/40 text-[#2196F3] hover:bg-[#2196F3]/30 transition"
               >
                 <Download className="w-3.5 h-3.5" />
-                Download
+                Dashboard
               </a>
             </div>
 
@@ -688,21 +688,25 @@ export default function HomePage() {
               <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center">
                 <Settings className="w-7 h-7 text-[#2196F3]" />
               </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">2. Enable UE5 Plugin</h3>
-              <p className="text-sm text-[#A0A0A8]">Edit &gt; Plugins &rarr; enable Web Remote Control, then restart UE5.</p>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">2. Download models</h3>
+              <p className="text-sm text-[#A0A0A8]">Use the 3D Library workspace tab to grab Poly Haven ZIP packs or Sketchfab downloads.</p>
             </div>
 
             <div className="text-center p-6 rounded-2xl border border-white/5 bg-[#111114]/50 hover:border-[#2196F3]/20 transition">
               <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-[#2196F3]/10 border border-[#2196F3]/20 flex items-center justify-center">
                 <Rocket className="w-7 h-7 text-[#2196F3]" />
               </div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">3. Start Building</h3>
-              <p className="text-sm text-[#A0A0A8] mb-4">Create an account and describe your first scene in plain English.</p>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">3. Import in UE5</h3>
+              <p className="text-sm text-[#A0A0A8] mb-4">
+                Unzip if needed, then drag your mesh into the Content Browser. Add the Commander plugin if you want AI to run Python in-editor.
+              </p>
               <Link
-                href="/auth/signup"
+                href="https://dev.epicgames.com/documentation/en-us/unreal-engine/importing-assets-into-unreal-engine"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white hover:brightness-110 transition"
               >
-                Sign up free
+                Unreal import guide
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>

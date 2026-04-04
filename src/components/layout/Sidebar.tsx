@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Crown, WifiOff, Database, Home, Settings, Globe, ImageIcon, Monitor, Box } from "lucide-react";
+import { Crown, Database, Home, Settings, Globe, ImageIcon, Box, Download } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useProjectStore } from "@/lib/stores/projectStore";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -16,28 +14,11 @@ interface SidebarProps {
   ue5Connected?: boolean;
 }
 
-export function Sidebar({ projectName, projectStatus, ue5Connected = false }: SidebarProps) {
+export function Sidebar({ projectName, projectStatus }: SidebarProps) {
   const params = useParams();
   const projectId = params?.id as string | undefined;
   const setSketchfabModalOpen = useUIStore((s) => s.setSketchfabModalOpen);
   const setImageTo3DModalOpen = useUIStore((s) => s.setImageTo3DModalOpen);
-  const [relayOnline, setRelayOnline] = useState<boolean | null>(null);
-
-  const checkRelay = useCallback(async () => {
-    try {
-      const res = await fetch("/api/ue5/status");
-      const data = await res.json();
-      setRelayOnline(data.relay_online === true);
-    } catch {
-      setRelayOnline(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    checkRelay();
-    const interval = setInterval(checkRelay, 10000);
-    return () => clearInterval(interval);
-  }, [checkRelay]);
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-boss-surface border-r border-boss-border shrink-0">
@@ -60,9 +41,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
       {projectName && (
         <div className="px-4 py-3 border-b border-boss-border">
           <p className="text-xs text-text-muted mb-1">Current Project</p>
-          <p className="text-sm font-medium text-text-primary truncate">
-            {projectName}
-          </p>
+          <p className="text-sm font-medium text-text-primary truncate">{projectName}</p>
           {projectStatus && (
             <span className={`text-[10px] ${projectStatus === "active" ? "text-agent-green" : "text-agent-amber"}`}>
               ● {projectStatus}
@@ -128,9 +107,7 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
 
       {/* Quick tools */}
       <div className="px-3 pt-1 pb-2">
-        <p className="text-[10px] uppercase tracking-wider text-text-muted px-1 mb-2">
-          Tools
-        </p>
+        <p className="text-[10px] uppercase tracking-wider text-text-muted px-1 mb-2">Tools</p>
         <div className="space-y-0.5">
           <Button
             variant="ghost"
@@ -155,25 +132,13 @@ export function Sidebar({ projectName, projectStatus, ue5Connected = false }: Si
 
       {/* Bottom status */}
       <div className="mt-auto border-t border-boss-border px-4 py-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] text-text-muted">UE5</span>
-          <div className="flex items-center gap-1.5">
-            {relayOnline === true ? (
-              <>
-                <Monitor className="w-3 h-3 text-agent-green" />
-                <span className="text-[11px] text-agent-green">Local UE5 Connected</span>
-              </>
-            ) : relayOnline === false ? (
-              <>
-                <WifiOff className="w-3 h-3 text-text-muted" />
-                <span className="text-[11px] text-text-muted">Not Connected</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3 h-3 text-text-muted" />
-                <span className="text-[11px] text-text-muted">Checking…</span>
-              </>
-            )}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-text-muted shrink-0">Models</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Download className="w-3 h-3 text-[#2196F3] shrink-0" />
+            <span className="text-[11px] text-text-muted text-right leading-tight">
+              Use 3D Library tab → download → UE5
+            </span>
           </div>
         </div>
         <div className="flex items-center justify-between">

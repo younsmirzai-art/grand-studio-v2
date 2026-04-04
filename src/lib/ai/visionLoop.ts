@@ -2,8 +2,6 @@ import { createServerClient } from "@/lib/supabase/server";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
-import { queueUE5Command } from "@/lib/ue5/commands";
-
 const VISION_MODEL = "openai/gpt-4o";
 const MAX_VISION_ROUNDS = 3;
 
@@ -126,32 +124,13 @@ Do NOT clear the level, just add/modify actors to fix issues.`,
       return { approved: false, score, feedback: evaluation, rounds: totalRounds };
     }
 
-    const commandId = await queueUE5Command(projectId, fixedCode);
-
     await supabase.from("god_eye_log").insert({
       project_id: projectId,
       event_type: "execution",
       agent_name: "Vision AI",
-      detail: `Fix code queued (command: ${commandId}), waiting for execution...`,
+      detail: "Fix code generated; remote UE queue removed — run fixes in-editor via Commander if needed.",
     });
-
-    // Wait for UE5 execution + screenshot capture
-    await new Promise(r => setTimeout(r, 10000));
-
-    const { data: latestCmd } = await supabase
-      .from("ue5_commands")
-      .select("screenshot_url, status")
-      .eq("project_id", projectId)
-      .not("screenshot_url", "is", null)
-      .order("executed_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (latestCmd?.screenshot_url) {
-      currentScreenshotUrl = latestCmd.screenshot_url;
-    } else {
-      return { approved: false, score, feedback: evaluation, fixedCode, rounds: totalRounds };
-    }
+    return { approved: false, score, feedback: evaluation, fixedCode, rounds: totalRounds };
   }
 
   return { approved: false, score: 0, feedback: "Max vision rounds reached", rounds: totalRounds };

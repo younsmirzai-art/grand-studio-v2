@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
 import { createServerClient } from "@/lib/supabase/server";
-import { queueUE5Command } from "@/lib/ue5/commands";
-import { generateScanCode } from "@/lib/ue5/assetScanner";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,15 +22,15 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-    const commandId = await queueUE5Command(projectId, generateScanCode(), {
-      commandType: "scan_assets",
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "Scan started",
-      commandId,
-    });
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Cloud-queued project scans are no longer available. Use the Grand Studio Commander plugin to scan and upload results.",
+        code: "RELAY_REMOVED",
+      },
+      { status: 503 }
+    );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },
@@ -40,4 +38,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
