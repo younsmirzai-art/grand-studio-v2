@@ -77,7 +77,6 @@ export function generateSketchfabImportCode(
   }
   const baseName = zipFilename.replace(/\.zip$/i, "");
   const zipPath = `C:/GrandStudio/Downloads/${zipFilename}`;
-  const extractDir = `C:/GrandStudio/Downloads/${baseName}_extracted`;
   const escapedUrl = downloadUrl.replace(/'/g, "\\'");
   const destOverride = options?.destinationName?.replace(/[^a-zA-Z0-9_]/g, "_");
   const destNameBlock = destOverride
@@ -92,13 +91,12 @@ import urllib.request
 import os
 import zipfile
 import glob
-import shutil
+import uuid
 os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
 zip_path = '${zipPath.replace(/'/g, "\\'")}'
-extract_dir = '${extractDir.replace(/'/g, "\\'")}'
+_extract_id = str(uuid.uuid4())[:12]
+extract_dir = os.path.join('C:/GrandStudio/Downloads', '${baseName.replace(/'/g, "\\'")}_ext_' + _extract_id)
 urllib.request.urlretrieve('${escapedUrl}', zip_path)
-if os.path.isdir(extract_dir):
-    shutil.rmtree(extract_dir)
 os.makedirs(extract_dir, exist_ok=True)
 with zipfile.ZipFile(zip_path, 'r') as z:
     z.extractall(extract_dir)

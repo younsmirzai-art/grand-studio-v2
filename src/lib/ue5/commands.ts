@@ -34,6 +34,7 @@ export async function queueUE5Command(
     .single();
 
   if (error) throw new Error(`Failed to queue UE5 command: ${error.message}`);
+  console.log(`COMMAND QUEUED: id=${data.id} project=${projectId} type=${options?.commandType ?? "default"}`);
   return data.id;
 }
 

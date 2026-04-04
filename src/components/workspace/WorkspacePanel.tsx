@@ -235,7 +235,9 @@ export function WorkspacePanel({
   }, [phQuery, phSubTab]);
 
   const downloadPolyHaven = useCallback(async (assetId: string, type: string, displayName: string) => {
-    console.log(`USER SELECTED MODEL: name=${displayName}, id=${assetId}`);
+    console.log(
+      `IMPORT CLICKED: model=${displayName}, id=${assetId}, generating code… projectId=${projectId ?? "(missing)"}`
+    );
     setPhDownloading(assetId);
     toast.info("Downloading 3D model (this may take a moment for large files)…");
     const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
@@ -280,6 +282,7 @@ export function WorkspacePanel({
       const execRes = await fetch("/api/ue5/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           projectId,
           code,
@@ -292,6 +295,9 @@ export function WorkspacePanel({
         }),
       });
       const execData = await execRes.json().catch(() => ({}));
+      if (execData.commandId) {
+        console.log(`COMMAND QUEUED: id=${execData.commandId}`);
+      }
       if (!execRes.ok || !execData.commandId) {
         const reason = execData?.error ?? `HTTP ${execRes.status}`;
         console.error("[Import Poly Haven] UE5 execute error:", reason, execData);
@@ -332,7 +338,9 @@ export function WorkspacePanel({
   }, [sfQuery]);
 
   const downloadSketchfab = useCallback(async (uid: string, name: string) => {
-    console.log(`USER SELECTED MODEL: name=${name}, id=${uid}`);
+    console.log(
+      `IMPORT CLICKED: model=${name}, id=${uid}, generating code… projectId=${projectId ?? "(missing)"}`
+    );
     setSfDownloading(uid);
     toast.info("Downloading 3D model (this may take a moment for large files)…");
     try {
@@ -374,6 +382,7 @@ export function WorkspacePanel({
       const execRes = await fetch("/api/ue5/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           projectId,
           code,
@@ -386,6 +395,9 @@ export function WorkspacePanel({
         }),
       });
       const execData = await execRes.json().catch(() => ({}));
+      if (execData.commandId) {
+        console.log(`COMMAND QUEUED: id=${execData.commandId}`);
+      }
       if (!execRes.ok || !execData.commandId) {
         const reason = execData?.error ?? `HTTP ${execRes.status}`;
         console.error("[Import Sketchfab] UE5 execute error:", reason, execData);
