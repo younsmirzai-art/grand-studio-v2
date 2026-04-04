@@ -5,8 +5,6 @@ import { getSketchfabDownloadPick } from "@/lib/sketchfab/client";
 import { formatFileSizeBytes } from "@/lib/download/formatFileSize";
 
 const USER_AGENT = "GrandStudio/1.0 (contact@grandstudio.dev)";
-const STORAGE_BUCKET = "polyhaven-assets";
-const ZIP_PREFIX = "workspace-packages";
 
 function serviceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,7 +13,7 @@ function serviceSupabase() {
   return createClient(url, key);
 }
 
-function slugFileName(name: string, ext: string): string {
+export function slugFileName(name: string, ext: string): string {
   const base = name
     .trim()
     .toLowerCase()
@@ -43,16 +41,9 @@ function diffuseExtFromUrl(url: string): string {
   return "jpg";
 }
 
-export type PreparePolyHavenResult = {
-  downloadUrl: string;
-  fileName: string;
-  fileSize: string;
-  fileSizeBytes: number;
-  formatLabel: string;
-};
-
-export type PrepareSketchfabResult = {
-  downloadUrl: string;
+export type PreparedModelStream = {
+  body: Buffer;
+  contentType: string;
   fileName: string;
   fileSize: string;
   fileSizeBytes: number;
@@ -62,8 +53,7 @@ export type PrepareSketchfabResult = {
 export async function preparePolyHavenModelZip(params: {
   assetId: string;
   displayName: string;
-  userId: string;
-}): Promise<PreparePolyHavenResult> {
+}): Promise<PreparedModelStream> {
   const filesJson = await fetch(`https://api.polyhaven.com/files/${encodeURIComponent(params.assetId)}`, {
     headers: { "User-Agent": USER_AGENT },
     cache: "no-store",
@@ -91,20 +81,10 @@ export async function preparePolyHavenModelZip(params: {
   const zipBuf = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
   const fileSizeBytes = zipBuf.length;
   const fileName = slugFileName(params.displayName || params.assetId, "zip");
-  const storagePath = `${ZIP_PREFIX}/${params.userId}/${Date.now()}_${fileName}`;
-
-  const supabase = serviceSupabase();
-  const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, zipBuf, {
-    contentType: "application/zip",
-    upsert: true,
-  });
-  if (upErr) throw new Error(upErr.message);
-
-  const { data: pub } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-  const downloadUrl = pub.publicUrl;
 
   return {
-    downloadUrl,
+    body: zipBuf,
+    contentType: "application/zip",
     fileName,
     fileSize: formatFileSizeBytes(fileSizeBytes),
     fileSizeBytes,
@@ -112,27 +92,56 @@ export async function preparePolyHavenModelZip(params: {
   };
 }
 
-export async function prepareSketchfabDownload(params: {
+function contentTypeForSketchfabFileName(fileName: string): string {
+  const low = fileName.toLowerCase();
+  if (low.endsWith(".zip")) return "application/zip";
+  if (low.endsWith(".glb")) return "model/gltf-binary";
+  if (low.endsWith(".gltf")) return "model/gltf+json";
+  return "application/octet-stream";
+}
+
+export async function prepareSketchfabModelBinary(params: {
   assetId: string;
   displayName: string;
-}): Promise<PrepareSketchfabResult> {
+}): Promise<PreparedModelStream> {
   const token = process.env.SKETCHFAB_API_TOKEN;
   if (!token) throw new Error("SKETCHFAB_API_TOKEN not configured");
 
   const pick = await getSketchfabDownloadPick(params.assetId, token);
   if (!pick) throw new Error("Could not get Sketchfab download. The model may not be downloadable.");
 
-  const fileName = pick.fileNameHint || slugFileName(params.displayName || params.assetId, "zip");
-  const fileSizeBytes = pick.sizeBytes ?? 0;
-  const low = pick.url.toLowerCase();
+  const res = await fetch(pick.url, {
+    headers: { "User-Agent": USER_AGENT },
+    cache: "no-store",
+    redirect: "follow",
+  });
+  if (!res.ok) throw new Error(`Sketchfab file fetch failed (${res.status})`);
+
+  const ab = await res.arrayBuffer();
+  const body = Buffer.from(ab);
+  const fileSizeBytes = body.length;
+  const headerCt = res.headers.get("content-type");
+  const hint = pick.fileNameHint || `${params.assetId}.zip`;
+  const extMatch = hint.match(/\.([^.]+)$/i);
+  const ext = extMatch ? extMatch[1].toLowerCase() : "zip";
+  const fileName = slugFileName(params.displayName || params.assetId, ext);
+  const contentType =
+    headerCt && !headerCt.includes("text/html") && !headerCt.includes("application/json")
+      ? headerCt.split(";")[0].trim()
+      : contentTypeForSketchfabFileName(fileName);
+
+  const low = fileName.toLowerCase();
   const formatLabel = low.includes(".zip")
     ? "Archive (ZIP)"
     : low.includes(".glb")
       ? "GLB"
-      : "Download";
+      : low.includes(".gltf")
+        ? "glTF"
+        : "Download";
 
   return {
-    downloadUrl: pick.url,
+    body,
+    contentType,
     fileName,
     fileSize: fileSizeBytes > 0 ? formatFileSizeBytes(fileSizeBytes) : "—",
     fileSizeBytes,
@@ -145,7 +154,7 @@ export async function recordUserDownloadRow(params: {
   assetName: string;
   assetSource: "polyhaven" | "sketchfab";
   assetId: string;
-  downloadUrl: string;
+  downloadUrl?: string | null;
   fileSize: string;
   fileSizeBytes: number;
 }): Promise<void> {
@@ -155,7 +164,7 @@ export async function recordUserDownloadRow(params: {
     asset_name: params.assetName,
     asset_source: params.assetSource,
     asset_id: params.assetId,
-    download_url: params.downloadUrl,
+    download_url: params.downloadUrl ?? null,
     file_size: params.fileSize,
     file_size_bytes: params.fileSizeBytes > 0 ? params.fileSizeBytes : null,
   });

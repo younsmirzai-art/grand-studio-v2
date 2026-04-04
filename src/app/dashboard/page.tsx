@@ -31,7 +31,7 @@ export default function DashboardPage() {
       asset_name: string;
       asset_source: string;
       asset_id: string;
-      download_url: string;
+      download_url: string | null;
       file_size: string | null;
       downloaded_at: string;
     }>
@@ -331,7 +331,7 @@ export default function DashboardPage() {
               <h2 className="text-sm font-semibold text-white">Recent model downloads</h2>
             </div>
             <p className="text-xs text-[#606068] mb-4">
-              Re-download packages you prepared from the workspace. Open a project and use the 3D Library for new models.
+              Files download directly from the workspace. Open a project and use the 3D Library to download again.
             </p>
             <ul className="space-y-2 max-h-56 overflow-y-auto scrollbar-thin pr-1">
               {downloadHistory.map((row) => (
@@ -345,14 +345,20 @@ export default function DashboardPage() {
                       {row.asset_source} · {row.file_size ?? "—"} · {new Date(row.downloaded_at).toLocaleString()}
                     </p>
                   </div>
-                  <a
-                    href={row.download_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#2196F3]/20 text-[#2196F3] text-xs font-semibold hover:bg-[#2196F3]/30 transition"
-                  >
-                    Download again
-                  </a>
+                  {row.download_url ? (
+                    <a
+                      href={row.download_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#2196F3]/20 text-[#2196F3] text-xs font-semibold hover:bg-[#2196F3]/30 transition"
+                    >
+                      Download again
+                    </a>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-[#606068] max-w-[140px] text-right">
+                      Use 3D Library in a project
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

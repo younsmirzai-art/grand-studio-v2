@@ -74,19 +74,25 @@ const TEMPLATES = Object.entries(SCENE_TEMPLATES).map(([key, t]) => ({
 
 type TabId = "polyhaven" | "sketchfab" | "templates" | "scene" | "history" | "aigenerator";
 
-type ModelPackageOffer = {
-  source: "polyhaven" | "sketchfab";
-  assetId: string;
-  name: string;
-  thumbnailUrl: string | null;
-  downloadUrl: string;
-  fileName: string;
-  fileSize: string;
-  formatLabel: string;
-};
-
 const UE_IMPORT_HELP_URL =
   "https://dev.epicgames.com/documentation/en-us/unreal-engine/importing-assets-into-unreal-engine";
+
+function parseFilenameFromContentDisposition(cd: string | null, fallback: string): string {
+  if (!cd) return fallback;
+  const star = /filename\*=UTF-8''([^;\s]+)/i.exec(cd);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      /* ignore */
+    }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(cd);
+  if (quoted?.[1]) return quoted[1];
+  const plain = /filename=([^;\s]+)/i.exec(cd);
+  if (plain?.[1]) return plain[1].replace(/^"|"$/g, "");
+  return fallback;
+}
 
 interface PHResult {
   id: string;
@@ -167,7 +173,6 @@ export function WorkspacePanel({
   const [sfImportPhaseLabel, setSfImportPhaseLabel] = useState<string | null>(null);
   const [sfImportedId, setSfImportedId] = useState<string | null>(null);
 
-  const [modelPackage, setModelPackage] = useState<ModelPackageOffer | null>(null);
   const [ueImportHelpOpen, setUeImportHelpOpen] = useState(false);
   const importInFlightRef = useRef<Set<string>>(new Set());
 
@@ -249,11 +254,8 @@ export function WorkspacePanel({
   }, [phQuery, phSubTab]);
 
   const downloadPolyHaven = useCallback(
-    async (assetId: string, type: string, displayName: string, thumbnailUrl?: string | null) => {
+    async (assetId: string, type: string, displayName: string, _thumbnailUrl?: string | null) => {
       const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
-      const thumb =
-        thumbnailUrl ??
-        `https://cdn.polyhaven.com/asset_img/thumbs/${encodeURIComponent(assetId)}.png?width=256`;
 
       if (requestType !== "model") {
         setPhDownloading(assetId);
@@ -299,28 +301,30 @@ export function WorkspacePanel({
           credentials: "include",
           body: JSON.stringify({ source: "polyhaven", assetId, name: displayName || assetId }),
         });
-        const data = await res.json().catch(() => ({}));
+        const ct = res.headers.get("content-type") ?? "";
         if (!res.ok) {
-          const reason = data?.error ?? `HTTP ${res.status}`;
-          if (data?.limitReached) onLimitReached?.(reason);
+          let data: { error?: string; limitReached?: boolean } = {};
+          if (ct.includes("application/json")) {
+            data = await res.json().catch(() => ({}));
+          }
+          const reason = data.error ?? `HTTP ${res.status}`;
+          if (data.limitReached) onLimitReached?.(reason);
           else toast.error(reason);
           return;
         }
-        if (!data.downloadUrl) {
-          toast.error("No package URL returned");
-          return;
-        }
-        setModelPackage({
-          source: "polyhaven",
-          assetId,
-          name: displayName || assetId.replace(/_/g, " "),
-          thumbnailUrl: thumb,
-          downloadUrl: data.downloadUrl,
-          fileName: data.fileName ?? `${assetId}.zip`,
-          fileSize: data.fileSize ?? "—",
-          formatLabel: data.formatLabel ?? "FBX + textures (ZIP)",
-        });
-        toast.success("Package ready");
+        const dispo = res.headers.get("Content-Disposition");
+        const fallbackName = `${(displayName || assetId).replace(/\s+/g, "_")}.zip`;
+        const fileName = parseFilenameFromContentDisposition(dispo, fallbackName);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+        toast.success("Download started");
         setPhImportedId(assetId);
         setTimeout(() => setPhImportedId(null), 2500);
       } catch (e) {
@@ -353,7 +357,7 @@ export function WorkspacePanel({
   }, [sfQuery]);
 
   const downloadSketchfab = useCallback(
-    async (uid: string, name: string, thumbnailUrl?: string | null) => {
+    async (uid: string, name: string, _thumbnailUrl?: string | null) => {
       const guardKey = `sf:${uid}`;
       if (importInFlightRef.current.has(guardKey)) return;
       importInFlightRef.current.add(guardKey);
@@ -366,28 +370,30 @@ export function WorkspacePanel({
           credentials: "include",
           body: JSON.stringify({ source: "sketchfab", assetId: uid, name }),
         });
-        const data = await res.json().catch(() => ({}));
+        const ct = res.headers.get("content-type") ?? "";
         if (!res.ok) {
-          const reason = data?.error ?? `HTTP ${res.status}`;
-          if (data?.limitReached) onLimitReached?.(reason);
+          let data: { error?: string; limitReached?: boolean } = {};
+          if (ct.includes("application/json")) {
+            data = await res.json().catch(() => ({}));
+          }
+          const reason = data.error ?? `HTTP ${res.status}`;
+          if (data.limitReached) onLimitReached?.(reason);
           else toast.error(reason);
           return;
         }
-        if (!data.downloadUrl) {
-          toast.error("No download URL returned");
-          return;
-        }
-        setModelPackage({
-          source: "sketchfab",
-          assetId: uid,
-          name,
-          thumbnailUrl: thumbnailUrl ?? null,
-          downloadUrl: data.downloadUrl,
-          fileName: data.fileName ?? `${uid}.zip`,
-          fileSize: data.fileSize ?? "—",
-          formatLabel: data.formatLabel ?? "Sketchfab download",
-        });
-        toast.success("Download link ready");
+        const dispo = res.headers.get("Content-Disposition");
+        const fallbackName = `${name.replace(/\s+/g, "_") || uid}.zip`;
+        const fileName = parseFilenameFromContentDisposition(dispo, fallbackName);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+        toast.success("Download started");
         setSfImportedId(uid);
         setTimeout(() => setSfImportedId(null), 2500);
       } catch (e) {
@@ -636,7 +642,7 @@ export function WorkspacePanel({
                             ) : (
                               <>
                                 <Download className="w-2.5 h-2.5" />
-                                Import
+                                Download
                               </>
                             )}
                           </button>
@@ -722,7 +728,7 @@ export function WorkspacePanel({
                         ) : (
                           <>
                             <Download className="w-3 h-3" />
-                            Import to Scene
+                            Download
                           </>
                         )}
                       </button>
@@ -814,7 +820,7 @@ export function WorkspacePanel({
                         ) : (
                           <>
                             <Download className="w-3 h-3" />
-                            Import to Scene
+                            Download
                           </>
                         )}
                       </button>
@@ -1133,73 +1139,6 @@ export function WorkspacePanel({
         )}
       </div>
     </div>
-
-    {modelPackage && (
-      <div
-        className="fixed top-4 right-4 z-[300] w-[min(calc(100vw-2rem),360px)] rounded-xl border border-white/10 bg-[#12121A] shadow-2xl shadow-black/50 p-4"
-        role="dialog"
-        aria-label="Model download"
-      >
-        <div className="flex gap-3">
-          <div className="relative w-20 h-20 shrink-0 rounded-lg overflow-hidden bg-[#1A1A1F] border border-white/5">
-            {modelPackage.thumbnailUrl ? (
-              <img src={modelPackage.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Box className="w-8 h-8 text-[#606068]" />
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-semibold text-white leading-tight">{modelPackage.name}</p>
-                <p className="text-[10px] text-[#606068] mt-0.5">
-                  {modelPackage.formatLabel} · {modelPackage.fileSize}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModelPackage(null)}
-                className="shrink-0 p-1 rounded-md text-[#A0A0A8] hover:text-white hover:bg-white/10 transition"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-[11px] text-[#A0A0A8] mt-2 leading-snug">
-              After downloading, unzip if needed, then drag the mesh file into your UE5 Content Browser and confirm Import.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                const a = document.createElement("a");
-                a.href = modelPackage.downloadUrl;
-                a.download = modelPackage.fileName;
-                a.target = "_blank";
-                a.rel = "noopener noreferrer";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setUeImportHelpOpen(true);
-              }}
-              className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#2196F3] text-white text-sm font-semibold hover:bg-[#2196F3]/90 transition"
-            >
-              <Download className="w-4 h-4" />
-              Download
-            </button>
-            <a
-              href={UE_IMPORT_HELP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 block text-center text-[11px] text-[#2196F3] hover:underline"
-            >
-              Need help? Unreal import documentation
-            </a>
-          </div>
-        </div>
-      </div>
-    )}
 
     {ueImportHelpOpen && (
       <div

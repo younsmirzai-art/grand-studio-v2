@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
+import { attachmentContentDisposition } from "@/lib/download/contentDisposition";
 import {
   preparePolyHavenModelZip,
-  prepareSketchfabDownload,
+  prepareSketchfabModelBinary,
   recordUserDownloadRow,
 } from "@/lib/download/prepareModelPackage";
 
@@ -42,56 +43,60 @@ export async function POST(request: NextRequest) {
       const limitCheck = await checkUsageLimit(user.id, POLY_LIMIT);
       if (!limitCheck.allowed) {
         return NextResponse.json(
-          { error: "You've reached your daily model download limit. Upgrade to Pro for unlimited downloads!", limitReached: true },
+          {
+            error: "You've reached your daily model download limit. Upgrade to Pro for unlimited downloads!",
+            limitReached: true,
+          },
           { status: 403 }
         );
       }
-      const prepared = await preparePolyHavenModelZip({
-        assetId,
-        displayName,
-        userId: user.id,
-      });
+      const prepared = await preparePolyHavenModelZip({ assetId, displayName });
       await recordUsage(user.id, POLY_LIMIT);
       await recordUserDownloadRow({
         userId: user.id,
         assetName: displayName,
         assetSource: "polyhaven",
         assetId,
-        downloadUrl: prepared.downloadUrl,
         fileSize: prepared.fileSize,
         fileSizeBytes: prepared.fileSizeBytes,
       });
-      return NextResponse.json({
-        downloadUrl: prepared.downloadUrl,
-        fileName: prepared.fileName,
-        fileSize: prepared.fileSize,
-        formatLabel: prepared.formatLabel,
+      return new NextResponse(new Uint8Array(prepared.body), {
+        status: 200,
+        headers: {
+          "Content-Type": prepared.contentType,
+          "Content-Disposition": attachmentContentDisposition(prepared.fileName),
+          "X-Format-Label": prepared.formatLabel,
+        },
       });
     }
 
     const limitCheck = await checkUsageLimit(user.id, SF_LIMIT);
     if (!limitCheck.allowed) {
       return NextResponse.json(
-        { error: "You've reached your daily community download limit. Upgrade to Pro for unlimited downloads!", limitReached: true },
+        {
+          error: "You've reached your daily community download limit. Upgrade to Pro for unlimited downloads!",
+          limitReached: true,
+        },
         { status: 403 }
       );
     }
-    const prepared = await prepareSketchfabDownload({ assetId, displayName });
+    const prepared = await prepareSketchfabModelBinary({ assetId, displayName });
     await recordUsage(user.id, SF_LIMIT);
     await recordUserDownloadRow({
       userId: user.id,
       assetName: displayName,
       assetSource: "sketchfab",
       assetId,
-      downloadUrl: prepared.downloadUrl,
       fileSize: prepared.fileSize,
       fileSizeBytes: prepared.fileSizeBytes,
     });
-    return NextResponse.json({
-      downloadUrl: prepared.downloadUrl,
-      fileName: prepared.fileName,
-      fileSize: prepared.fileSize,
-      formatLabel: prepared.formatLabel,
+    return new NextResponse(new Uint8Array(prepared.body), {
+      status: 200,
+      headers: {
+        "Content-Type": prepared.contentType,
+        "Content-Disposition": attachmentContentDisposition(prepared.fileName),
+        "X-Format-Label": prepared.formatLabel,
+      },
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
