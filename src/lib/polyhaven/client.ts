@@ -61,22 +61,137 @@ export async function getAssets(type: PolyHavenAssetType): Promise<PolyHavenAsse
   return assets;
 }
 
+/** Split search into meaningful tokens (ignore very short noise). */
+function tokenizeSearchQuery(query: string): string[] {
+  return query
+    .toLowerCase()
+    .trim()
+    .split(/[\s,;]+/)
+    .map((t) => t.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, ""))
+    .filter((t) => t.length >= 2);
+}
+
+/** True if `token` appears as its own word (not inside "warehouse" for "house"). */
+function hasWordBoundaryMatch(text: string, token: string): boolean {
+  if (!token.length) return false;
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?:^|[^a-z0-9])${esc}(?:[^a-z0-9]|$)`, "i");
+  return re.test(text);
+}
+
+function normalizeDisplayText(s: string): string {
+  return s.toLowerCase().replace(/_/g, " ");
+}
+
+/**
+ * Score how well an asset matches one token. Higher = more relevant.
+ * Uses word boundaries so "house" does not match "warehouse"/"tree" spam from substring rules.
+ */
+function bestScoreForToken(a: PolyHavenAsset, token: string): number {
+  let best = 0;
+  const nameNorm = normalizeDisplayText(a.name);
+  const idLower = a.id.toLowerCase();
+
+  if (hasWordBoundaryMatch(nameNorm, token)) best = Math.max(best, 120);
+  if (a.name.toLowerCase() === token) best = Math.max(best, 130);
+
+  for (const seg of idLower.split("_").filter(Boolean)) {
+    if (seg === token) best = Math.max(best, 115);
+    else if (hasWordBoundaryMatch(seg, token)) best = Math.max(best, 95);
+  }
+
+  for (const c of a.categories) {
+    const cl = c.toLowerCase();
+    if (cl === token) best = Math.max(best, 110);
+    else if (hasWordBoundaryMatch(cl, token)) best = Math.max(best, 85);
+  }
+
+  for (const t of a.tags) {
+    const tl = t.toLowerCase();
+    if (tl === token) best = Math.max(best, 105);
+    else if (hasWordBoundaryMatch(tl, token)) best = Math.max(best, 80);
+  }
+
+  // Id begins with token as a slug segment (e.g. house_plant_01 for "house")
+  if (idLower.startsWith(token + "_")) {
+    best = Math.max(best, 50);
+  }
+
+  return best;
+}
+
+/**
+ * Every token must match somewhere with score > 0. Score is sum of per-token bests + popularity tie-break prep.
+ */
+function rankAssetsForQuery(assets: PolyHavenAsset[], tokens: string[]): Array<{ asset: PolyHavenAsset; score: number }> {
+  if (tokens.length === 0) return [];
+
+  const ranked: Array<{ asset: PolyHavenAsset; score: number }> = [];
+  for (const a of assets) {
+    let sum = 0;
+    let ok = true;
+    for (const token of tokens) {
+      const s = bestScoreForToken(a, token);
+      if (s <= 0) {
+        ok = false;
+        break;
+      }
+      sum += s;
+    }
+    if (ok) ranked.push({ asset: a, score: sum });
+  }
+
+  ranked.sort((x, y) => {
+    if (y.score !== x.score) return y.score - x.score;
+    return y.asset.downloadCount - x.asset.downloadCount;
+  });
+  return ranked;
+}
+
+/** Legacy loose match when strict token search returns nothing (typos / unusual ids). */
+function legacySubstringMatches(all: PolyHavenAsset[], q: string, count: number): PolyHavenAsset[] {
+  const ql = q.toLowerCase().trim();
+  if (!ql) return [];
+  const matches = all.filter(
+    (a) =>
+      a.name.toLowerCase().includes(ql) ||
+      a.id.toLowerCase().includes(ql) ||
+      a.categories.some((c) => c.toLowerCase().includes(ql)) ||
+      a.tags.some((t) => t.toLowerCase().includes(ql))
+  );
+  matches.sort((a, b) => b.downloadCount - a.downloadCount);
+  return matches.slice(0, count);
+}
+
 export async function searchAssets(
   query: string,
   type: PolyHavenAssetType,
   count = 20
 ): Promise<PolyHavenAsset[]> {
   const all = await getAssets(type);
-  const q = query.toLowerCase();
-  const matches = all.filter(
-    (a) =>
-      a.name.toLowerCase().includes(q) ||
-      a.id.toLowerCase().includes(q) ||
-      a.categories.some((c) => c.toLowerCase().includes(q)) ||
-      a.tags.some((t) => t.toLowerCase().includes(q))
-  );
-  matches.sort((a, b) => b.downloadCount - a.downloadCount);
-  return matches.slice(0, count);
+  const qTrim = query.trim();
+  if (!qTrim) return [];
+
+  const tokens = tokenizeSearchQuery(qTrim);
+  const limit = Math.max(1, Math.min(50, count));
+
+  if (tokens.length > 0) {
+    const ranked = rankAssetsForQuery(all, tokens);
+    if (ranked.length > 0) {
+      return ranked.slice(0, limit).map((r) => r.asset);
+    }
+  }
+
+  // Single very short query (e.g. "a") or no token parsed: treat whole string as one token if long enough
+  const single = qTrim.toLowerCase();
+  if (single.length >= 3) {
+    const rankedOne = rankAssetsForQuery(all, [single]);
+    if (rankedOne.length > 0) {
+      return rankedOne.slice(0, limit).map((r) => r.asset);
+    }
+  }
+
+  return legacySubstringMatches(all, qTrim, limit);
 }
 
 export async function getAssetInfo(assetId: string) {
