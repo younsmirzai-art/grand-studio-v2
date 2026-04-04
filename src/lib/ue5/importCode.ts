@@ -8,7 +8,93 @@ export type UE5ImportCodeOptions = {
   /** When set (e.g. Poly Haven), local file is forced to `.fbx`. */
   traceAssetId?: string;
   destinationName?: string;
+  /** Poly Haven diffuse map URL; when set, Python imports texture and assigns a material to the mesh. */
+  textureUrl?: string | null;
 };
+
+const UE5_TEXTURES_PATH = "/Game/GrandStudio/Imported/Textures";
+const UE5_MATERIALS_PATH = "/Game/GrandStudio/Imported/Materials";
+
+function diffuseFileExtensionFromUrl(url: string): string {
+  try {
+    const p = new URL(url).pathname.toLowerCase();
+    if (p.endsWith(".png")) return "png";
+    if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "jpg";
+    if (p.endsWith(".webp")) return "webp";
+    if (p.endsWith(".exr")) return "exr";
+  } catch {
+    /* ignore */
+  }
+  return "jpg";
+}
+
+/** Python fragment: download diffuse, import texture, MIC + assign to mesh at `destinationName`. */
+export function buildPolyHavenDiffuseFollowUpPython(textureUrl: string, destinationName: string): string {
+  const dest = destinationName.replace(/[^a-zA-Z0-9_]/g, "_") || "mesh";
+  const ext = diffuseFileExtensionFromUrl(textureUrl);
+  const texBase = `${dest}_diffuse`.replace(/[^a-zA-Z0-9_]/g, "_") || "diffuse";
+  const texFile = `${texBase}.${ext}`;
+  const escapedTexUrl = textureUrl.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const escapedTexPath = `C:/GrandStudio/Downloads/${texFile}`.replace(/'/g, "\\'");
+  const texDestPy = UE5_TEXTURES_PATH.replace(/'/g, "\\'");
+  const matDestPy = UE5_MATERIALS_PATH.replace(/'/g, "\\'");
+  const texAssetPath = `${UE5_TEXTURES_PATH}/${texBase}`.replace(/'/g, "\\'");
+  const meshAssetPath = `${UE5_IMPORT_DESTINATION_PATH}/${dest}`.replace(/'/g, "\\'");
+  const miName = `MI_${texBase}`.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 50) || "MI_ph_diffuse";
+
+  return `
+# Download and apply Poly Haven diffuse texture
+_tex_url = '${escapedTexUrl}'
+_tex_path = '${escapedTexPath}'
+urllib.request.urlretrieve(_tex_url, _tex_path)
+_tex_task = unreal.AssetImportTask()
+_tex_task.filename = _tex_path
+_tex_task.destination_path = '${texDestPy}'
+_tex_task.destination_name = '${texBase}'
+_tex_task.replace_existing = True
+_tex_task.automated = True
+_tex_task.save = True
+unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([_tex_task])
+_tex = unreal.EditorAssetLibrary.load_asset('${texAssetPath}')
+_mesh_path = '${meshAssetPath}'
+_mesh = unreal.EditorAssetLibrary.load_asset(_mesh_path)
+if _tex and _mesh:
+    _parent_paths = [
+        '/Game/StarterContent/Materials/M_AssetPlatform.M_AssetPlatform',
+        '/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall',
+    ]
+    _parent = None
+    for _pp in _parent_paths:
+        _cand = unreal.EditorAssetLibrary.load_asset(_pp)
+        if _cand:
+            _parent = _cand
+            break
+    if _parent:
+        _fac = unreal.MaterialInstanceConstantFactoryNew()
+        _fac.set_editor_property('initial_parent', _parent)
+        _tools = unreal.AssetToolsHelpers.get_asset_tools()
+        _mi = _tools.create_asset('${miName}', '${matDestPy}', unreal.MaterialInstanceConstant, _fac)
+        if _mi:
+            for _pn in ('Texture', 'BaseColor', 'Diffuse'):
+                try:
+                    unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(_mi, _pn, _tex)
+                    break
+                except Exception:
+                    pass
+            try:
+                _mesh.set_material(0, _mi)
+            except Exception:
+                try:
+                    unreal.EditorStaticMeshLibrary.set_material(_mesh, 0, _mi)
+                except Exception:
+                    unreal.log_warning('Could not assign material to mesh slots')
+            unreal.EditorAssetLibrary.save_asset(_mesh_path)
+    else:
+        unreal.log_warning('Poly Haven texture: no StarterContent parent material found; assign texture manually')
+else:
+    unreal.log_warning('Poly Haven texture: could not load texture or mesh for material assignment')
+`;
+}
 
 export type SketchfabImportCodeOptions = UE5ImportCodeOptions;
 
@@ -44,6 +130,9 @@ export function generateUE5ImportCode(
   const escapedLocal = localPath.replace(/'/g, "\\'");
   const logName = destinationName.replace(/'/g, "\\'");
 
+  const textureUrl = options?.textureUrl?.trim();
+  const diffuseFollowUp = textureUrl ? buildPolyHavenDiffuseFollowUpPython(textureUrl, destinationName) : "";
+
   return `import unreal
 import urllib.request
 import os
@@ -60,7 +149,7 @@ task.automated = True
 task.save = True
 unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 unreal.log('Imported ${logName}')
-`;
+${diffuseFollowUp}`;
 }
 
 /**

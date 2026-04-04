@@ -143,14 +143,54 @@ function polyHavenMeshUrlEndsWithFbx(url: string): boolean {
   return path.endsWith(".fbx");
 }
 
-/** Poly Haven models: FBX file URL only (`files.fbx.{res}.fbx.url`). */
+/**
+ * Diffuse color map for models: `files.Diffuse.{res}.{jpg|png|...}.url`
+ */
+export function pickPolyHavenDiffuseUrl(
+  links: Record<string, unknown>,
+  resolution = "1k"
+): string | null {
+  const diffuseRoot = links.Diffuse ?? links.diffuse;
+  if (!diffuseRoot || typeof diffuseRoot !== "object" || diffuseRoot === null) return null;
+  const dr = diffuseRoot as Record<string, unknown>;
+  for (const res of resolutionFallbackOrder(resolution)) {
+    const resBlock = dr[res];
+    if (!resBlock || typeof resBlock !== "object" || resBlock === null) continue;
+    const rb = resBlock as Record<string, unknown>;
+    for (const fmt of ["jpg", "jpeg", "png", "webp", "exr"]) {
+      const node = rb[fmt];
+      if (node && typeof node === "object" && node !== null && "url" in node) {
+        const u = (node as { url?: unknown }).url;
+        if (typeof u === "string" && u.length > 0) return u;
+      }
+    }
+    const top = rb.url;
+    if (typeof top === "string" && top.length > 0) return top;
+  }
+  return null;
+}
+
+/** Poly Haven models: FBX URL plus optional Diffuse texture URL. */
 export function resolvePolyHavenModelDownloadUrl(
   links: Record<string, unknown>,
   resolution = "1k"
-): { url: string; format: PolyHavenModelFormat } | null {
+): { url: string; format: PolyHavenModelFormat; diffuseUrl: string | null } | null {
   const url = pickPolyHavenModelFormatUrl(links, "fbx", resolution);
   if (!url || !polyHavenMeshUrlEndsWithFbx(url)) return null;
-  return { url, format: "fbx" };
+  const diffuseUrl = pickPolyHavenDiffuseUrl(links, resolution);
+  return { url, format: "fbx", diffuseUrl };
+}
+
+/** Single fetch: mesh + optional Poly Haven diffuse for UE import. */
+export async function getPolyHavenModelImportUrls(
+  assetId: string,
+  resolution = "1k"
+): Promise<{ meshUrl: string; diffuseUrl: string | null } | null> {
+  const links = (await getDownloadLinks(assetId)) as unknown as Record<string, unknown>;
+  if (!links || typeof links !== "object") return null;
+  const resolved = resolvePolyHavenModelDownloadUrl(links, resolution);
+  if (!resolved) return null;
+  return { meshUrl: resolved.url, diffuseUrl: resolved.diffuseUrl };
 }
 
 export async function getModelDownloadUrl(assetId: string, resolution = "1k"): Promise<string | null> {
@@ -164,7 +204,12 @@ export async function getModelDownloadUrl(assetId: string, resolution = "1k"): P
 
   const resolved = resolvePolyHavenModelDownloadUrl(links, resolution);
   if (resolved) {
-    console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> URL found (" + resolved.format + ")");
+    console.log(
+      "[Poly Haven] getModelDownloadUrl:",
+      assetId,
+      "-> URL found (" + resolved.format + ")",
+      resolved.diffuseUrl ? "+diffuse" : ""
+    );
     return resolved.url;
   }
   console.log("[Poly Haven] getModelDownloadUrl:", assetId, "-> NO download URL");

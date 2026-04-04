@@ -7,7 +7,12 @@ import { searchAssets } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { createServerClient } from "@/lib/supabase/server";
-import { generateUE5ImportCode, generateSketchfabImportCode, UE5_IMPORT_DESTINATION_PATH } from "@/lib/ue5/importCode";
+import {
+  buildPolyHavenDiffuseFollowUpPython,
+  generateUE5ImportCode,
+  generateSketchfabImportCode,
+  UE5_IMPORT_DESTINATION_PATH,
+} from "@/lib/ue5/importCode";
 
 export interface AssetRequestResult {
   chatMessage: string;
@@ -81,7 +86,7 @@ function extractObjectQuery(message: string, hasPolyHaven: boolean, hasSketchfab
   return query || "model";
 }
 
-async function downloadPolyHavenToSupabase(assetId: string): Promise<string | null> {
+async function downloadPolyHavenToSupabase(assetId: string) {
   return downloadPolyHavenModelToStorage(assetId);
 }
 
@@ -128,6 +133,7 @@ export async function handleAssetRequest(
   console.log("[handleAssetRequest] Searching for platform:", platform, "query:", query);
 
   let storageUrl: string | null = null;
+  let polyDiffuseUrl: string | null = null;
   let assetName = query;
   let sourceLabel = "";
   let polyHavenAssetId: string | null = null;
@@ -139,7 +145,9 @@ export async function handleAssetRequest(
     if (results.length > 0) {
       const best = results[0];
       console.log("[handleAssetRequest] Best result:", best.id, best.name);
-      storageUrl = await downloadPolyHavenToSupabase(best.id);
+      const polyBundle = await downloadPolyHavenToSupabase(best.id);
+      storageUrl = polyBundle?.meshUrl ?? null;
+      polyDiffuseUrl = polyBundle?.diffuseUrl ?? null;
       console.log("[handleAssetRequest] Download URL (Poly Haven):", storageUrl ? "yes" : "no");
       if (storageUrl) {
         assetName = best.name;
@@ -192,6 +200,7 @@ export async function handleAssetRequest(
               ? {
                   traceAssetId: polyHavenAssetId,
                   destinationName: polyHavenAssetId.replace(/[^a-zA-Z0-9_]/g, "_"),
+                  textureUrl: polyDiffuseUrl,
                 }
               : undefined
           );
@@ -245,7 +254,7 @@ export async function enrichCodeWithPolyHavenAssets(
   }
   if (searchQueries.size === 0) return code;
 
-  const imports: { url: string; label: string; index: number }[] = [];
+  const imports: { url: string; label: string; index: number; diffuseUrl: string | null }[] = [];
   let index = 0;
 
   for (const query of searchQueries) {
@@ -254,10 +263,10 @@ export async function enrichCodeWithPolyHavenAssets(
       if (results.length === 0) continue;
 
       const asset = results[0];
-      const storageUrl = await downloadPolyHavenToSupabase(asset.id);
-      if (storageUrl) {
+      const bundle = await downloadPolyHavenToSupabase(asset.id);
+      if (bundle?.meshUrl) {
         const label = `${asset.name.replace(/\s+/g, "_")}_${index}`;
-        imports.push({ url: storageUrl, label, index });
+        imports.push({ url: bundle.meshUrl, label, index, diffuseUrl: bundle.diffuseUrl });
         index++;
       }
     } catch (e) {
@@ -287,6 +296,13 @@ export async function enrichCodeWithPolyHavenAssets(
     const escapedUrl = imp.url.replace(/'/g, "\\'");
     const escapedLocal = localPath.replace(/'/g, "\\'");
     const escapedDest = destName.replace(/'/g, "\\'");
+    const diffusePy =
+      imp.diffuseUrl != null && imp.diffuseUrl.length > 0
+        ? buildPolyHavenDiffuseFollowUpPython(imp.diffuseUrl, destName)
+            .split("\n")
+            .map((line) => (line.trim() === "" ? "" : `    ${line}`))
+            .join("\n")
+        : "";
     importLines.push(
       `try:`,
       `    urllib.request.urlretrieve('${escapedUrl}', '${escapedLocal}')`,
@@ -299,6 +315,7 @@ export async function enrichCodeWithPolyHavenAssets(
       `    task.save = True`,
       `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
       `    unreal.log('Imported ${escapedDest}')`,
+      ...(diffusePy ? [diffusePy] : []),
       `except Exception as e:`,
       `    unreal.log_warning(f'Poly Haven import failed: {e}')`,
       ``

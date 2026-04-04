@@ -98,7 +98,10 @@ async function fetchSketchfabSearchHttp(query: string, count: number): Promise<{
   return results;
 }
 
-async function fetchPolyhavenDownloadUrl(assetId: string, projectId: string): Promise<string | null> {
+async function fetchPolyhavenDownloadUrl(
+  assetId: string,
+  projectId: string
+): Promise<{ url: string; diffuseUrl: string | null } | null> {
   const base = getInternalSiteUrl();
   const url = `${base}/api/polyhaven/download`;
   const res = await fetch(url, {
@@ -107,8 +110,10 @@ async function fetchPolyhavenDownloadUrl(assetId: string, projectId: string): Pr
     body: JSON.stringify({ assetId, type: "model", projectId }),
   });
   if (!res.ok) return null;
-  const data = (await res.json()) as { url?: string };
-  return data.url ?? null;
+  const data = (await res.json()) as { url?: string; diffuseUrl?: string | null };
+  if (!data.url) return null;
+  const diffuseUrl = typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0 ? data.diffuseUrl : null;
+  return { url: data.url, diffuseUrl };
 }
 
 async function fetchSketchfabDownloadUrl(uid: string, projectId: string): Promise<string | null> {
@@ -202,13 +207,16 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
       if (!pick && results[0]?.id) pick = results[0];
       if (pick?.id) {
         console.log(`IMPORT: Downloading model: ${pick.name} from Poly Haven`);
-        const storageUrl = await fetchPolyhavenDownloadUrl(pick.id, projectId);
-        if (storageUrl) {
+        const polyDl = await fetchPolyhavenDownloadUrl(pick.id, projectId);
+        if (polyDl) {
           usedPolyIds.add(pick.id);
           await recordUsage(userId, "polyhaven_import");
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename = `${label}.fbx`;
-          const importCode = generateUE5ImportCode(storageUrl, filename, label, { traceAssetId: pick.id });
+          const importCode = generateUE5ImportCode(polyDl.url, filename, label, {
+            traceAssetId: pick.id,
+            textureUrl: polyDl.diffuseUrl,
+          });
           const commandId = await queueWithRelayCheck(projectId, importCode, "import");
           if (!commandId) continue;
           console.log("IMPORT: UE5 import code generated and queued");

@@ -882,8 +882,8 @@ export async function buildScene(params: BuildSceneParams): Promise<{
 
       let cmdId: string | undefined;
       if (job.source === "polyhaven" && job.polyId) {
-        const url = await downloadPolyHavenModel(job.polyId);
-        if (!url) continue;
+        const polyBundle = await downloadPolyHavenModel(job.polyId);
+        if (!polyBundle?.meshUrl) continue;
         await emit({
           type: "importing",
           current: curGlobal,
@@ -892,9 +892,10 @@ export async function buildScene(params: BuildSceneParams): Promise<{
           source: "our library (Poly Haven)",
         });
         const filename = `${job.polyId}_${curGlobal}.fbx`;
-        const code = generateUE5ImportCode(url, filename, job.name, {
+        const code = generateUE5ImportCode(polyBundle.meshUrl, filename, job.name, {
           traceAssetId: job.polyId,
           destinationName: destName,
+          textureUrl: polyBundle.diffuseUrl,
         });
         cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
       } else if (job.source === "sketchfab" && job.sketchfabUid) {

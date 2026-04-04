@@ -4,9 +4,14 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { resolvePolyHavenModelDownloadUrl } from "@/lib/polyhaven/client";
+import { pickPolyHavenDiffuseUrl, resolvePolyHavenModelDownloadUrl } from "@/lib/polyhaven/client";
 
 const USER_AGENT = "GrandStudio/1.0";
+
+export type PolyHavenModelDownloadBundle = {
+  meshUrl: string;
+  diffuseUrl: string | null;
+};
 
 function polyHavenUrlMatchesAssetId(url: string, assetId: string): boolean {
   try {
@@ -28,14 +33,23 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+async function fetchPolyHavenFilesJson(assetId: string): Promise<Record<string, unknown> | null> {
+  const filesRes = await fetch(`https://api.polyhaven.com/files/${assetId}`, {
+    headers: { "User-Agent": USER_AGENT },
+    cache: "no-store",
+  });
+  if (!filesRes.ok) return null;
+  return (await filesRes.json()) as Record<string, unknown>;
+}
+
 /**
- * 1) Check downloaded_assets cache for existing direct URL
- * 2) GET api.polyhaven.com/files/ASSET_ID
- * 3) Resolve FBX mesh URL only (Poly Haven models API has no GLB)
- * 4) Cache the direct URL in downloaded_assets (no file upload)
- * 5) Return direct Poly Haven URL for UE5 to download
+ * 1) Check downloaded_assets cache for existing direct mesh URL
+ * 2) GET api.polyhaven.com/files/ASSET_ID (always, to resolve Diffuse when possible)
+ * 3) Resolve FBX + optional Diffuse from /files payload
+ * 4) Cache the mesh URL in downloaded_assets (no file upload)
+ * 5) Return mesh URL + optional diffuse URL for UE5 import code
  */
-export async function downloadPolyHavenModelToStorage(assetId: string): Promise<string | null> {
+export async function downloadPolyHavenModelToStorage(assetId: string): Promise<PolyHavenModelDownloadBundle | null> {
   const supabase = getSupabase();
 
   const { data: existing } = await supabase
@@ -46,7 +60,9 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
     .maybeSingle();
 
   if (existing?.storage_url && polyHavenUrlMatchesAssetId(existing.storage_url, assetId)) {
-    return existing.storage_url;
+    const filesData = await fetchPolyHavenFilesJson(assetId);
+    const diffuseUrl = filesData ? pickPolyHavenDiffuseUrl(filesData, "1k") : null;
+    return { meshUrl: existing.storage_url, diffuseUrl };
   }
   if (existing?.storage_url) {
     console.warn(
@@ -56,13 +72,8 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
     );
   }
 
-  const filesRes = await fetch(`https://api.polyhaven.com/files/${assetId}`, {
-    headers: { "User-Agent": USER_AGENT },
-    cache: "no-store",
-  });
-  if (!filesRes.ok) return null;
-
-  const filesData = (await filesRes.json()) as Record<string, unknown>;
+  const filesData = await fetchPolyHavenFilesJson(assetId);
+  if (!filesData) return null;
   const resolved = resolvePolyHavenModelDownloadUrl(filesData, "1k");
   if (!resolved) return null;
   const downloadUrl = resolved.url;
@@ -80,5 +91,5 @@ export async function downloadPolyHavenModelToStorage(assetId: string): Promise<
     },
     { onConflict: "source,source_id" }
   );
-  return downloadUrl;
+  return { meshUrl: downloadUrl, diffuseUrl: resolved.diffuseUrl };
 }

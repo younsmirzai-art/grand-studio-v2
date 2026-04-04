@@ -272,6 +272,7 @@ export function WorkspacePanel({
         code = generateUE5ImportCode(data.url, filename, label, {
           traceAssetId: assetId,
           destinationName: assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label,
+          textureUrl: typeof data.diffuseUrl === "string" ? data.diffuseUrl : undefined,
         });
       } catch (e) {
         console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);

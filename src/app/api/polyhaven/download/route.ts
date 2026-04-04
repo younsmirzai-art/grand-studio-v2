@@ -40,12 +40,15 @@ export async function POST(request: NextRequest) {
       if (!limitCheck.allowed) {
         return NextResponse.json({ error: UPGRADE_MSG, limitReached: true }, { status: 403 });
       }
-      const url = await downloadPolyHavenModelToStorage(assetId);
-      if (!url) {
+      const bundle = await downloadPolyHavenModelToStorage(assetId);
+      if (!bundle?.meshUrl) {
         return NextResponse.json({ error: "No download URL found for this asset" }, { status: 404 });
       }
       await recordUsage(userId, "polyhaven_import");
-      return NextResponse.json({ url });
+      return NextResponse.json({
+        url: bundle.meshUrl,
+        diffuseUrl: bundle.diffuseUrl ?? undefined,
+      });
     }
 
     if (type === "texture" || type === "textures") {
