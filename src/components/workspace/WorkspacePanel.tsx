@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import type { AssetEntry } from "@/lib/ue5/assetLibrary";
-import { diffuseFileExtensionFromUrl, generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
+import { generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
 import { SCENE_TEMPLATES } from "@/lib/ue5/sceneTemplates";
 import type { UE5Command, GodEyeEntry } from "@/lib/types";
 import { toast } from "sonner";
@@ -386,20 +386,11 @@ export function WorkspacePanel({
         const filename = `${assetId.replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
         const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
         const destinationName = assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label;
-        const diffuseExt =
-          typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
-            ? diffuseFileExtensionFromUrl(data.diffuseUrl)
-            : "jpg";
-        const diffuseFilename =
-          typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
-            ? `${destinationName}_diffuse.${diffuseExt}`
-            : undefined;
         let code: string;
         try {
           code = generateUE5ImportCode(data.url, filename, label, {
             traceAssetId: assetId,
             destinationName,
-            diffuseDiskFilename: diffuseFilename,
           });
         } catch (e) {
           console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
@@ -418,8 +409,6 @@ export function WorkspacePanel({
               kind: "polyhaven_fbx",
               url: data.url,
               filename,
-              diffuseUrl: data.diffuseUrl,
-              diffuseFilename,
             },
             importContext: {
               source_provider: "polyhaven",

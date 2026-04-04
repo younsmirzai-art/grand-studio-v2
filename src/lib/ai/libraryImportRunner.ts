@@ -13,11 +13,7 @@ import { getInternalSiteUrl } from "@/lib/site/internalUrl";
 import { isRelayOnline } from "@/lib/ue5/relayStatus";
 import { searchAssets as searchPolyhavenDirect, type PolyHavenAsset } from "@/lib/polyhaven/client";
 import { searchModels as searchSketchfabDirect } from "@/lib/sketchfab/client";
-import {
-  diffuseFileExtensionFromUrl,
-  generateSketchfabLocalImportCode,
-  generateUE5ImportCode,
-} from "@/lib/ue5/importCode";
+import { generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import type { ImportProgressEvent } from "@/lib/ai/agentImportTypes";
 import { pickQueriesForAction } from "@/lib/ai/assetResolver2-queries";
@@ -243,18 +239,9 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename = `${label}.fbx`;
           const destName = pick.id.replace(/[^a-zA-Z0-9_]/g, "_");
-          const diffuseExt =
-            polyDl.diffuseUrl != null && polyDl.diffuseUrl.length > 0
-              ? diffuseFileExtensionFromUrl(polyDl.diffuseUrl)
-              : "jpg";
-          const diffuseFilename =
-            polyDl.diffuseUrl != null && polyDl.diffuseUrl.length > 0
-              ? `${destName}_diffuse.${diffuseExt}`
-              : undefined;
           const importCode = generateUE5ImportCode(polyDl.url, filename, label, {
             traceAssetId: pick.id,
             destinationName: destName,
-            diffuseDiskFilename: diffuseFilename,
           });
           const commandId = await queueRelayImportWithCheck(
             projectId,
@@ -262,8 +249,6 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
               kind: "polyhaven_fbx",
               url: polyDl.url,
               filename,
-              diffuseUrl: polyDl.diffuseUrl ?? undefined,
-              diffuseFilename,
             },
             importCode,
             {
