@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
     const { data: cmd, error: cmdErr } = await supabase
       .from("ue5_commands")
-      .select("id, status, command_type, error_log, project_id")
+      .select("id, status, command_type, error_log, project_id, result")
       .eq("id", id)
       .maybeSingle();
 
@@ -47,11 +47,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    let parsedResult: unknown = null;
+    const raw = cmd.result;
+    if (raw != null && raw !== "") {
+      if (typeof raw === "string") {
+        try {
+          parsedResult = JSON.parse(raw) as unknown;
+        } catch {
+          parsedResult = { raw };
+        }
+      } else if (typeof raw === "object") {
+        parsedResult = raw;
+      }
+    }
+
     return NextResponse.json({
       id: cmd.id,
       status: cmd.status,
       command_type: cmd.command_type ?? null,
       error_log: cmd.error_log ?? null,
+      result: parsedResult,
     });
   } catch (e) {
     console.error("[ue5/command-status]", e);

@@ -49,20 +49,27 @@ export function buildPolyHavenDiffuseFollowUpPython(
 
   return `
 # Apply Poly Haven diffuse from local file (downloaded by relay)
+import os
 _tex_path = '${escapedTexPath}'
-_tex_task = unreal.AssetImportTask()
-_tex_task.filename = _tex_path
-_tex_task.destination_path = '${texDestPy}'
-_tex_task.destination_name = '${texBase}'
-_tex_task.replace_existing = True
-_tex_task.automated = True
-_tex_task.save = True
-unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([_tex_task])
-_tex = unreal.EditorAssetLibrary.load_asset('${texAssetPath}')
+if not os.path.exists(_tex_path):
+    unreal.log_warning('WARNING: Texture file NOT found: ' + _tex_path)
+else:
+    unreal.log('Texture file exists: ' + _tex_path)
+    unreal.log('Applying texture from: ' + _tex_path)
+    _tex_task = unreal.AssetImportTask()
+    _tex_task.filename = _tex_path
+    _tex_task.destination_path = '${texDestPy}'
+    _tex_task.destination_name = '${texBase}'
+    _tex_task.replace_existing = True
+    _tex_task.automated = True
+    _tex_task.save = True
+    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([_tex_task])
+_tex = unreal.EditorAssetLibrary.load_asset('${texAssetPath}') if os.path.exists(_tex_path) else None
 _mesh_path = '${meshAssetPath}'
 _mesh = unreal.EditorAssetLibrary.load_asset(_mesh_path)
 if _tex and _mesh:
     _parent_paths = [
+        '/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial',
         '/Game/StarterContent/Materials/M_AssetPlatform.M_AssetPlatform',
         '/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall',
     ]
@@ -78,7 +85,7 @@ if _tex and _mesh:
         _tools = unreal.AssetToolsHelpers.get_asset_tools()
         _mi = _tools.create_asset('${miName}', '${matDestPy}', unreal.MaterialInstanceConstant, _fac)
         if _mi:
-            for _pn in ('Texture', 'BaseColor', 'Diffuse'):
+            for _pn in ('BaseColor', 'Texture', 'Diffuse', 'Albedo', 'DiffuseTexture', 'T_BaseColor'):
                 try:
                     unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(_mi, _pn, _tex)
                     break
@@ -125,14 +132,17 @@ export function buildOptionalDiffuseByDownloadStemPython(
 
   return `
 # Optional Sketchfab diffuse from relay (C:/GrandStudio/Downloads/{stem}_diffuse.*)
+import os
 _stem_d = r'C:/GrandStudio/Downloads/${stemEsc}_diffuse'
 _tex_path = None
 for _e in ('.jpg', '.jpeg', '.png', '.webp', '.tga', '.exr'):
     _cand = _stem_d + _e
-    if unreal.Paths.file_exists(_cand):
+    if os.path.exists(_cand):
         _tex_path = _cand
         break
 if _tex_path:
+    unreal.log('Texture file exists: ' + _tex_path)
+    unreal.log('Applying texture from: ' + _tex_path)
     _tex_task2 = unreal.AssetImportTask()
     _tex_task2.filename = _tex_path
     _tex_task2.destination_path = '${texDestPy}'
@@ -146,6 +156,7 @@ if _tex_path:
     _mesh2 = unreal.EditorAssetLibrary.load_asset(_mesh_path2)
     if _tex2 and _mesh2:
         _parent_paths2 = [
+            '/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial',
             '/Game/StarterContent/Materials/M_AssetPlatform.M_AssetPlatform',
             '/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall',
         ]
@@ -161,7 +172,7 @@ if _tex_path:
             _tools2 = unreal.AssetToolsHelpers.get_asset_tools()
             _mi2 = _tools2.create_asset('${miName}', '${matDestPy}', unreal.MaterialInstanceConstant, _fac2)
             if _mi2:
-                for _pn2 in ('Texture', 'BaseColor', 'Diffuse'):
+                for _pn2 in ('BaseColor', 'Texture', 'Diffuse', 'Albedo', 'DiffuseTexture', 'T_BaseColor'):
                     try:
                         unreal.MaterialEditingLibrary.set_material_instance_texture_parameter_value(_mi2, _pn2, _tex2)
                         break
@@ -175,6 +186,8 @@ if _tex_path:
                     except Exception:
                         unreal.log_warning('Sketchfab: could not assign diffuse material')
                 unreal.EditorAssetLibrary.save_asset(_mesh_path2)
+else:
+    unreal.log_warning('WARNING: Texture file NOT found for stem ' + r'${stemEsc}_diffuse.*')
 `;
 }
 
@@ -253,11 +266,12 @@ export function generateSketchfabLocalImportCode(
     : "";
 
   return `import unreal
+import os
 _base = r'C:/GrandStudio/Downloads/${stemEscaped}_model'
 model_file = None
 for _ext in ('.glb', '.fbx', '.obj'):
     _p = _base + _ext
-    if unreal.Paths.file_exists(_p):
+    if os.path.exists(_p):
         model_file = _p
         break
 if not model_file:

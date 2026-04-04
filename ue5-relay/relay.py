@@ -35,8 +35,6 @@ RELAY_USER_AGENT = "GrandStudio-Relay/1.0 (local)"
 POLL_INTERVAL = int(os.getenv("RELAY_POLL_INTERVAL", "2"))
 # During Poly Haven / Sketchfab imports UE5 may not respond in time; keep heartbeat "connected".
 FORCE_HEARTBEAT_UE5_CONNECTED = False
-IMPORT_MAX_ATTEMPTS = 5
-IMPORT_RETRY_WAIT_SEC = 10
 
 # Preferred order: endpoints that run editor Python without calling Default__PythonScriptLibrary via object/call
 # (that path often returns 400 "cannot be accessed remotely" unless explicitly allow-listed).
@@ -215,31 +213,6 @@ def _is_timeout_result(result):
     return "timed out" in err or "read timed out" in err
 
 
-def execute_import_in_ue5_with_retry(python_code, timeout=120):
-    """Import commands: retry on HTTP read timeout — UE5 is often still importing, not crashed."""
-    last = None
-    for attempt in range(1, IMPORT_MAX_ATTEMPTS + 1):
-        last = execute_in_ue5(python_code, timeout=timeout)
-        if last.get("success"):
-            return last
-        if not _is_timeout_result(last):
-            return last
-        print("         UE5 is busy processing, waiting… (timeout does not mean UE5 crashed)")
-        print(
-            f"         Import in progress, UE5 is busy. Waiting… (attempt {attempt}/{IMPORT_MAX_ATTEMPTS})"
-        )
-        if attempt >= IMPORT_MAX_ATTEMPTS:
-            return last
-        time.sleep(IMPORT_RETRY_WAIT_SEC)
-        if check_ue5_connection_silent():
-            print("         UE5 ping OK after wait, pausing 10s before retry…")
-            time.sleep(IMPORT_RETRY_WAIT_SEC)
-        else:
-            print("         UE5 ping failed — connection may be lost")
-            return last
-    return last
-
-
 def capture_screenshot():
     """Capture a screenshot from UE5 viewport"""
     code = """
@@ -339,11 +312,22 @@ def handle_relay_download_command(cmd):
             diffuse_filename = base if base else "diffuse.jpg"
         except Exception:
             diffuse_filename = "diffuse.jpg"
+
+    if diffuse_url:
+        print(f"         Diffuse URL: {diffuse_url}")
+    else:
+        if kind == "sketchfab_zip":
+            print(
+                "         No diffuse URL provided (will look for textures in Sketchfab ZIP)"
+            )
+        else:
+            print("         No diffuse URL provided")
+
     if diffuse_url and diffuse_filename:
         dname = os.path.basename(str(diffuse_filename).replace("\\", "/"))
         dpath = os.path.join(DOWNLOADS_DIR, dname)
         try:
-            print(f"Downloading diffuse texture: {diffuse_url} -> {dpath}")
+            print(f"         Downloading diffuse: {diffuse_url} -> {dpath}")
             _relay_stream_download(diffuse_url, dpath)
         except Exception as e:
             return {"success": False, "error": f"Diffuse download failed: {e}"}
@@ -446,8 +430,65 @@ def handle_relay_download_command(cmd):
                 )
             except Exception as tex_e:
                 print(f"         Sketchfab relay: diffuse copy skipped: {tex_e}")
+        else:
+            fb_candidates = []
+            for ext in tex_exts:
+                for path in glob.glob(
+                    os.path.join(extract_dir, "**", "*" + ext), recursive=True
+                ):
+                    rel = path.replace("\\", "/").lower()
+                    if "__macosx" in rel:
+                        continue
+                    base = os.path.basename(rel)
+                    if any(t in base for t in skip_tokens):
+                        continue
+                    try:
+                        sz = os.path.getsize(path)
+                    except OSError:
+                        sz = 0
+                    fb_candidates.append((-sz, path))
+            if fb_candidates:
+                fb_candidates.sort()
+                src_tex = fb_candidates[0][1]
+                _, tex_ext = os.path.splitext(src_tex)
+                tex_ext = (tex_ext or ".png").lower()
+                dest_tex = os.path.join(DOWNLOADS_DIR, f"{import_stem}_diffuse{tex_ext}")
+                try:
+                    shutil.copy2(src_tex, dest_tex)
+                    print(
+                        f"         Sketchfab relay copied fallback texture: {src_tex} -> {dest_tex}"
+                    )
+                except Exception as tex_e:
+                    print(f"         Sketchfab relay: fallback texture copy skipped: {tex_e}")
 
-    return {"success": True, "result": {"relay_download": "ok", "kind": kind}}
+    def _safe_size(p):
+        try:
+            return os.path.getsize(p)
+        except OSError:
+            return 0
+
+    result = {"relay_download": "ok", "kind": kind}
+    result["primary_bytes"] = _safe_size(primary_path)
+    result["total_bytes"] = result["primary_bytes"]
+    if diffuse_url and diffuse_filename:
+        dname = os.path.basename(str(diffuse_filename).replace("\\", "/"))
+        dpath = os.path.join(DOWNLOADS_DIR, dname)
+        dz = _safe_size(dpath)
+        result["diffuse_bytes"] = dz
+        result["total_bytes"] = result["primary_bytes"] + dz
+    if kind == "sketchfab_zip":
+        stem = ctx.get("import_stem") or os.path.splitext(primary_name)[0]
+        for ext in (".glb", ".fbx", ".obj"):
+            mp = os.path.join(DOWNLOADS_DIR, f"{stem}_model{ext}")
+            if os.path.isfile(mp):
+                result["relay_model_bytes"] = _safe_size(mp)
+                break
+        for ext in (".png", ".jpg", ".jpeg", ".webp", ".tga"):
+            tp = os.path.join(DOWNLOADS_DIR, f"{stem}_diffuse{ext}")
+            if os.path.isfile(tp):
+                result["relay_diffuse_on_disk_bytes"] = _safe_size(tp)
+                break
+    return {"success": True, "result": result}
 
 
 def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
@@ -637,9 +678,8 @@ def poll_commands():
                         )
                         FORCE_HEARTBEAT_UE5_CONNECTED = True
                         try:
-                            ue5_result = execute_import_in_ue5_with_retry(
-                                code, timeout=import_timeout
-                            )
+                            # Single attempt only — retries queue duplicate imports and crash UE5.
+                            ue5_result = execute_in_ue5(code, timeout=import_timeout)
                         finally:
                             FORCE_HEARTBEAT_UE5_CONNECTED = False
                     else:
@@ -683,14 +723,39 @@ def poll_commands():
                                 parsed,
                             )
                 else:
-                    print(f"         Error: {ue5_result['error']}")
-                    supabase.table("ue5_commands").update(
-                        {
-                            "status": "error",
-                            "error_log": ue5_result["error"],
-                            "executed_at": completed_at,
-                        }
-                    ).eq("id", cmd_id).execute()
+                    if cmd_type == "import" and _is_timeout_result(ue5_result):
+                        print(
+                            "         Import sent to UE5, it may take a few minutes to complete"
+                        )
+                        print(
+                            f"         (HTTP timeout; not retrying — import may still be running): {ue5_result.get('error')}"
+                        )
+                        supabase.table("ue5_commands").update(
+                            {
+                                "status": "success",
+                                "result": json.dumps(
+                                    {
+                                        "import_http_timeout": True,
+                                        "message": "Import sent to UE5, it may take a few minutes to complete",
+                                        "http_error": ue5_result.get("error"),
+                                    }
+                                ),
+                                "executed_at": completed_at,
+                            }
+                        ).eq("id", cmd_id).execute()
+                        print(
+                            "         Waiting 5s after import timeout ack before next command…"
+                        )
+                        time.sleep(5)
+                    else:
+                        print(f"         Error: {ue5_result['error']}")
+                        supabase.table("ue5_commands").update(
+                            {
+                                "status": "error",
+                                "error_log": ue5_result["error"],
+                                "executed_at": completed_at,
+                            }
+                        ).eq("id", cmd_id).execute()
                 # Post-scan: after EVERY command (success or error), check for scan JSON and upload.
                 upload_scan_results_if_present(project_id)
 

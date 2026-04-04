@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Box,
@@ -24,6 +24,7 @@ import {
   TreePine,
   ExternalLink,
   ScanSearch,
+  X,
 } from "lucide-react";
 import type { AssetEntry } from "@/lib/ue5/assetLibrary";
 import { diffuseFileExtensionFromUrl, generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
@@ -74,9 +75,49 @@ const TEMPLATES = Object.entries(SCENE_TEMPLATES).map(([key, t]) => ({
 
 const UE5_COMMAND_POLL_MS = 2000;
 
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  const d = i === 0 || v >= 10 ? 0 : 1;
+  return `${v.toFixed(d)} ${units[i]}`;
+}
+
+function bytesLabelFromCommandResult(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+  const o = result as Record<string, unknown>;
+  const t = o.total_bytes ?? o.primary_bytes;
+  if (typeof t === "number" && t > 0) return formatBytes(t);
+  return null;
+}
+
+function estimateCommandProgress(
+  phase: "download" | "import",
+  status: string,
+  phaseStartMs: number
+): number {
+  const elapsed = Date.now() - phaseStartMs;
+  if (phase === "download") {
+    if (status === "pending") return 10;
+    if (status === "executing") return Math.min(44, 12 + elapsed / 400);
+    if (status === "success") return 48;
+    return 5;
+  }
+  if (status === "pending") return 52;
+  if (status === "executing") return Math.min(94, 56 + elapsed / 700);
+  if (status === "success") return 100;
+  return 50;
+}
+
 async function fetchUe5CommandStatus(commandId: string): Promise<{
   status: string;
   error_log?: string | null;
+  result?: unknown;
 }> {
   const res = await fetch(`/api/ue5/command-status?id=${encodeURIComponent(commandId)}`, {
     credentials: "include",
@@ -85,24 +126,48 @@ async function fetchUe5CommandStatus(commandId: string): Promise<{
     error?: string;
     status?: string;
     error_log?: string | null;
+    result?: unknown;
   };
   if (!res.ok) {
     throw new Error(data?.error ?? `HTTP ${res.status}`);
   }
-  return { status: data.status ?? "unknown", error_log: data.error_log };
+  return {
+    status: data.status ?? "unknown",
+    error_log: data.error_log,
+    result: data.result,
+  };
 }
 
-async function waitUe5CommandTerminal(commandId: string): Promise<"success" | "error"> {
+async function pollUe5CommandUntilTerminal(
+  commandId: string,
+  phase: "download" | "import",
+  onTick: (args: { status: string; progress: number; result?: unknown }) => void
+): Promise<"success" | "error"> {
+  const t0 = Date.now();
   for (;;) {
-    const { status } = await fetchUe5CommandStatus(commandId);
-    if (status === "success" || status === "error") {
-      return status;
+    const row = await fetchUe5CommandStatus(commandId);
+    const progress = estimateCommandProgress(phase, row.status, t0);
+    onTick({ status: row.status, progress, result: row.result });
+    if (row.status === "success" || row.status === "error") {
+      return row.status;
     }
     await new Promise((r) => setTimeout(r, UE5_COMMAND_POLL_MS));
   }
 }
 
 type TabId = "polyhaven" | "sketchfab" | "templates" | "scene" | "history" | "aigenerator";
+
+type ImportToastPhase = "download" | "import" | "complete" | "error";
+
+type ImportProgressToastState = {
+  id: string;
+  title: string;
+  thumbnailUrl: string | null;
+  progress: number;
+  statusLine: string;
+  bytesLine: string | null;
+  phase: ImportToastPhase;
+};
 
 interface PHResult {
   id: string;
@@ -182,6 +247,10 @@ export function WorkspacePanel({
   const [sfDownloading, setSfDownloading] = useState<string | null>(null);
   const [sfImportPhaseLabel, setSfImportPhaseLabel] = useState<string | null>(null);
   const [sfImportedId, setSfImportedId] = useState<string | null>(null);
+
+  const [importProgressToast, setImportProgressToast] = useState<ImportProgressToastState | null>(null);
+  const importToastDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const importInFlightRef = useRef<Set<string>>(new Set());
 
   // Recent imports (from ue5_import_assets) for badges + UE path
   const [importResults, setImportResults] = useState<ImportResultRow[]>([]);
@@ -266,124 +335,221 @@ export function WorkspacePanel({
     setPhLoading(false);
   }, [phQuery, phSubTab]);
 
-  const downloadPolyHaven = useCallback(async (assetId: string, type: string, displayName: string) => {
-    console.log(
-      `IMPORT CLICKED: model=${displayName}, id=${assetId}, generating code… projectId=${projectId ?? "(missing)"}`
-    );
-    setPhDownloading(assetId);
-    setPhImportPhaseLabel("Downloading model…");
-    const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
-    try {
-      const res = await fetch("/api/polyhaven/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ assetId, type: requestType, projectId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const reason = data?.error ?? `HTTP ${res.status}`;
-        console.error("[Import Poly Haven] Download API error:", reason, data);
-        if (data?.limitReached) onLimitReached?.(reason);
-        else toast.error(`Import failed: ${reason}`);
-        return;
-      }
-      if (!data.url) {
-        const reason = data?.error ?? "No URL in response";
-        console.error("[Import Poly Haven] No url in response:", data);
-        toast.error(`Import failed: ${reason}`);
-        return;
-      }
-      const ext = "fbx";
-      const filename = `${assetId.replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
-      const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const destinationName = assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label;
-      const diffuseExt =
-        typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
-          ? diffuseFileExtensionFromUrl(data.diffuseUrl)
-          : "jpg";
-      const diffuseFilename =
-        typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
-          ? `${destinationName}_diffuse.${diffuseExt}`
-          : undefined;
-      let code: string;
-      try {
-        code = generateUE5ImportCode(data.url, filename, label, {
-          traceAssetId: assetId,
-          destinationName,
-          diffuseDiskFilename: diffuseFilename,
-        });
-      } catch (e) {
-        console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
-        toast.error("Import failed: could not generate import code");
-        return;
-      }
-      const execRes = await fetch("/api/ue5/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          projectId,
-          code,
-          commandType: "import",
-          relayDownload: {
-            kind: "polyhaven_fbx",
-            url: data.url,
-            filename,
-            diffuseUrl: data.diffuseUrl,
-            diffuseFilename,
-          },
-          importContext: {
-            source_provider: "polyhaven",
-            source_url: data.url,
-            file_type: ext,
-          },
-        }),
-      });
-      const execData = await execRes.json().catch(() => ({}));
-      if (execData.commandId) {
-        console.log(
-          `COMMAND QUEUED: import=${execData.commandId} download=${execData.downloadCommandId ?? "(none)"}`
-        );
-      }
-      if (!execRes.ok || !execData.commandId) {
-        const reason = execData?.error ?? `HTTP ${execRes.status}`;
-        console.error("[Import Poly Haven] UE5 execute error:", reason, execData);
-        toast.error(`Import failed: ${reason}`);
-        return;
-      }
-      const downloadId = execData.downloadCommandId as string | undefined;
-      const importId = execData.commandId as string;
-      if (!downloadId) {
-        toast.error("Import failed: relay did not queue a download command");
-        return;
-      }
-      setPhImportPhaseLabel("Downloading model…");
-      const dlStatus = await waitUe5CommandTerminal(downloadId);
-      if (dlStatus === "error") {
-        toast.error("Downloading model failed (check relay is running)");
-        return;
-      }
-      setPhImportPhaseLabel("Importing to UE5…");
-      const imStatus = await waitUe5CommandTerminal(importId);
-      if (imStatus === "error") {
-        toast.error("UE5 import failed");
-        return;
-      }
-      setPhImportPhaseLabel("Done!");
-      const name = displayName || assetId.replace(/_/g, " ");
-      toast.success(`${name} imported to UE5!`);
-      setPhImportedId(assetId);
-      setTimeout(() => setPhImportedId(null), 3000);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      console.error("[Import Poly Haven] Error:", e);
-      toast.error(`Import failed: ${message}`);
-    } finally {
-      setPhDownloading(null);
-      setPhImportPhaseLabel(null);
+  const dismissImportProgressToast = useCallback(() => {
+    if (importToastDismissRef.current) {
+      clearTimeout(importToastDismissRef.current);
+      importToastDismissRef.current = null;
     }
-  }, [projectId, onLimitReached]);
+    setImportProgressToast(null);
+  }, []);
+
+  const downloadPolyHaven = useCallback(
+    async (assetId: string, type: string, displayName: string, thumbnailUrl?: string | null) => {
+      const guardKey = `poly:${assetId}`;
+      if (importInFlightRef.current.has(guardKey)) {
+        console.warn("[Import] Already in progress for Poly Haven asset:", assetId);
+        return;
+      }
+      importInFlightRef.current.add(guardKey);
+      console.log(
+        `IMPORT CLICKED: model=${displayName}, id=${assetId}, generating code… projectId=${projectId ?? "(missing)"}`
+      );
+      setPhDownloading(assetId);
+      setPhImportPhaseLabel("Downloading model…");
+      const requestType = type === "hdris" ? "hdri" : type === "textures" ? "texture" : "model";
+      const toastId = `poly-${assetId}-${Date.now()}`;
+      const thumb =
+        thumbnailUrl ??
+        `https://cdn.polyhaven.com/asset_img/thumbs/${encodeURIComponent(assetId)}.png?width=256`;
+      try {
+        const res = await fetch("/api/polyhaven/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ assetId, type: requestType, projectId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const reason = data?.error ?? `HTTP ${res.status}`;
+          console.error("[Import Poly Haven] Download API error:", reason, data);
+          if (data?.limitReached) onLimitReached?.(reason);
+          else toast.error(`Import failed: ${reason}`);
+          return;
+        }
+        if (!data.url) {
+          const reason = data?.error ?? "No URL in response";
+          console.error("[Import Poly Haven] No url in response:", data);
+          toast.error(`Import failed: ${reason}`);
+          return;
+        }
+        const ext = "fbx";
+        const filename = `${assetId.replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
+        const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const destinationName = assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label;
+        const diffuseExt =
+          typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
+            ? diffuseFileExtensionFromUrl(data.diffuseUrl)
+            : "jpg";
+        const diffuseFilename =
+          typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
+            ? `${destinationName}_diffuse.${diffuseExt}`
+            : undefined;
+        let code: string;
+        try {
+          code = generateUE5ImportCode(data.url, filename, label, {
+            traceAssetId: assetId,
+            destinationName,
+            diffuseDiskFilename: diffuseFilename,
+          });
+        } catch (e) {
+          console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
+          toast.error("Import failed: could not generate import code");
+          return;
+        }
+        const execRes = await fetch("/api/ue5/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            projectId,
+            code,
+            commandType: "import",
+            relayDownload: {
+              kind: "polyhaven_fbx",
+              url: data.url,
+              filename,
+              diffuseUrl: data.diffuseUrl,
+              diffuseFilename,
+            },
+            importContext: {
+              source_provider: "polyhaven",
+              source_url: data.url,
+              file_type: ext,
+            },
+          }),
+        });
+        const execData = await execRes.json().catch(() => ({}));
+        if (execData.commandId) {
+          console.log(
+            `COMMAND QUEUED: import=${execData.commandId} download=${execData.downloadCommandId ?? "(none)"}`
+          );
+        }
+        if (!execRes.ok || !execData.commandId) {
+          const reason = execData?.error ?? `HTTP ${execRes.status}`;
+          console.error("[Import Poly Haven] UE5 execute error:", reason, execData);
+          toast.error(`Import failed: ${reason}`);
+          return;
+        }
+        const downloadId = execData.downloadCommandId as string | undefined;
+        const importId = execData.commandId as string;
+        if (!downloadId) {
+          toast.error("Import failed: relay did not queue a download command");
+          return;
+        }
+
+        if (importToastDismissRef.current) {
+          clearTimeout(importToastDismissRef.current);
+          importToastDismissRef.current = null;
+        }
+        setImportProgressToast({
+          id: toastId,
+          title: displayName || assetId.replace(/_/g, " "),
+          thumbnailUrl: thumb,
+          progress: 8,
+          statusLine: "Downloading…",
+          bytesLine: null,
+          phase: "download",
+        });
+
+        let lastDlResult: unknown;
+        const dlStatus = await pollUe5CommandUntilTerminal(downloadId, "download", ({ progress, result }) => {
+          lastDlResult = result;
+          const bl = bytesLabelFromCommandResult(result);
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? {
+                  ...prev,
+                  progress,
+                  statusLine: bl ? `Downloading ${bl}…` : "Downloading…",
+                  bytesLine: bl ?? prev.bytesLine,
+                }
+              : prev
+          );
+          setPhImportPhaseLabel("Downloading model…");
+        });
+        if (dlStatus === "error") {
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? { ...prev, phase: "error", progress: 0, statusLine: "Download failed" }
+              : prev
+          );
+          toast.error("Downloading model failed (check relay is running)");
+          return;
+        }
+        const dlBytes = bytesLabelFromCommandResult(lastDlResult);
+        setImportProgressToast((prev) =>
+          prev && prev.id === toastId
+            ? {
+                ...prev,
+                progress: 52,
+                phase: "import",
+                statusLine: "Importing to UE5…",
+                bytesLine: dlBytes ?? prev.bytesLine,
+              }
+            : prev
+        );
+        setPhImportPhaseLabel("Importing to UE5…");
+        const imStatus = await pollUe5CommandUntilTerminal(importId, "import", ({ progress }) => {
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? {
+                  ...prev,
+                  progress: Math.max(prev.progress, progress),
+                  statusLine: "Importing to UE5…",
+                }
+              : prev
+          );
+          setPhImportPhaseLabel("Importing to UE5…");
+        });
+        if (imStatus === "error") {
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? { ...prev, phase: "error", statusLine: "UE5 import failed" }
+              : prev
+          );
+          toast.error("UE5 import failed");
+          return;
+        }
+        setImportProgressToast((prev) =>
+          prev && prev.id === toastId
+            ? { ...prev, phase: "complete", progress: 100, statusLine: "Complete!" }
+            : prev
+        );
+        setPhImportPhaseLabel("Done!");
+        setPhImportedId(assetId);
+        setTimeout(() => setPhImportedId(null), 3000);
+        if (importToastDismissRef.current) clearTimeout(importToastDismissRef.current);
+        importToastDismissRef.current = setTimeout(() => {
+          setImportProgressToast((prev) => (prev?.id === toastId ? null : prev));
+          importToastDismissRef.current = null;
+        }, 5000);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.error("[Import Poly Haven] Error:", e);
+        toast.error(`Import failed: ${message}`);
+        setImportProgressToast((prev) =>
+          prev && prev.id === toastId
+            ? { ...prev, phase: "error", statusLine: "Import failed" }
+            : prev
+        );
+      } finally {
+        importInFlightRef.current.delete(guardKey);
+        setPhDownloading(null);
+        setPhImportPhaseLabel(null);
+      }
+    },
+    [projectId, onLimitReached]
+  );
 
   // Sketchfab search
   const searchSketchfab = useCallback(async () => {
@@ -403,110 +569,197 @@ export function WorkspacePanel({
     setSfLoading(false);
   }, [sfQuery]);
 
-  const downloadSketchfab = useCallback(async (uid: string, name: string) => {
-    console.log(
-      `IMPORT CLICKED: model=${name}, id=${uid}, generating code… projectId=${projectId ?? "(missing)"}`
-    );
-    setSfDownloading(uid);
-    setSfImportPhaseLabel("Downloading model…");
-    try {
-      const res = await fetch("/api/sketchfab/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ uid, projectId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const reason = data?.error ?? `HTTP ${res.status}`;
-        console.error("[Import Sketchfab] Download API error:", reason, data);
-        if (data?.limitReached) onLimitReached?.(reason);
-        else toast.error(`Import failed: ${reason}`);
+  const downloadSketchfab = useCallback(
+    async (uid: string, name: string, thumbnailUrl?: string | null) => {
+      const guardKey = `sf:${uid}`;
+      if (importInFlightRef.current.has(guardKey)) {
+        console.warn("[Import] Already in progress for Sketchfab model:", uid);
         return;
       }
-      if (!data.url) {
-        const reason = data?.error ?? "No URL in response";
-        console.error("[Import Sketchfab] No url in response:", data);
-        toast.error(`Import failed: ${reason}`);
-        return;
-      }
-      const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
-      const importStem = `sf_${uid}`;
-      let code: string;
-      try {
-        code = generateSketchfabLocalImportCode(importStem, label, {
-          traceAssetId: uid,
-          destinationName: importStem,
-        });
-      } catch (e) {
-        console.error("[Import Sketchfab] generateSketchfabLocalImportCode failed:", e);
-        toast.error("Import failed: could not generate import code");
-        return;
-      }
-      const execRes = await fetch("/api/ue5/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          projectId,
-          code,
-          commandType: "import",
-          relayDownload: {
-            kind: "sketchfab_zip",
-            url: data.url,
-            filename: `${uid}.zip`,
-            importStem,
-          },
-          importContext: {
-            source_provider: "sketchfab",
-            source_url: data.url,
-            file_type: "zip",
-          },
-        }),
-      });
-      const execData = await execRes.json().catch(() => ({}));
-      if (execData.commandId) {
-        console.log(
-          `COMMAND QUEUED: import=${execData.commandId} download=${execData.downloadCommandId ?? "(none)"}`
-        );
-      }
-      if (!execRes.ok || !execData.commandId) {
-        const reason = execData?.error ?? `HTTP ${execRes.status}`;
-        console.error("[Import Sketchfab] UE5 execute error:", reason, execData);
-        toast.error(`Import failed: ${reason}`);
-        return;
-      }
-      const downloadId = execData.downloadCommandId as string | undefined;
-      const importId = execData.commandId as string;
-      if (!downloadId) {
-        toast.error("Import failed: relay did not queue a download command");
-        return;
-      }
+      importInFlightRef.current.add(guardKey);
+      console.log(
+        `IMPORT CLICKED: model=${name}, id=${uid}, generating code… projectId=${projectId ?? "(missing)"}`
+      );
+      setSfDownloading(uid);
       setSfImportPhaseLabel("Downloading model…");
-      const dlStatus = await waitUe5CommandTerminal(downloadId);
-      if (dlStatus === "error") {
-        toast.error("Downloading model failed (check relay is running)");
-        return;
+      const toastId = `sf-${uid}-${Date.now()}`;
+      try {
+        const res = await fetch("/api/sketchfab/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ uid, projectId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const reason = data?.error ?? `HTTP ${res.status}`;
+          console.error("[Import Sketchfab] Download API error:", reason, data);
+          if (data?.limitReached) onLimitReached?.(reason);
+          else toast.error(`Import failed: ${reason}`);
+          return;
+        }
+        if (!data.url) {
+          const reason = data?.error ?? "No URL in response";
+          console.error("[Import Sketchfab] No url in response:", data);
+          toast.error(`Import failed: ${reason}`);
+          return;
+        }
+        const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
+        const importStem = `sf_${uid}`;
+        let code: string;
+        try {
+          code = generateSketchfabLocalImportCode(importStem, label, {
+            traceAssetId: uid,
+            destinationName: importStem,
+          });
+        } catch (e) {
+          console.error("[Import Sketchfab] generateSketchfabLocalImportCode failed:", e);
+          toast.error("Import failed: could not generate import code");
+          return;
+        }
+        const execRes = await fetch("/api/ue5/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            projectId,
+            code,
+            commandType: "import",
+            relayDownload: {
+              kind: "sketchfab_zip",
+              url: data.url,
+              filename: `${uid}.zip`,
+              importStem,
+            },
+            importContext: {
+              source_provider: "sketchfab",
+              source_url: data.url,
+              file_type: "zip",
+            },
+          }),
+        });
+        const execData = await execRes.json().catch(() => ({}));
+        if (execData.commandId) {
+          console.log(
+            `COMMAND QUEUED: import=${execData.commandId} download=${execData.downloadCommandId ?? "(none)"}`
+          );
+        }
+        if (!execRes.ok || !execData.commandId) {
+          const reason = execData?.error ?? `HTTP ${execRes.status}`;
+          console.error("[Import Sketchfab] UE5 execute error:", reason, execData);
+          toast.error(`Import failed: ${reason}`);
+          return;
+        }
+        const downloadId = execData.downloadCommandId as string | undefined;
+        const importId = execData.commandId as string;
+        if (!downloadId) {
+          toast.error("Import failed: relay did not queue a download command");
+          return;
+        }
+
+        if (importToastDismissRef.current) {
+          clearTimeout(importToastDismissRef.current);
+          importToastDismissRef.current = null;
+        }
+        setImportProgressToast({
+          id: toastId,
+          title: name,
+          thumbnailUrl: thumbnailUrl ?? null,
+          progress: 8,
+          statusLine: "Downloading…",
+          bytesLine: null,
+          phase: "download",
+        });
+
+        let lastDlResult: unknown;
+        const dlStatus = await pollUe5CommandUntilTerminal(downloadId, "download", ({ progress, result }) => {
+          lastDlResult = result;
+          const bl = bytesLabelFromCommandResult(result);
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? {
+                  ...prev,
+                  progress,
+                  statusLine: bl ? `Downloading ${bl}…` : "Downloading…",
+                  bytesLine: bl ?? prev.bytesLine,
+                }
+              : prev
+          );
+          setSfImportPhaseLabel("Downloading model…");
+        });
+        if (dlStatus === "error") {
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? { ...prev, phase: "error", progress: 0, statusLine: "Download failed" }
+              : prev
+          );
+          toast.error("Downloading model failed (check relay is running)");
+          return;
+        }
+        const dlBytes = bytesLabelFromCommandResult(lastDlResult);
+        setImportProgressToast((prev) =>
+          prev && prev.id === toastId
+            ? {
+                ...prev,
+                progress: 52,
+                phase: "import",
+                statusLine: "Importing to UE5…",
+                bytesLine: dlBytes ?? prev.bytesLine,
+              }
+            : prev
+        );
+        setSfImportPhaseLabel("Importing to UE5…");
+        const imStatus = await pollUe5CommandUntilTerminal(importId, "import", ({ progress }) => {
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? {
+                  ...prev,
+                  progress: Math.max(prev.progress, progress),
+                  statusLine: "Importing to UE5…",
+                }
+              : prev
+          );
+          setSfImportPhaseLabel("Importing to UE5…");
+        });
+        if (imStatus === "error") {
+          setImportProgressToast((prev) =>
+            prev && prev.id === toastId
+              ? { ...prev, phase: "error", statusLine: "UE5 import failed" }
+              : prev
+          );
+          toast.error("UE5 import failed");
+          return;
+        }
+        setImportProgressToast((prev) =>
+          prev && prev.id === toastId
+            ? { ...prev, phase: "complete", progress: 100, statusLine: "Complete!" }
+            : prev
+        );
+        setSfImportPhaseLabel("Done!");
+        setSfImportedId(uid);
+        setTimeout(() => setSfImportedId(null), 3000);
+        if (importToastDismissRef.current) clearTimeout(importToastDismissRef.current);
+        importToastDismissRef.current = setTimeout(() => {
+          setImportProgressToast((prev) => (prev?.id === toastId ? null : prev));
+          importToastDismissRef.current = null;
+        }, 5000);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.error("[Import Sketchfab] Error:", e);
+        toast.error(`Import failed: ${message}`);
+        setImportProgressToast((prev) =>
+          prev && prev.id === toastId
+            ? { ...prev, phase: "error", statusLine: "Import failed" }
+            : prev
+        );
+      } finally {
+        importInFlightRef.current.delete(guardKey);
+        setSfDownloading(null);
+        setSfImportPhaseLabel(null);
       }
-      setSfImportPhaseLabel("Importing to UE5…");
-      const imStatus = await waitUe5CommandTerminal(importId);
-      if (imStatus === "error") {
-        toast.error("UE5 import failed");
-        return;
-      }
-      setSfImportPhaseLabel("Done!");
-      toast.success(`${name} imported to UE5!`);
-      setSfImportedId(uid);
-      setTimeout(() => setSfImportedId(null), 3000);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      console.error("[Import Sketchfab] Error:", e);
-      toast.error(`Import failed: ${message}`);
-    } finally {
-      setSfDownloading(null);
-      setSfImportPhaseLabel(null);
-    }
-  }, [projectId, onLimitReached]);
+    },
+    [projectId, onLimitReached]
+  );
 
   const handleAiGenerate = useCallback(async () => {
     if (!aiPrompt.trim()) return;
@@ -610,6 +863,7 @@ export function WorkspacePanel({
   }, [scannedAssets, scanSearch]);
 
   return (
+    <>
     <div className="flex flex-col h-full bg-[#0A0A0B] border-r border-white/5">
       {/* Tab Bar */}
       <div className="flex items-center border-b border-white/5 px-1 shrink-0 overflow-x-auto scrollbar-thin">
@@ -804,7 +1058,8 @@ export function WorkspacePanel({
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          if (phSubTab === "models") downloadPolyHaven(r.id, phSubTab, r.name || r.id.replace(/_/g, " "));
+                          if (phSubTab === "models")
+                            downloadPolyHaven(r.id, phSubTab, r.name || r.id.replace(/_/g, " "), r.thumbnailUrl);
                         }}
                         disabled={phDownloading === r.id || phSubTab !== "models"}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
@@ -896,7 +1151,7 @@ export function WorkspacePanel({
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          downloadSketchfab(r.uid, r.name);
+                          downloadSketchfab(r.uid, r.name, r.thumbnailUrl);
                         }}
                         disabled={sfDownloading === r.uid}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2196F3] text-white text-[10px] font-semibold hover:bg-[#2196F3]/90 transition disabled:opacity-50 shrink-0"
@@ -1233,5 +1488,73 @@ export function WorkspacePanel({
         )}
       </div>
     </div>
+
+    {importProgressToast && (
+      <div
+        className="fixed top-4 right-4 z-[300] w-[min(calc(100vw-2rem),340px)] rounded-xl border border-white/10 bg-[#12121A] shadow-2xl shadow-black/50 p-3 flex gap-3"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="relative w-14 h-14 shrink-0 rounded-lg overflow-hidden bg-[#1A1A1F] border border-white/5">
+          {importProgressToast.thumbnailUrl ? (
+            <img
+              src={importProgressToast.thumbnailUrl}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Box className="w-6 h-6 text-[#606068]" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0 pt-0.5">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-white truncate pr-1">{importProgressToast.title}</p>
+            <button
+              type="button"
+              onClick={dismissImportProgressToast}
+              className="shrink-0 p-1 rounded-md text-[#A0A0A8] hover:text-white hover:bg-white/10 transition"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            {importProgressToast.phase === "complete" ? (
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : importProgressToast.phase === "error" ? (
+              <span className="w-4 h-4 rounded-full bg-red-500/80 shrink-0" />
+            ) : null}
+            <p
+              className={`text-xs ${
+                importProgressToast.phase === "error" ? "text-red-400" : "text-[#A0A0A8]"
+              }`}
+            >
+              {importProgressToast.statusLine}
+            </p>
+          </div>
+          {importProgressToast.bytesLine && importProgressToast.phase !== "error" && (
+            <p className="text-[10px] text-[#606068] mt-0.5">{importProgressToast.bytesLine}</p>
+          )}
+          <div className="h-1.5 mt-2 rounded-full bg-white/[0.08] overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+                importProgressToast.phase === "error"
+                  ? "bg-red-500/90"
+                  : importProgressToast.phase === "complete"
+                    ? "bg-emerald-500"
+                    : "bg-[#2196F3]"
+              }`}
+              style={{ width: `${Math.min(100, Math.max(0, importProgressToast.progress))}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-[#606068] mt-1 tabular-nums">
+            {Math.round(Math.min(100, Math.max(0, importProgressToast.progress)))}%
+          </p>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
