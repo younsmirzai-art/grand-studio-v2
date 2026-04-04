@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { askGrandStudioAIStream, isGreetingOrQuestion } from "@/lib/ai/grandStudioAI";
 import { handleAssetRequest, detectAssetImportRequest } from "@/lib/asset/assetRequestHandler";
-import { queueUE5Command } from "@/lib/ue5/commands";
+import { queueRelayDownloadThenImport, queueUE5Command } from "@/lib/ue5/commands";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
@@ -56,7 +56,15 @@ export async function POST(request: NextRequest) {
       const chatMessage = result
         ? result.chatMessage
         : "Couldn't find that model. Try a different search term or browse the Asset Library tabs.";
-      if (result) await queueUE5Command(projectId, result.importCode);
+      if (result?.relayDownload) {
+        const fn = result.relayDownload.filename.toLowerCase();
+        const fileType = fn.endsWith(".zip") ? "zip" : fn.split(".").pop() ?? "fbx";
+        await queueRelayDownloadThenImport(projectId, result.relayDownload, result.importCode, {
+          source_provider: result.platformUsed === "sketchfab" ? "sketchfab" : "polyhaven",
+          source_url: result.relayDownload.url,
+          file_type: fileType,
+        });
+      }
       await supabase.from("chat_turns").insert({
         project_id: projectId,
         agent_name: "Grand Studio",
@@ -127,7 +135,7 @@ export async function POST(request: NextRequest) {
 
             let assetImportCode = "";
             try {
-              const resolved = await resolveAssets(fullContent);
+              const resolved = await resolveAssets(fullContent, projectId);
               if (resolved.importCode) assetImportCode = resolved.importCode;
             } catch (e) {
               console.warn("[stream] Asset resolution failed:", e);

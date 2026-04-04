@@ -1,6 +1,12 @@
 import { getModelDownloadUrl } from "@/lib/polyhaven/client";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
-import { UE5_IMPORT_DESTINATION_PATH } from "@/lib/ue5/importCode";
+import { queueRelayDownloadCommand } from "@/lib/ue5/commands";
+import {
+  generateSketchfabLocalImportCode,
+  generateUE5ImportCode,
+} from "@/lib/ue5/importCode";
+import type { RelayDownloadContext } from "@/lib/ue5/relayDownload";
+import { waitForUE5CommandStatus } from "@/lib/ue5/relayDownload";
 
 const POLYHAVEN_RE = /\[POLYHAVEN_IMPORT:\s*([^\]]+)\]/g;
 const SKETCHFAB_RE = /\[SKETCHFAB_IMPORT:\s*([^\]]+)\]/g;
@@ -58,58 +64,27 @@ export function parseImportTags(aiResponse: string): AssetImportRequest[] {
   return imports;
 }
 
-export function generateImportPython(
-  imports: AssetImportRequest[],
-  storageUrls: Map<string, string>
-): string {
-  if (imports.length === 0) return "";
+function stripLeadingImportUnreal(code: string): string {
+  return code.replace(/^import unreal\n/, "");
+}
 
-  const destPy = UE5_IMPORT_DESTINATION_PATH.replace(/'/g, "\\'");
-
-  const lines: string[] = [
-    "# --- Asset imports from Poly Haven / Sketchfab ---",
-    "import unreal, urllib.request, os",
-    "",
-    "download_dir = 'C:/GrandStudio/Downloads'",
-    "os.makedirs(download_dir, exist_ok=True)",
-    "",
-  ];
-
-  for (const imp of imports) {
-    const key = imp.source === "polyhaven" ? imp.assetId : (imp.query ?? imp.assetId);
-    const url = storageUrls.get(key);
-    if (!url) continue;
-
-    const ext = meshExtensionFromDownloadUrl(url);
-    const filename = `${(imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_")}.${ext}`;
-    const localPath = `C:/GrandStudio/Downloads/${filename}`;
-    const destName = (imp.label ?? key).replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
-    const escapedUrl = url.replace(/'/g, "\\'");
-    const escapedLocal = localPath.replace(/'/g, "\\'");
-    const escapedDestName = destName.replace(/'/g, "\\'");
-
-    lines.push(
-      `# Import: ${imp.label ?? key}`,
-      `try:`,
-      `    local_file = '${escapedLocal}'`,
-      `    if not os.path.exists(local_file):`,
-      `        urllib.request.urlretrieve('${escapedUrl}', local_file)`,
-      `    task = unreal.AssetImportTask()`,
-      `    task.filename = local_file`,
-      `    task.destination_path = '${destPy}'`,
-      `    task.destination_name = '${escapedDestName}'`,
-      `    task.replace_existing = True`,
-      `    task.automated = True`,
-      `    task.save = True`,
-      `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
-      `    unreal.log('Imported ${escapedDestName}')`,
-      `except Exception as e:`,
-      `    unreal.log_warning(f'Import failed for ${imp.label ?? key}: {e}')`,
-      ``
-    );
+/** Wrap UE import snippets in try/except; indent under try. */
+export function combineLocalImportFragments(fragments: string[]): string {
+  if (fragments.length === 0) return "";
+  let out = "# --- Asset imports (files pre-downloaded by relay) ---\n";
+  for (let i = 0; i < fragments.length; i++) {
+    let frag = fragments[i].trimEnd();
+    if (i > 0) frag = stripLeadingImportUnreal(frag);
+    const lines = frag.split("\n");
+    out += "try:\n";
+    for (const line of lines) {
+      if (line.trim() === "") out += "\n";
+      else out += `    ${line}\n`;
+    }
+    out += "except Exception as _gs_e:\n";
+    out += "    unreal.log_warning(f'Import failed: {_gs_e}')\n\n";
   }
-
-  return lines.join("\n");
+  return out;
 }
 
 export function combineCodeWithImports(
@@ -143,16 +118,18 @@ export function stripImportTags(response: string): string {
 }
 
 /**
- * Resolves all asset import Tags in an AI response by fetching real download
- * URLs from Poly Haven / Sketchfab, then returns the combined UE5 import code.
+ * Resolves import tags, queues relay download(s), waits, then returns UE5 import code
+ * that only reads local files (no urllib in UE5).
  */
 export async function resolveAssets(
-  aiResponse: string
+  aiResponse: string,
+  projectId?: string
 ): Promise<ResolvedAssets> {
   const imports = parseImportTags(aiResponse);
   if (imports.length === 0) return { imports: [], importCode: "" };
 
   const storageUrls = new Map<string, string>();
+  const sketchfabUidByQuery = new Map<string, string>();
 
   const sfToken = process.env.SKETCHFAB_API_TOKEN ?? "";
 
@@ -168,8 +145,12 @@ export async function resolveAssets(
             token: sfToken,
           });
           if (results.length > 0 && sfToken) {
-            const dlUrl = await getSketchfabDownloadUrl(results[0].uid, sfToken);
-            if (dlUrl) storageUrls.set(imp.query, dlUrl);
+            const uid = results[0].uid;
+            const dlUrl = await getSketchfabDownloadUrl(uid, sfToken);
+            if (dlUrl) {
+              storageUrls.set(imp.query, dlUrl);
+              sketchfabUidByQuery.set(imp.query, uid);
+            }
           }
         }
       } catch (e) {
@@ -178,6 +159,71 @@ export async function resolveAssets(
     })
   );
 
-  const importCode = generateImportPython(imports, storageUrls);
+  if (!projectId) {
+    console.warn("[AssetResolver] No projectId — skipping relay downloads; no import code emitted");
+    return { imports, importCode: "" };
+  }
+
+  const downloadJobs: RelayDownloadContext[] = [];
+  const fragments: string[] = [];
+
+  for (const imp of imports) {
+    if (imp.source === "polyhaven") {
+      const url = storageUrls.get(imp.assetId);
+      if (!url) continue;
+      const destName =
+        (imp.label ?? imp.assetId).replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
+      const filename = `${imp.assetId.replace(/[^a-zA-Z0-9_-]/g, "_")}.fbx`;
+      downloadJobs.push({
+        kind: "polyhaven_fbx",
+        url,
+        filename,
+      });
+      fragments.push(
+        generateUE5ImportCode(url, filename, imp.label ?? imp.assetId, {
+          traceAssetId: imp.assetId,
+          destinationName: destName,
+        })
+      );
+    } else if (imp.source === "sketchfab" && imp.query) {
+      const url = storageUrls.get(imp.query);
+      const uid = sketchfabUidByQuery.get(imp.query);
+      if (!url || !uid) continue;
+      const importStem = `sf_${uid}`;
+      downloadJobs.push({
+        kind: "sketchfab_zip",
+        url,
+        filename: `${uid}.zip`,
+        importStem,
+      });
+      fragments.push(
+        generateSketchfabLocalImportCode(importStem, imp.label ?? "SF", {
+          traceAssetId: uid,
+          destinationName: importStem,
+        })
+      );
+    }
+  }
+
+  if (downloadJobs.length === 0) return { imports, importCode: "" };
+
+  const downloadIds: string[] = [];
+  try {
+    for (const job of downloadJobs) {
+      downloadIds.push(await queueRelayDownloadCommand(projectId, job));
+    }
+    for (const id of downloadIds) {
+      const st = await waitForUE5CommandStatus(id, 600_000);
+      if (st !== "success") {
+        console.warn("[AssetResolver] Relay download did not succeed:", id, st);
+        return { imports, importCode: "" };
+      }
+    }
+  } catch (e) {
+    console.warn("[AssetResolver] Relay download queue failed:", e);
+    return { imports, importCode: "" };
+  }
+
+  const importCode = combineLocalImportFragments(fragments);
   return { imports, importCode };
 }

@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     let processedResponse = rawResponse;
     let assetImportCode = "";
     try {
-      const resolved = await resolveAssets(rawResponse);
+      const resolved = await resolveAssets(rawResponse, projectId);
       if (resolved.importCode) {
         assetImportCode = resolved.importCode;
         console.log(`[BUILD EXECUTE] Resolved ${resolved.imports.length} asset imports`);
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     if (userPrompt && typeof userPrompt === "string") {
       try {
-        codeWithImports = await enrichCodeWithPolyHavenAssets(codeWithImports, userPrompt);
+        codeWithImports = await enrichCodeWithPolyHavenAssets(codeWithImports, userPrompt, projectId);
       } catch (e) {
         console.warn("[BUILD EXECUTE] Enrich failed:", e);
       }

@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { rateLimitExecute } from "@/lib/api/rateLimit";
-import { queueUE5Command, type ImportContext } from "@/lib/ue5/commands";
+import {
+  queueRelayDownloadThenImport,
+  queueUE5Command,
+  type ImportContext,
+  type RelayDownloadContext,
+} from "@/lib/ue5/commands";
 
 const DANGEROUS_PATTERNS = [
   "os.system",
@@ -30,6 +35,7 @@ export async function POST(request: NextRequest) {
     const rl = await rateLimitExecute(ip);
     if (rl.limited) return rl.response!;
 
+    const body = await request.json();
     const {
       projectId,
       code,
@@ -38,7 +44,17 @@ export async function POST(request: NextRequest) {
       submittedByName,
       commandType,
       importContext,
-    } = await request.json();
+      relayDownload: relayDownloadRaw,
+    } = body as {
+      projectId?: string;
+      code?: string;
+      agentName?: string;
+      submittedByEmail?: string;
+      submittedByName?: string;
+      commandType?: string;
+      importContext?: ImportContext;
+      relayDownload?: Record<string, unknown>;
+    };
 
     console.log(
       "[ue5/execute] POST",
@@ -79,6 +95,64 @@ export async function POST(request: NextRequest) {
     if (validation.errors.length > 0) {
       console.log("[ue5/execute] Code auto-fixed:", validation.errors);
       codeToRun = validation.fixedCode;
+    }
+
+    let relayDownload: RelayDownloadContext | null = null;
+    if (relayDownloadRaw && typeof relayDownloadRaw === "object") {
+      const k = relayDownloadRaw.kind;
+      if (k === "polyhaven_fbx" || k === "http_mesh" || k === "sketchfab_zip") {
+        relayDownload = {
+          kind: k,
+          url: String(relayDownloadRaw.url ?? ""),
+          filename: String(relayDownloadRaw.filename ?? ""),
+          diffuseUrl:
+            relayDownloadRaw.diffuseUrl != null && relayDownloadRaw.diffuseUrl !== ""
+              ? String(relayDownloadRaw.diffuseUrl)
+              : undefined,
+          diffuseFilename:
+            relayDownloadRaw.diffuseFilename != null && relayDownloadRaw.diffuseFilename !== ""
+              ? String(relayDownloadRaw.diffuseFilename)
+              : undefined,
+          importStem:
+            relayDownloadRaw.importStem != null && relayDownloadRaw.importStem !== ""
+              ? String(relayDownloadRaw.importStem)
+              : undefined,
+        };
+      }
+    }
+
+    if (relayDownload) {
+      if (!relayDownload.url || !relayDownload.filename) {
+        return NextResponse.json(
+          { error: "relayDownload requires url and filename" },
+          { status: 400 }
+        );
+      }
+      const ic =
+        importContext && typeof importContext === "object"
+          ? (importContext as ImportContext)
+          : undefined;
+      const { importCommandId } = await queueRelayDownloadThenImport(
+        projectId,
+        relayDownload,
+        codeToRun,
+        ic
+      );
+      const supabase = createServerClient();
+      await supabase.from("god_eye_log").insert({
+        project_id: projectId,
+        event_type: "execution",
+        agent_name: agentName ?? "System",
+        detail: `Relay download + import queued (${codeToRun.length} chars UE code)`,
+        ...(submittedByEmail && { user_email: submittedByEmail }),
+        ...(submittedByName && { user_name: submittedByName }),
+      });
+      return NextResponse.json({
+        success: true,
+        commandId: importCommandId,
+        message:
+          "Relay will download file(s) locally, then UE5 will import. Waiting for local relay…",
+      });
     }
 
     const queueOpts: {

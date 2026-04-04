@@ -26,7 +26,7 @@ import {
   ScanSearch,
 } from "lucide-react";
 import type { AssetEntry } from "@/lib/ue5/assetLibrary";
-import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
+import { diffuseFileExtensionFromUrl, generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
 import { SCENE_TEMPLATES } from "@/lib/ue5/sceneTemplates";
 import type { UE5Command, GodEyeEntry } from "@/lib/types";
 import { toast } from "sonner";
@@ -267,12 +267,21 @@ export function WorkspacePanel({
       const ext = "fbx";
       const filename = `${assetId.replace(/[^a-zA-Z0-9_-]/g, "_")}.${ext}`;
       const label = (displayName || assetId).replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const destinationName = assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label;
+      const diffuseExt =
+        typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
+          ? diffuseFileExtensionFromUrl(data.diffuseUrl)
+          : "jpg";
+      const diffuseFilename =
+        typeof data.diffuseUrl === "string" && data.diffuseUrl.length > 0
+          ? `${destinationName}_diffuse.${diffuseExt}`
+          : undefined;
       let code: string;
       try {
         code = generateUE5ImportCode(data.url, filename, label, {
           traceAssetId: assetId,
-          destinationName: assetId.replace(/[^a-zA-Z0-9_]/g, "_") || label,
-          textureUrl: typeof data.diffuseUrl === "string" ? data.diffuseUrl : undefined,
+          destinationName,
+          diffuseDiskFilename: diffuseFilename,
         });
       } catch (e) {
         console.error("[Import Poly Haven] generateUE5ImportCode failed:", e);
@@ -288,6 +297,13 @@ export function WorkspacePanel({
           projectId,
           code,
           commandType: "import",
+          relayDownload: {
+            kind: "polyhaven_fbx",
+            url: data.url,
+            filename,
+            diffuseUrl: data.diffuseUrl,
+            diffuseFilename,
+          },
           importContext: {
             source_provider: "polyhaven",
             source_url: data.url,
@@ -368,14 +384,15 @@ export function WorkspacePanel({
         return;
       }
       const label = name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_") || uid;
+      const importStem = `sf_${uid}`;
       let code: string;
       try {
-        code = generateSketchfabImportCode(data.url, `${uid}.zip`, label, {
+        code = generateSketchfabLocalImportCode(importStem, label, {
           traceAssetId: uid,
-          destinationName: `sf_${uid}`,
+          destinationName: importStem,
         });
       } catch (e) {
-        console.error("[Import Sketchfab] generateSketchfabImportCode failed:", e);
+        console.error("[Import Sketchfab] generateSketchfabLocalImportCode failed:", e);
         setSfDownloading(null);
         toast.error("Import failed: could not generate import code");
         return;
@@ -388,6 +405,12 @@ export function WorkspacePanel({
           projectId,
           code,
           commandType: "import",
+          relayDownload: {
+            kind: "sketchfab_zip",
+            url: data.url,
+            filename: `${uid}.zip`,
+            importStem,
+          },
           importContext: {
             source_provider: "sketchfab",
             source_url: data.url,

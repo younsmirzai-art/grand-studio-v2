@@ -1,6 +1,10 @@
 import { createServerClient } from "@/lib/supabase/server";
-import { queueUE5Command } from "@/lib/ue5/commands";
-import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
+import { queueRelayDownloadThenImport, queueUE5Command } from "@/lib/ue5/commands";
+import {
+  diffuseFileExtensionFromUrl,
+  generateSketchfabLocalImportCode,
+  generateUE5ImportCode,
+} from "@/lib/ue5/importCode";
 import { searchAssets as searchPolyHaven } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage as downloadPolyHavenModel } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
@@ -892,12 +896,36 @@ export async function buildScene(params: BuildSceneParams): Promise<{
           source: "our library (Poly Haven)",
         });
         const filename = `${job.polyId}_${curGlobal}.fbx`;
+        const diffuseExt =
+          polyBundle.diffuseUrl != null && polyBundle.diffuseUrl.length > 0
+            ? diffuseFileExtensionFromUrl(polyBundle.diffuseUrl)
+            : "jpg";
+        const diffuseFilename =
+          polyBundle.diffuseUrl != null && polyBundle.diffuseUrl.length > 0
+            ? `${destName}_diffuse.${diffuseExt}`
+            : undefined;
         const code = generateUE5ImportCode(polyBundle.meshUrl, filename, job.name, {
           traceAssetId: job.polyId,
           destinationName: destName,
-          textureUrl: polyBundle.diffuseUrl,
+          diffuseDiskFilename: diffuseFilename,
         });
-        cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+        const pair = await queueRelayDownloadThenImport(
+          projectId,
+          {
+            kind: "polyhaven_fbx",
+            url: polyBundle.meshUrl,
+            filename,
+            diffuseUrl: polyBundle.diffuseUrl ?? undefined,
+            diffuseFilename,
+          },
+          code,
+          {
+            source_provider: "polyhaven",
+            source_url: polyBundle.meshUrl,
+            file_type: "fbx",
+          }
+        );
+        cmdId = pair.importCommandId;
       } else if (job.source === "sketchfab" && job.sketchfabUid) {
         const token = process.env.SKETCHFAB_API_TOKEN;
         if (!token) continue;
@@ -911,11 +939,27 @@ export async function buildScene(params: BuildSceneParams): Promise<{
           source: "our library (Sketchfab)",
         });
         const zip = `sf_${job.sketchfabUid}_${curGlobal}.zip`;
-        const code = generateSketchfabImportCode(dl, zip, job.name, {
+        const importStem = `sf_${job.sketchfabUid}`;
+        const code = generateSketchfabLocalImportCode(importStem, job.name, {
           traceAssetId: job.sketchfabUid,
           destinationName: destName,
         });
-        cmdId = await queueUE5Command(projectId, code, { commandType: "import" });
+        const pair = await queueRelayDownloadThenImport(
+          projectId,
+          {
+            kind: "sketchfab_zip",
+            url: dl,
+            filename: zip,
+            importStem,
+          },
+          code,
+          {
+            source_provider: "sketchfab",
+            source_url: dl,
+            file_type: "zip",
+          }
+        );
+        cmdId = pair.importCommandId;
       } else {
         continue;
       }

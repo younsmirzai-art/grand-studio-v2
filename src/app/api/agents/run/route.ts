@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     let assetImportCode = "";
     try {
-      const resolved = await resolveAssets(rawResponse);
+      const resolved = await resolveAssets(rawResponse, projectId);
       if (resolved.importCode) assetImportCode = resolved.importCode;
     } catch (e) {
       console.warn("[/api/agents/run] Asset resolution failed:", e);

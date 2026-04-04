@@ -1,6 +1,6 @@
 /**
  * Resolve direct Poly Haven model download URL (no Supabase upload).
- * UE5 Python code downloads directly from this URL via urllib.request.urlretrieve.
+ * Resolves direct mesh URL for the relay / UE import pipeline (no Supabase file upload).
  */
 
 import { createClient } from "@supabase/supabase-js";

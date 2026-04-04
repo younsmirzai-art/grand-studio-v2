@@ -4,15 +4,24 @@
  */
 
 import { createServerClient } from "@/lib/supabase/server";
-import { queueUE5Command } from "@/lib/ue5/commands";
+import {
+  queueRelayDownloadThenImport,
+  queueUE5Command,
+  type ImportContext,
+} from "@/lib/ue5/commands";
 import { getInternalSiteUrl } from "@/lib/site/internalUrl";
 import { isRelayOnline } from "@/lib/ue5/relayStatus";
 import { searchAssets as searchPolyhavenDirect, type PolyHavenAsset } from "@/lib/polyhaven/client";
 import { searchModels as searchSketchfabDirect } from "@/lib/sketchfab/client";
-import { generateUE5ImportCode, generateSketchfabImportCode } from "@/lib/ue5/importCode";
+import {
+  diffuseFileExtensionFromUrl,
+  generateSketchfabLocalImportCode,
+  generateUE5ImportCode,
+} from "@/lib/ue5/importCode";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import type { ImportProgressEvent } from "@/lib/ai/agentImportTypes";
 import { pickQueriesForAction } from "@/lib/ai/assetResolver2-queries";
+import type { RelayDownloadContext } from "@/lib/ue5/relayDownload";
 
 const WAIT_AFTER_NORMAL_MS = 10000;
 const WAIT_AFTER_BUILDING_MS = 20000;
@@ -57,6 +66,26 @@ async function queueWithRelayCheck(projectId: string, code: string, commandType:
     return null;
   }
   return queueUE5Command(projectId, code, { commandType });
+}
+
+async function queueRelayImportWithCheck(
+  projectId: string,
+  download: RelayDownloadContext,
+  importCode: string,
+  importCtx: ImportContext
+): Promise<string | null> {
+  const relayReady = await waitForRelayOrTimeout();
+  if (!relayReady) {
+    console.warn("IMPORT: Relay disconnected after retries; skipping relay import");
+    return null;
+  }
+  const { importCommandId } = await queueRelayDownloadThenImport(
+    projectId,
+    download,
+    importCode,
+    importCtx
+  );
+  return importCommandId;
 }
 
 async function fetchPolyhavenSearchHttp(query: string, count: number): Promise<PolyHavenAsset[]> {
@@ -213,11 +242,36 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           await recordUsage(userId, "polyhaven_import");
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
           const filename = `${label}.fbx`;
+          const destName = pick.id.replace(/[^a-zA-Z0-9_]/g, "_");
+          const diffuseExt =
+            polyDl.diffuseUrl != null && polyDl.diffuseUrl.length > 0
+              ? diffuseFileExtensionFromUrl(polyDl.diffuseUrl)
+              : "jpg";
+          const diffuseFilename =
+            polyDl.diffuseUrl != null && polyDl.diffuseUrl.length > 0
+              ? `${destName}_diffuse.${diffuseExt}`
+              : undefined;
           const importCode = generateUE5ImportCode(polyDl.url, filename, label, {
             traceAssetId: pick.id,
-            textureUrl: polyDl.diffuseUrl,
+            destinationName: destName,
+            diffuseDiskFilename: diffuseFilename,
           });
-          const commandId = await queueWithRelayCheck(projectId, importCode, "import");
+          const commandId = await queueRelayImportWithCheck(
+            projectId,
+            {
+              kind: "polyhaven_fbx",
+              url: polyDl.url,
+              filename,
+              diffuseUrl: polyDl.diffuseUrl ?? undefined,
+              diffuseFilename,
+            },
+            importCode,
+            {
+              source_provider: "polyhaven",
+              source_url: polyDl.url,
+              file_type: "fbx",
+            }
+          );
           if (!commandId) continue;
           console.log("IMPORT: UE5 import code generated and queued");
           await onProgress?.({
@@ -264,11 +318,26 @@ export async function runSequentialLibraryImports(args: RunLibraryImportArgs): P
           usedSfUids.add(pick.uid);
           await recordUsage(userId, "sketchfab_import");
           const label = pick.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-          const importCode = generateSketchfabImportCode(downloadUrl, `${pick.uid}.zip`, label, {
+          const importStem = `sf_${pick.uid}`;
+          const importCode = generateSketchfabLocalImportCode(importStem, label, {
             traceAssetId: pick.uid,
-            destinationName: `sf_${pick.uid}`,
+            destinationName: importStem,
           });
-          const commandId = await queueWithRelayCheck(projectId, importCode, "import");
+          const commandId = await queueRelayImportWithCheck(
+            projectId,
+            {
+              kind: "sketchfab_zip",
+              url: downloadUrl,
+              filename: `${pick.uid}.zip`,
+              importStem,
+            },
+            importCode,
+            {
+              source_provider: "sketchfab",
+              source_url: downloadUrl,
+              file_type: "zip",
+            }
+          );
           if (!commandId) continue;
           console.log("IMPORT: UE5 import code generated and queued");
           await onProgress?.({

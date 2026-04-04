@@ -7,12 +7,15 @@ import { searchAssets } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { createServerClient } from "@/lib/supabase/server";
+import { combineLocalImportFragments } from "@/lib/ai/assetResolver";
 import {
-  buildPolyHavenDiffuseFollowUpPython,
+  diffuseFileExtensionFromUrl,
+  generateSketchfabLocalImportCode,
   generateUE5ImportCode,
-  generateSketchfabImportCode,
-  UE5_IMPORT_DESTINATION_PATH,
 } from "@/lib/ue5/importCode";
+import { queueRelayDownloadCommand } from "@/lib/ue5/commands";
+import type { RelayDownloadContext } from "@/lib/ue5/relayDownload";
+import { waitForUE5CommandStatus } from "@/lib/ue5/relayDownload";
 
 export interface AssetRequestResult {
   chatMessage: string;
@@ -20,6 +23,8 @@ export interface AssetRequestResult {
   assetName: string;
   /** Which platform was used for usage tracking. */
   platformUsed?: "polyhaven" | "sketchfab";
+  /** When set, callers should queue relay download before the import UE command. */
+  relayDownload?: RelayDownloadContext;
 }
 
 /** Detect if message is an asset import request and extract platform + query. */
@@ -183,33 +188,63 @@ export async function handleAssetRequest(
   }
 
   const label = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const importCode =
-    sourceLabel === "Sketchfab" && sketchfabUid
-      ? generateSketchfabImportCode(storageUrl, `${sketchfabUid}.zip`, label, {
-          traceAssetId: sketchfabUid,
-          destinationName: `sf_${sketchfabUid}`,
-        })
-      : (() => {
-          const stem = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
-          const filename = polyHavenAssetId ? `${stem}.fbx` : `${stem}.${storageUrl!.split("?")[0].toLowerCase().endsWith(".glb") ? "glb" : "fbx"}`;
-          return generateUE5ImportCode(
-            storageUrl!,
+  let importCode: string;
+  let relayDownload: RelayDownloadContext | undefined;
+
+  if (sourceLabel === "Sketchfab" && sketchfabUid) {
+    const importStem = `sf_${sketchfabUid}`;
+    relayDownload = {
+      kind: "sketchfab_zip",
+      url: storageUrl,
+      filename: `${sketchfabUid}.zip`,
+      importStem,
+    };
+    importCode = generateSketchfabLocalImportCode(importStem, label, {
+      traceAssetId: sketchfabUid,
+      destinationName: importStem,
+    });
+  } else {
+    const stem = assetName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = polyHavenAssetId
+      ? `${stem}.fbx`
+      : `${stem}.${storageUrl!.split("?")[0].toLowerCase().endsWith(".glb") ? "glb" : "fbx"}`;
+    const destName = polyHavenAssetId
+      ? polyHavenAssetId.replace(/[^a-zA-Z0-9_]/g, "_")
+      : stem.replace(/[^a-zA-Z0-9_]/g, "_");
+    const diffuseExt =
+      polyDiffuseUrl != null && polyDiffuseUrl.length > 0
+        ? diffuseFileExtensionFromUrl(polyDiffuseUrl)
+        : "jpg";
+    const diffuseFilename =
+      polyDiffuseUrl != null && polyDiffuseUrl.length > 0
+        ? `${destName}_diffuse.${diffuseExt}`
+        : undefined;
+    relayDownload =
+      polyHavenAssetId != null
+        ? {
+            kind: "polyhaven_fbx",
+            url: storageUrl,
             filename,
-            label,
-            polyHavenAssetId
-              ? {
-                  traceAssetId: polyHavenAssetId,
-                  destinationName: polyHavenAssetId.replace(/[^a-zA-Z0-9_]/g, "_"),
-                  textureUrl: polyDiffuseUrl,
-                }
-              : undefined
-          );
-        })();
+            diffuseUrl: polyDiffuseUrl ?? undefined,
+            diffuseFilename,
+          }
+        : {
+            kind: "http_mesh",
+            url: storageUrl,
+            filename,
+          };
+    importCode = generateUE5ImportCode(storageUrl, filename, label, {
+      traceAssetId: polyHavenAssetId ?? undefined,
+      destinationName: destName,
+      diffuseDiskFilename: diffuseFilename,
+    });
+  }
+
   const chatMessage = `Found ${assetName} in our library! Importing to your UE5 scene now… ✨`;
 
   const platformUsed = sourceLabel === "Poly Haven" ? "polyhaven" : sourceLabel === "Sketchfab" ? "sketchfab" : undefined;
   console.log("[handleAssetRequest] Success — returning chatMessage + importCode");
-  return { chatMessage, importCode, assetName, platformUsed };
+  return { chatMessage, importCode, assetName, platformUsed, relayDownload };
 }
 
 /** Keywords that suggest we should add Poly Haven assets when code uses BasicShapes. */
@@ -243,9 +278,11 @@ function usesOnlyBasicShapes(code: string): boolean {
  */
 export async function enrichCodeWithPolyHavenAssets(
   code: string,
-  userPrompt: string
+  userPrompt: string,
+  projectId?: string
 ): Promise<string> {
   if (!usesOnlyBasicShapes(code)) return code;
+  if (!projectId) return code;
 
   const lower = userPrompt.toLowerCase();
   const searchQueries = new Set<string>();
@@ -276,52 +313,44 @@ export async function enrichCodeWithPolyHavenAssets(
 
   if (imports.length === 0) return code;
 
-  const destPy = UE5_IMPORT_DESTINATION_PATH.replace(/'/g, "\\'");
-
-  const importLines: string[] = [
-    "# --- Auto-added Poly Haven assets ---",
-    "import unreal",
-    "import urllib.request",
-    "import os",
-    "",
-    "download_dir = 'C:/GrandStudio/Downloads'",
-    "os.makedirs(download_dir, exist_ok=True)",
-    "",
-  ];
-
+  const fragments: string[] = [];
   for (const imp of imports) {
-    const filename = `${imp.label}.fbx`;
-    const localPath = `C:/GrandStudio/Downloads/${filename}`;
     const destName = imp.label.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
-    const escapedUrl = imp.url.replace(/'/g, "\\'");
-    const escapedLocal = localPath.replace(/'/g, "\\'");
-    const escapedDest = destName.replace(/'/g, "\\'");
-    const diffusePy =
+    const safeLabel = imp.label.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const filename = `${safeLabel}.fbx`;
+    const diffuseExt =
       imp.diffuseUrl != null && imp.diffuseUrl.length > 0
-        ? buildPolyHavenDiffuseFollowUpPython(imp.diffuseUrl, destName)
-            .split("\n")
-            .map((line) => (line.trim() === "" ? "" : `    ${line}`))
-            .join("\n")
-        : "";
-    importLines.push(
-      `try:`,
-      `    urllib.request.urlretrieve('${escapedUrl}', '${escapedLocal}')`,
-      `    task = unreal.AssetImportTask()`,
-      `    task.filename = '${escapedLocal}'`,
-      `    task.destination_path = '${destPy}'`,
-      `    task.destination_name = '${escapedDest}'`,
-      `    task.replace_existing = True`,
-      `    task.automated = True`,
-      `    task.save = True`,
-      `    unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])`,
-      `    unreal.log('Imported ${escapedDest}')`,
-      ...(diffusePy ? [diffusePy] : []),
-      `except Exception as e:`,
-      `    unreal.log_warning(f'Poly Haven import failed: {e}')`,
-      ``
+        ? diffuseFileExtensionFromUrl(imp.diffuseUrl)
+        : "jpg";
+    const diffuseFilename =
+      imp.diffuseUrl != null && imp.diffuseUrl.length > 0
+        ? `${destName}_diffuse.${diffuseExt}`
+        : undefined;
+
+    try {
+      const dlId = await queueRelayDownloadCommand(projectId, {
+        kind: "polyhaven_fbx",
+        url: imp.url,
+        filename,
+        diffuseUrl: imp.diffuseUrl ?? undefined,
+        diffuseFilename,
+      });
+      const st = await waitForUE5CommandStatus(dlId, 600_000);
+      if (st !== "success") continue;
+    } catch (e) {
+      console.warn(`[enrichCode] Relay download failed for ${imp.label}:`, e);
+      continue;
+    }
+
+    fragments.push(
+      generateUE5ImportCode(imp.url, filename, imp.label, {
+        destinationName: destName,
+        diffuseDiskFilename: diffuseFilename,
+      })
     );
   }
 
-  const importCode = importLines.join("\n");
+  if (fragments.length === 0) return code;
+  const importCode = combineLocalImportFragments(fragments);
   return code.trimEnd() + "\n\n" + importCode;
 }

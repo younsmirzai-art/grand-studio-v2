@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { askGrandStudioAIStream, isGreetingOrQuestion } from "@/lib/ai/grandStudioAI";
 import { handleAssetRequest, detectAssetImportRequest } from "@/lib/asset/assetRequestHandler";
-import { queueUE5Command } from "@/lib/ue5/commands";
+import { queueRelayDownloadThenImport } from "@/lib/ue5/commands";
 import { checkUsageLimit, recordUsage } from "@/lib/usage/usageTracker";
 import { createServerAuthClient, createServerClient } from "@/lib/supabase/server";
 
@@ -277,8 +277,14 @@ export async function POST(request: NextRequest) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, fullContent: msg })}\n\n`));
             controller.close();
           };
-      if (result) {
-        await queueUE5Command(projectId, result.importCode);
+      if (result?.relayDownload) {
+        const fn = result.relayDownload.filename.toLowerCase();
+        const fileType = fn.endsWith(".zip") ? "zip" : fn.split(".").pop() ?? "fbx";
+        await queueRelayDownloadThenImport(projectId, result.relayDownload, result.importCode, {
+          source_provider: result.platformUsed === "sketchfab" ? "sketchfab" : "polyhaven",
+          source_url: result.relayDownload.url,
+          file_type: fileType,
+        });
       }
       return new Response(new ReadableStream({ start: streamBody }), {
         headers: {

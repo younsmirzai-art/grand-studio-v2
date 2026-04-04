@@ -5,17 +5,20 @@ export const UE5_IMPORT_DESTINATION_PATH = "/Game/GrandStudio/Imported";
 export const UE5_IMPORT_MESH_DESTINATION_PATH = UE5_IMPORT_DESTINATION_PATH;
 
 export type UE5ImportCodeOptions = {
-  /** When set (e.g. Poly Haven), local file is forced to `.fbx`. */
+  /** When set (e.g. Poly Haven), local file basename under Downloads is forced to `{sanitized}_dest.fbx`. */
   traceAssetId?: string;
   destinationName?: string;
-  /** Poly Haven diffuse map URL; when set, Python imports texture and assigns a material to the mesh. */
-  textureUrl?: string | null;
+  /**
+   * Diffuse basename only, already on disk at C:/GrandStudio/Downloads/{diffuseDiskFilename}
+   * (relay download). No network in UE5.
+   */
+  diffuseDiskFilename?: string | null;
 };
 
 const UE5_TEXTURES_PATH = "/Game/GrandStudio/Imported/Textures";
 const UE5_MATERIALS_PATH = "/Game/GrandStudio/Imported/Materials";
 
-function diffuseFileExtensionFromUrl(url: string): string {
+export function diffuseFileExtensionFromUrl(url: string): string {
   try {
     const p = new URL(url).pathname.toLowerCase();
     if (p.endsWith(".png")) return "png";
@@ -28,14 +31,16 @@ function diffuseFileExtensionFromUrl(url: string): string {
   return "jpg";
 }
 
-/** Python fragment: download diffuse, import texture, MIC + assign to mesh at `destinationName`. */
-export function buildPolyHavenDiffuseFollowUpPython(textureUrl: string, destinationName: string): string {
+/** Python fragment: import diffuse from local disk, MIC + assign to mesh. */
+export function buildPolyHavenDiffuseFollowUpPython(
+  diffuseDiskFilename: string,
+  destinationName: string
+): string {
   const dest = destinationName.replace(/[^a-zA-Z0-9_]/g, "_") || "mesh";
-  const ext = diffuseFileExtensionFromUrl(textureUrl);
-  const texBase = `${dest}_diffuse`.replace(/[^a-zA-Z0-9_]/g, "_") || "diffuse";
-  const texFile = `${texBase}.${ext}`;
-  const escapedTexUrl = textureUrl.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-  const escapedTexPath = `C:/GrandStudio/Downloads/${texFile}`.replace(/'/g, "\\'");
+  const safeFile = diffuseDiskFilename.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const texStem = safeFile.includes(".") ? safeFile.replace(/\.[^.]+$/, "") : safeFile;
+  const texBase = texStem.replace(/[^a-zA-Z0-9_]/g, "_") || "diffuse";
+  const escapedTexPath = `C:/GrandStudio/Downloads/${safeFile}`.replace(/'/g, "\\'");
   const texDestPy = UE5_TEXTURES_PATH.replace(/'/g, "\\'");
   const matDestPy = UE5_MATERIALS_PATH.replace(/'/g, "\\'");
   const texAssetPath = `${UE5_TEXTURES_PATH}/${texBase}`.replace(/'/g, "\\'");
@@ -43,10 +48,8 @@ export function buildPolyHavenDiffuseFollowUpPython(textureUrl: string, destinat
   const miName = `MI_${texBase}`.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 50) || "MI_ph_diffuse";
 
   return `
-# Download and apply Poly Haven diffuse texture
-_tex_url = '${escapedTexUrl}'
+# Apply Poly Haven diffuse from local file (downloaded by relay)
 _tex_path = '${escapedTexPath}'
-urllib.request.urlretrieve(_tex_url, _tex_path)
 _tex_task = unreal.AssetImportTask()
 _tex_task.filename = _tex_path
 _tex_task.destination_path = '${texDestPy}'
@@ -99,17 +102,18 @@ else:
 export type SketchfabImportCodeOptions = UE5ImportCodeOptions;
 
 /**
- * Minimal import: download file → AssetImportTask → /Game/GrandStudio/Imported.
- * Uses direct task field assignment (Unreal Python).
+ * Import a mesh from a file already on disk (relay downloaded). No urllib / no network in UE5.
  */
 export function generateUE5ImportCode(
-  downloadUrl: string,
+  _sourceUrlForLog: string,
   filename: string,
   label: string,
   options?: UE5ImportCodeOptions
 ): string {
   if (options?.traceAssetId) {
-    console.log(`GENERATING IMPORT FOR: assetId=${options.traceAssetId}, url=${downloadUrl}`);
+    console.log(
+      `GENERATING LOCAL IMPORT FOR: assetId=${options.traceAssetId} file=${filename}`
+    );
   }
   const safeLabel = label.replace(/[^a-zA-Z0-9_]/g, "_");
   const baseName = filename.includes(".") ? filename.replace(/\.[^.]+$/, "") : filename;
@@ -125,23 +129,18 @@ export function generateUE5ImportCode(
 
   const localPath = `C:/GrandStudio/Downloads/${diskFile}`;
   const destPy = UE5_IMPORT_DESTINATION_PATH.replace(/'/g, "\\'");
-
-  const escapedUrl = downloadUrl.replace(/'/g, "\\'");
   const escapedLocal = localPath.replace(/'/g, "\\'");
   const logName = destinationName.replace(/'/g, "\\'");
 
-  const textureUrl = options?.textureUrl?.trim();
-  const diffuseFollowUp = textureUrl ? buildPolyHavenDiffuseFollowUpPython(textureUrl, destinationName) : "";
+  const diffuseName = options?.diffuseDiskFilename?.trim();
+  const diffuseFollowUp =
+    diffuseName && diffuseName.length > 0
+      ? buildPolyHavenDiffuseFollowUpPython(diffuseName, destinationName)
+      : "";
 
   return `import unreal
-import urllib.request
-import os
-os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
-url = '${escapedUrl}'
-local_path = '${escapedLocal}'
-urllib.request.urlretrieve(url, local_path)
 task = unreal.AssetImportTask()
-task.filename = local_path
+task.filename = '${escapedLocal}'
 task.destination_path = '${destPy}'
 task.destination_name = '${logName}'
 task.replace_existing = True
@@ -153,71 +152,44 @@ ${diffuseFollowUp}`;
 }
 
 /**
- * Sketchfab: download ZIP → extract → pick a model file → same minimal AssetImportTask.
+ * Sketchfab: import model file left by relay at C:/GrandStudio/Downloads/{importStem}_model.(glb|fbx|obj).
  */
-export function generateSketchfabImportCode(
-  downloadUrl: string,
-  zipFilename: string,
+export function generateSketchfabLocalImportCode(
+  importStem: string,
   _label: string,
   options?: SketchfabImportCodeOptions
 ): string {
   if (options?.traceAssetId) {
-    console.log(`GENERATING IMPORT FOR: assetId=${options.traceAssetId}, url=${downloadUrl}`);
+    console.log(
+      `GENERATING SKETCHFAB LOCAL IMPORT: uid=${options.traceAssetId} stem=${importStem}`
+    );
   }
-  const baseName = zipFilename.replace(/\.zip$/i, "");
-  const zipPath = `C:/GrandStudio/Downloads/${zipFilename}`;
-  const escapedUrl = downloadUrl.replace(/'/g, "\\'");
-  const destOverride = options?.destinationName?.replace(/[^a-zA-Z0-9_]/g, "_");
-  const destNameBlock = destOverride
-    ? `_dest_name = '${destOverride.replace(/'/g, "\\'")}'`
-    : `_stem = os.path.splitext(os.path.basename(model_file))[0]
-_dest_name = ''.join(c if c.isalnum() or c == '_' else '_' for c in _stem)`;
-
+  const destinationName = (
+    options?.destinationName ?? importStem.replace(/[^a-zA-Z0-9_]/g, "_")
+  ).replace(/[^a-zA-Z0-9_]/g, "_");
+  const logName = destinationName.replace(/'/g, "\\'");
+  const stemEscaped = importStem.replace(/'/g, "\\'");
   const destPy = UE5_IMPORT_DESTINATION_PATH.replace(/'/g, "\\'");
 
   return `import unreal
-import urllib.request
-import os
-import zipfile
-import glob
-import uuid
-os.makedirs('C:/GrandStudio/Downloads', exist_ok=True)
-zip_path = '${zipPath.replace(/'/g, "\\'")}'
-_extract_id = str(uuid.uuid4())[:12]
-extract_dir = os.path.join('C:/GrandStudio/Downloads', '${baseName.replace(/'/g, "\\'")}_ext_' + _extract_id)
-urllib.request.urlretrieve('${escapedUrl}', zip_path)
-os.makedirs(extract_dir, exist_ok=True)
-with zipfile.ZipFile(zip_path, 'r') as z:
-    z.extractall(extract_dir)
+_base = r'C:/GrandStudio/Downloads/${stemEscaped}_model'
 model_file = None
-for ext in ['.glb', '.fbx', '.obj']:
-    found = glob.glob(os.path.join(extract_dir, '**', '*' + ext), recursive=True)
-    found = [p for p in found if '__MACOSX' not in p]
-    if found:
-        scored = []
-        for p in found:
-            rel = os.path.relpath(p, extract_dir)
-            depth = rel.count(os.sep)
-            try:
-                sz = os.path.getsize(p)
-            except OSError:
-                sz = 0
-            scored.append((depth, -sz, p))
-        scored.sort()
-        model_file = scored[0][2]
+for _ext in ('.glb', '.fbx', '.obj'):
+    _p = _base + _ext
+    if unreal.Paths.file_exists(_p):
+        model_file = _p
         break
 if not model_file:
-    unreal.log_error('No 3D model file found in ZIP')
+    unreal.log_error('Sketchfab: missing relay model at ' + str(_base) + '.*')
 else:
-    ${destNameBlock}
     task = unreal.AssetImportTask()
     task.filename = model_file
     task.destination_path = '${destPy}'
-    task.destination_name = _dest_name
+    task.destination_name = '${logName}'
     task.replace_existing = True
     task.automated = True
     task.save = True
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
-    unreal.log('Imported ' + str(_dest_name))
+    unreal.log('Imported ${logName}')
 `;
 }

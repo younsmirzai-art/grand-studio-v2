@@ -1,5 +1,5 @@
 import { createServerClient } from "@/lib/supabase/server";
-import { queueUE5Command } from "@/lib/ue5/commands";
+import { queueRelayDownloadThenImport } from "@/lib/ue5/commands";
 import { handleAssetRequest } from "@/lib/asset/assetRequestHandler";
 import { runSequentialLibraryImports, MAX_IMPORTS_PER_STEP } from "@/lib/ai/libraryImportRunner";
 import type { ImportProgressEvent } from "@/lib/ai/agentImportTypes";
@@ -139,11 +139,22 @@ export async function importMissingAssets(
     const m = missingTypes[mi];
     const query = `import ${m} from our 3d library`;
     const result = await handleAssetRequest(query, projectId);
-    if (!result) {
+    if (!result || !result.relayDownload) {
       imported.push({ asset: m, source: "none" });
       continue;
     }
-    const commandId = await queueUE5Command(projectId, result.importCode, { commandType: "import" });
+    const fn = result.relayDownload.filename.toLowerCase();
+    const fileType = fn.endsWith(".zip") ? "zip" : fn.split(".").pop() ?? "fbx";
+    const { importCommandId: commandId } = await queueRelayDownloadThenImport(
+      projectId,
+      result.relayDownload,
+      result.importCode,
+      {
+        source_provider: result.platformUsed === "sketchfab" ? "sketchfab" : "polyhaven",
+        source_url: result.relayDownload.url,
+        file_type: fileType,
+      }
+    );
     const done = await waitForCommand(commandId, 180000);
     const source = result.platformUsed === "sketchfab" ? "sketchfab" : "polyhaven";
     imported.push({ asset: result.assetName || m, source });

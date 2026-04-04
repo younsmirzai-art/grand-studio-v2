@@ -3,6 +3,12 @@ import { askGrandStudioAI } from "@/lib/ai/grandStudioAI";
 import { extractPythonCode } from "@/lib/ue5/extractPythonCode";
 import { autoFixUE5Code } from "@/lib/ue5/autoFixer";
 import { validateUE5Code } from "@/lib/ue5/validation";
+import {
+  relayDownloadToDbPayload,
+  type RelayDownloadContext,
+} from "@/lib/ue5/relayDownload";
+
+export type { RelayDownloadContext } from "@/lib/ue5/relayDownload";
 
 export interface ImportContext {
   source_provider: string;
@@ -11,11 +17,59 @@ export interface ImportContext {
   preview_image_url?: string;
 }
 
+export type UE5CommandType =
+  | "import"
+  | "download"
+  | "scan_assets"
+  | "screenshot"
+  | "capture"
+  | "execute";
+
+const RELAY_DOWNLOAD_PLACEHOLDER = "# relay-download (handled by local relay, not UE5)";
+
+/** Queue a relay-side download only (no UE5 Python). */
+export async function queueRelayDownloadCommand(
+  projectId: string,
+  download: RelayDownloadContext
+): Promise<string> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("ue5_commands")
+    .insert({
+      project_id: projectId,
+      code: RELAY_DOWNLOAD_PLACEHOLDER,
+      status: "pending",
+      command_type: "download",
+      import_context: { relay_download: relayDownloadToDbPayload(download) },
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(`Failed to queue relay download: ${error.message}`);
+  console.log(`RELAY DOWNLOAD QUEUED: id=${data.id} project=${projectId}`);
+  return data.id;
+}
+
+/** Relay downloads to disk, then UE5 runs import Python on local paths. */
+export async function queueRelayDownloadThenImport(
+  projectId: string,
+  download: RelayDownloadContext,
+  importCode: string,
+  importContext?: ImportContext
+): Promise<{ downloadCommandId: string; importCommandId: string }> {
+  const downloadCommandId = await queueRelayDownloadCommand(projectId, download);
+  const importCommandId = await queueUE5Command(projectId, importCode, {
+    commandType: "import",
+    importContext,
+  });
+  return { downloadCommandId, importCommandId };
+}
+
 export async function queueUE5Command(
   projectId: string,
   code: string,
   options?: {
-    commandType?: "import" | "scan_assets" | "screenshot" | "capture" | "execute";
+    commandType?: UE5CommandType;
     importContext?: ImportContext;
   }
 ): Promise<string> {

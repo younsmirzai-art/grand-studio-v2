@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
 import { getTaskStatus, getImageTo3DStatus, getRetextureStatus } from "@/lib/meshy/client";
 import { generateUE5ImportCode } from "@/lib/ue5/importCode";
-import { queueUE5Command } from "@/lib/ue5/commands";
+import { queueRelayDownloadThenImport } from "@/lib/ue5/commands";
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,15 +38,21 @@ export async function POST(request: NextRequest) {
     const label = "AIGenerated";
     const filename = `meshy-${taskId.slice(0, 8)}.glb`;
     const code = generateUE5ImportCode(glbUrl, filename, label);
-    const commandId = await queueUE5Command(projectId, code, {
-      commandType: "import",
-      importContext: {
+    const { importCommandId } = await queueRelayDownloadThenImport(
+      projectId,
+      {
+        kind: "http_mesh",
+        url: glbUrl,
+        filename,
+      },
+      code,
+      {
         source_provider: "meshy",
         source_url: glbUrl,
         file_type: "glb",
-      },
-    });
-    return NextResponse.json({ success: true, commandId });
+      }
+    );
+    return NextResponse.json({ success: true, commandId: importCommandId });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: message }, { status: 500 });

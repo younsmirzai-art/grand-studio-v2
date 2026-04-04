@@ -2,6 +2,9 @@ import os
 import sys
 import json
 import time
+import glob
+import zipfile
+import shutil
 import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -26,6 +29,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("NEXT_PUBLIC_
 UE5_URL = os.getenv("UE5_REMOTE_CONTROL_URL", "http://localhost:30010")
 WEB_APP_URL = os.getenv("NEXT_PUBLIC_SITE_URL", "http://localhost:3000").rstrip("/")
 SCAN_FILE_PATH = "C:/GrandStudio/asset_scan.json"
+DOWNLOADS_DIR = "C:/GrandStudio/Downloads"
+RELAY_USER_AGENT = "GrandStudio-Relay/1.0 (local)"
 POLL_INTERVAL = int(os.getenv("RELAY_POLL_INTERVAL", "2"))
 # During Poly Haven / Sketchfab imports UE5 may not respond in time; keep heartbeat "connected".
 FORCE_HEARTBEAT_UE5_CONNECTED = False
@@ -276,6 +281,113 @@ def extract_import_result_from_ue5_response(ue5_result):
         return None
 
 
+def _relay_stream_download(url, dest_path):
+    """Download URL to dest_path using requests (runs on user machine, not in UE5)."""
+    headers = {"User-Agent": RELAY_USER_AGENT}
+    with requests.get(url, stream=True, timeout=600, headers=headers) as r:
+        r.raise_for_status()
+        with open(dest_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+
+
+def _parse_import_context(cmd):
+    raw = cmd.get("import_context")
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def handle_relay_download_command(cmd):
+    """
+    Download mesh (and optional diffuse) to C:/GrandStudio/Downloads/.
+    For Sketchfab: download ZIP, extract, copy best model to {import_stem}_model.{ext}.
+    """
+    ctx_full = _parse_import_context(cmd)
+    ctx = ctx_full.get("relay_download") or {}
+    kind = ctx.get("kind")
+    url = ctx.get("url")
+    filename = ctx.get("filename")
+    if not url or not filename:
+        return {"success": False, "error": "relay_download missing url or filename"}
+
+    os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+    primary_name = os.path.basename(filename.replace("\\", "/"))
+    primary_path = os.path.join(DOWNLOADS_DIR, primary_name)
+
+    try:
+        print(f"         Relay download: {url[:80]}... -> {primary_path}")
+        _relay_stream_download(url, primary_path)
+    except Exception as e:
+        return {"success": False, "error": f"Primary download failed: {e}"}
+
+    diffuse_url = ctx.get("diffuse_url")
+    diffuse_filename = ctx.get("diffuse_filename")
+    if diffuse_url and diffuse_filename:
+        dname = os.path.basename(str(diffuse_filename).replace("\\", "/"))
+        dpath = os.path.join(DOWNLOADS_DIR, dname)
+        try:
+            print(f"         Relay diffuse: -> {dpath}")
+            _relay_stream_download(diffuse_url, dpath)
+        except Exception as e:
+            return {"success": False, "error": f"Diffuse download failed: {e}"}
+
+    if kind == "sketchfab_zip":
+        import_stem = ctx.get("import_stem") or os.path.splitext(primary_name)[0]
+        zip_base = os.path.splitext(primary_name)[0]
+        extract_dir = os.path.join(DOWNLOADS_DIR, f"{zip_base}_extract")
+        try:
+            if os.path.isdir(extract_dir):
+                shutil.rmtree(extract_dir)
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(primary_path, "r") as zf:
+                zf.extractall(extract_dir)
+        except Exception as e:
+            return {"success": False, "error": f"ZIP extract failed: {e}"}
+
+        model_path = None
+        for ext in (".glb", ".fbx", ".obj"):
+            found = glob.glob(
+                os.path.join(extract_dir, "**", "*" + ext), recursive=True
+            )
+            found = [p for p in found if "__MACOSX" not in p.replace("\\", "/")]
+            if found:
+                scored = []
+                for p in found:
+                    rel = os.path.relpath(p, extract_dir)
+                    depth = rel.count(os.sep)
+                    try:
+                        sz = os.path.getsize(p)
+                    except OSError:
+                        sz = 0
+                    scored.append((depth, -sz, p))
+                scored.sort()
+                model_path = scored[0][2]
+                break
+
+        if not model_path:
+            return {"success": False, "error": "No .glb/.fbx/.obj in Sketchfab ZIP"}
+
+        _, ext = os.path.splitext(model_path)
+        ext = (ext or ".glb").lower()
+        dest_model = os.path.join(DOWNLOADS_DIR, f"{import_stem}_model{ext}")
+        try:
+            shutil.copy2(model_path, dest_model)
+            print(f"         Sketchfab model copied to {dest_model}")
+        except Exception as e:
+            return {"success": False, "error": f"Copy model failed: {e}"}
+
+    return {"success": True, "result": {"relay_download": "ok", "kind": kind}}
+
+
 def save_import_result_to_db(cmd_id, project_id, import_context, import_result):
     """Upsert one row into ue5_import_assets; sync import_status to generated_3d_assets if applicable."""
     if not import_context or not import_result:
@@ -420,6 +532,31 @@ def poll_commands():
                 supabase.table("ue5_commands").update(
                     {"status": "executing"}
                 ).eq("id", cmd_id).execute()
+
+                # Relay-only download (no UE5) — large files download outside the editor
+                if cmd_type == "download":
+                    dr = handle_relay_download_command(cmd)
+                    completed_at = datetime.now(timezone.utc).isoformat()
+                    if dr["success"]:
+                        print("         Relay download OK")
+                        supabase.table("ue5_commands").update(
+                            {
+                                "status": "success",
+                                "result": json.dumps(dr.get("result", {})),
+                                "executed_at": completed_at,
+                            }
+                        ).eq("id", cmd_id).execute()
+                    else:
+                        print(f"         Relay download error: {dr.get('error')}")
+                        supabase.table("ue5_commands").update(
+                            {
+                                "status": "error",
+                                "error_log": dr.get("error", "relay download failed"),
+                                "executed_at": completed_at,
+                            }
+                        ).eq("id", cmd_id).execute()
+                    upload_scan_results_if_present(project_id)
+                    continue
 
                 # Handle different command types
                 if cmd_type == "screenshot" or cmd_type == "capture":
