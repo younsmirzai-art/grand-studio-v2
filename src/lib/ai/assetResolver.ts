@@ -1,7 +1,8 @@
-import { getModelDownloadUrl } from "@/lib/polyhaven/client";
+import { getPolyHavenModelImportUrls } from "@/lib/polyhaven/client";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { queueRelayDownloadCommand } from "@/lib/ue5/commands";
 import {
+  diffuseFileExtensionFromUrl,
   generateSketchfabLocalImportCode,
   generateUE5ImportCode,
 } from "@/lib/ue5/importCode";
@@ -129,6 +130,7 @@ export async function resolveAssets(
   if (imports.length === 0) return { imports: [], importCode: "" };
 
   const storageUrls = new Map<string, string>();
+  const polyDiffuseByAssetId = new Map<string, string | null>();
   const sketchfabUidByQuery = new Map<string, string>();
 
   const sfToken = process.env.SKETCHFAB_API_TOKEN ?? "";
@@ -137,8 +139,11 @@ export async function resolveAssets(
     imports.map(async (imp) => {
       try {
         if (imp.source === "polyhaven") {
-          const url = await getModelDownloadUrl(imp.assetId);
-          if (url) storageUrls.set(imp.assetId, url);
+          const bundle = await getPolyHavenModelImportUrls(imp.assetId);
+          if (bundle?.meshUrl) {
+            storageUrls.set(imp.assetId, bundle.meshUrl);
+            polyDiffuseByAssetId.set(imp.assetId, bundle.diffuseUrl);
+          }
         } else if (imp.source === "sketchfab" && imp.query) {
           const results = await searchSketchfab(imp.query, {
             count: 1,
@@ -174,15 +179,27 @@ export async function resolveAssets(
       const destName =
         (imp.label ?? imp.assetId).replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
       const filename = `${imp.assetId.replace(/[^a-zA-Z0-9_-]/g, "_")}.fbx`;
+      const polyDiffuse = polyDiffuseByAssetId.get(imp.assetId) ?? null;
+      const diffuseExt =
+        polyDiffuse != null && polyDiffuse.length > 0
+          ? diffuseFileExtensionFromUrl(polyDiffuse)
+          : "jpg";
+      const diffuseFilename =
+        polyDiffuse != null && polyDiffuse.length > 0
+          ? `${destName.replace(/[^a-zA-Z0-9_]/g, "_")}_diffuse.${diffuseExt}`
+          : undefined;
       downloadJobs.push({
         kind: "polyhaven_fbx",
         url,
         filename,
+        diffuseUrl: polyDiffuse ?? undefined,
+        diffuseFilename,
       });
       fragments.push(
         generateUE5ImportCode(url, filename, imp.label ?? imp.assetId, {
           traceAssetId: imp.assetId,
           destinationName: destName,
+          diffuseDiskFilename: diffuseFilename,
         })
       );
     } else if (imp.source === "sketchfab" && imp.query) {

@@ -1,6 +1,10 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { queueRelayDownloadThenImport, queueUE5Command } from "@/lib/ue5/commands";
-import { generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
+import {
+  diffuseFileExtensionFromUrl,
+  generateSketchfabLocalImportCode,
+  generateUE5ImportCode,
+} from "@/lib/ue5/importCode";
 import { searchAssets as searchPolyHaven } from "@/lib/polyhaven/client";
 import { downloadPolyHavenModelToStorage as downloadPolyHavenModel } from "@/lib/polyhaven/downloadToSupabase";
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
@@ -892,9 +896,18 @@ export async function buildScene(params: BuildSceneParams): Promise<{
           source: "our library (Poly Haven)",
         });
         const filename = `${job.polyId}_${curGlobal}.fbx`;
+        const diffuseExt =
+          polyBundle.diffuseUrl != null && polyBundle.diffuseUrl.length > 0
+            ? diffuseFileExtensionFromUrl(polyBundle.diffuseUrl)
+            : "jpg";
+        const diffuseFilename =
+          polyBundle.diffuseUrl != null && polyBundle.diffuseUrl.length > 0
+            ? `${destName}_diffuse.${diffuseExt}`
+            : undefined;
         const code = generateUE5ImportCode(polyBundle.meshUrl, filename, job.name, {
           traceAssetId: job.polyId,
           destinationName: destName,
+          diffuseDiskFilename: diffuseFilename,
         });
         const pair = await queueRelayDownloadThenImport(
           projectId,
@@ -902,6 +915,8 @@ export async function buildScene(params: BuildSceneParams): Promise<{
             kind: "polyhaven_fbx",
             url: polyBundle.meshUrl,
             filename,
+            diffuseUrl: polyBundle.diffuseUrl ?? undefined,
+            diffuseFilename,
           },
           code,
           {

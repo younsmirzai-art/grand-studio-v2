@@ -8,7 +8,11 @@ import { downloadPolyHavenModelToStorage } from "@/lib/polyhaven/downloadToSupab
 import { searchModels as searchSketchfab, getDownloadUrl as getSketchfabDownloadUrl } from "@/lib/sketchfab/client";
 import { createServerClient } from "@/lib/supabase/server";
 import { combineLocalImportFragments } from "@/lib/ai/assetResolver";
-import { generateSketchfabLocalImportCode, generateUE5ImportCode } from "@/lib/ue5/importCode";
+import {
+  diffuseFileExtensionFromUrl,
+  generateSketchfabLocalImportCode,
+  generateUE5ImportCode,
+} from "@/lib/ue5/importCode";
 import { queueRelayDownloadCommand } from "@/lib/ue5/commands";
 import type { RelayDownloadContext } from "@/lib/ue5/relayDownload";
 import { waitForUE5CommandStatus } from "@/lib/ue5/relayDownload";
@@ -134,6 +138,7 @@ export async function handleAssetRequest(
   console.log("[handleAssetRequest] Searching for platform:", platform, "query:", query);
 
   let storageUrl: string | null = null;
+  let polyDiffuseUrl: string | null = null;
   let assetName = query;
   let sourceLabel = "";
   let polyHavenAssetId: string | null = null;
@@ -147,6 +152,7 @@ export async function handleAssetRequest(
       console.log("[handleAssetRequest] Best result:", best.id, best.name);
       const polyBundle = await downloadPolyHavenToSupabase(best.id);
       storageUrl = polyBundle?.meshUrl ?? null;
+      polyDiffuseUrl = polyBundle?.diffuseUrl ?? null;
       console.log("[handleAssetRequest] Download URL (Poly Haven):", storageUrl ? "yes" : "no");
       if (storageUrl) {
         assetName = best.name;
@@ -205,12 +211,22 @@ export async function handleAssetRequest(
     const destName = polyHavenAssetId
       ? polyHavenAssetId.replace(/[^a-zA-Z0-9_]/g, "_")
       : stem.replace(/[^a-zA-Z0-9_]/g, "_");
+    const diffuseExt =
+      polyDiffuseUrl != null && polyDiffuseUrl.length > 0
+        ? diffuseFileExtensionFromUrl(polyDiffuseUrl)
+        : "jpg";
+    const diffuseFilename =
+      polyHavenAssetId != null && polyDiffuseUrl != null && polyDiffuseUrl.length > 0
+        ? `${destName}_diffuse.${diffuseExt}`
+        : undefined;
     relayDownload =
       polyHavenAssetId != null
         ? {
             kind: "polyhaven_fbx",
             url: storageUrl,
             filename,
+            diffuseUrl: polyDiffuseUrl ?? undefined,
+            diffuseFilename,
           }
         : {
             kind: "http_mesh",
@@ -220,6 +236,7 @@ export async function handleAssetRequest(
     importCode = generateUE5ImportCode(storageUrl, filename, label, {
       traceAssetId: polyHavenAssetId ?? undefined,
       destinationName: destName,
+      diffuseDiskFilename: polyHavenAssetId != null ? diffuseFilename : undefined,
     });
   }
 
@@ -274,7 +291,8 @@ export async function enrichCodeWithPolyHavenAssets(
   }
   if (searchQueries.size === 0) return code;
 
-  const imports: { url: string; label: string; index: number }[] = [];
+  const imports: { url: string; label: string; index: number; polyAssetId: string; diffuseUrl: string | null }[] =
+    [];
   let index = 0;
 
   for (const query of searchQueries) {
@@ -286,7 +304,13 @@ export async function enrichCodeWithPolyHavenAssets(
       const bundle = await downloadPolyHavenToSupabase(asset.id);
       if (bundle?.meshUrl) {
         const label = `${asset.name.replace(/\s+/g, "_")}_${index}`;
-        imports.push({ url: bundle.meshUrl, label, index });
+        imports.push({
+          url: bundle.meshUrl,
+          label,
+          index,
+          polyAssetId: asset.id,
+          diffuseUrl: bundle.diffuseUrl ?? null,
+        });
         index++;
       }
     } catch (e) {
@@ -298,14 +322,24 @@ export async function enrichCodeWithPolyHavenAssets(
 
   const fragments: string[] = [];
   for (const imp of imports) {
-    const destName = imp.label.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
+    const destName = imp.polyAssetId.replace(/[^a-zA-Z0-9_]/g, "_") || "imported_mesh";
     const safeLabel = imp.label.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const filename = `${safeLabel}.fbx`;
+    const diffuseExt =
+      imp.diffuseUrl != null && imp.diffuseUrl.length > 0
+        ? diffuseFileExtensionFromUrl(imp.diffuseUrl)
+        : "jpg";
+    const diffuseFilename =
+      imp.diffuseUrl != null && imp.diffuseUrl.length > 0
+        ? `${destName}_diffuse.${diffuseExt}`
+        : undefined;
     try {
       const dlId = await queueRelayDownloadCommand(projectId, {
         kind: "polyhaven_fbx",
         url: imp.url,
         filename,
+        diffuseUrl: imp.diffuseUrl ?? undefined,
+        diffuseFilename,
       });
       const st = await waitForUE5CommandStatus(dlId, 600_000);
       if (st !== "success") continue;
@@ -316,7 +350,9 @@ export async function enrichCodeWithPolyHavenAssets(
 
     fragments.push(
       generateUE5ImportCode(imp.url, filename, imp.label, {
+        traceAssetId: imp.polyAssetId,
         destinationName: destName,
+        diffuseDiskFilename: diffuseFilename,
       })
     );
   }
