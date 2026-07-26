@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Space_Grotesk } from "next/font/google";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,10 +11,50 @@ const inter = Inter({
   display: "swap",
 });
 
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
-  title: "Grand Studio — The AI Co-Pilot for Unreal Engine",
+  title: {
+    default: "Grand Studio — The Universal 3D Model Hub",
+    template: "%s | Grand Studio",
+  },
   description:
-    "Build professional UE5 scenes 10x faster. Describe what you want, AI writes the code, Unreal Engine builds it live.",
+    "Download 3D models from every marketplace in one place. 500K+ models, AI-powered search, free tier available.",
+  keywords: [
+    "3D models",
+    "3D marketplace",
+    "Poly Haven",
+    "Sketchfab",
+    "Unreal Engine",
+    "Blender",
+    "Free 3D models",
+  ],
+  authors: [{ name: "Grand Studio", url: "https://grandstudio.dev" }],
+  metadataBase: new URL("https://grandstudio.dev"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://grandstudio.dev",
+    siteName: "Grand Studio",
+    title: "Grand Studio — The Universal 3D Model Hub",
+    description: "Download 3D models from every marketplace in one place.",
+    // images: ["/og-image.png"], // will add in Phase 7
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Grand Studio — The Universal 3D Model Hub",
+    description: "Download 3D models from every marketplace in one place.",
+    // images: ["/twitter-image.png"], // will add in Phase 7
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -23,7 +63,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark scroll-smooth ${inter.variable}`}>
+    <html
+      lang="en"
+      className={`dark scroll-smooth ${inter.variable} ${spaceGrotesk.variable}`}
+    >
       <body className="font-sans antialiased bg-[#0A0A0B] text-white">
         <TooltipProvider delayDuration={200}>
           {children}

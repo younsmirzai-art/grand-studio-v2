@@ -141,7 +141,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ priceId: STRIPE_PRICES.pro }),
+        body: JSON.stringify({ priceId: STRIPE_PRICES.PRO_MONTHLY }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -158,7 +158,8 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ priceId: STRIPE_PRICES.team }),
+        // Team tier removed in Phase 1 — repointed to Pro until dashboard rebuild.
+        body: JSON.stringify({ priceId: STRIPE_PRICES.PRO_MONTHLY }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
