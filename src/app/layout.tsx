@@ -3,6 +3,8 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Header } from "@/components/site/Header";
+import { Footer } from "@/components/site/Footer";
 import "./globals.css";
 
 const inter = Inter({
@@ -67,9 +69,11 @@ export default function RootLayout({
       lang="en"
       className={`dark scroll-smooth ${inter.variable} ${spaceGrotesk.variable}`}
     >
-      <body className="font-sans antialiased bg-[#0A0A0B] text-white">
+      <body className="font-sans antialiased bg-[var(--gs-bg-base)] text-white">
         <TooltipProvider delayDuration={200}>
-          {children}
+          <Header />
+          <main className="min-h-screen">{children}</main>
+          <Footer />
         </TooltipProvider>
         <Analytics />
         <Toaster

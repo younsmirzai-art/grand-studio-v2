@@ -353,3 +353,99 @@ export async function getHDRIDownloadUrl(assetId: string, resolution = "2k"): Pr
   const hdr = links?.hdri?.[resolution]?.url ?? links?.hdri?.["2k"]?.url ?? links?.hdri?.["1k"]?.url;
   return hdr ?? null;
 }
+
+/** Homepage / browse card model (normalized across sources). */
+export interface Model {
+  id: string;
+  name: string;
+  thumbnail: string;
+  source: string;
+  downloads: number;
+  isFree: boolean;
+  categories: string[];
+  tags: string[];
+}
+
+export interface FetchOptions {
+  type?: PolyHavenAssetType;
+  categories?: string[];
+  search?: string;
+  limit?: number;
+}
+
+function toModel(asset: PolyHavenAsset, thumbWidth = 400): Model {
+  return {
+    id: asset.id,
+    name: asset.name,
+    thumbnail: getThumbnailUrl(asset.id, thumbWidth),
+    source: "Poly Haven",
+    downloads: asset.downloadCount,
+    isFree: true,
+    categories: asset.categories,
+    tags: asset.tags,
+  };
+}
+
+/**
+ * Fetch Poly Haven assets for marketplace UI (featured grid, browse).
+ * Filters by category when provided; uses ranked search when `search` is set.
+ */
+export async function getPolyHavenAssets(options: FetchOptions = {}): Promise<Model[]> {
+  const { type = "models", categories = [], search, limit = 40 } = options;
+  const capped = Math.max(1, Math.min(50, limit));
+
+  try {
+    if (search?.trim()) {
+      const results = await searchAssets(search.trim(), type, capped * 2);
+      const filtered =
+        categories.length > 0
+          ? results.filter((a) =>
+              categories.some((c) =>
+                a.categories.some((ac) => ac.toLowerCase().includes(c.toLowerCase()))
+              )
+            )
+          : results;
+      return filtered.slice(0, capped).map((a) => toModel(a));
+    }
+
+    const all = await getAssets(type);
+    let list = all;
+    if (categories.length > 0) {
+      list = all.filter((a) =>
+        categories.some((c) =>
+          a.categories.some((ac) => ac.toLowerCase().includes(c.toLowerCase()))
+        )
+      );
+    }
+    list = [...list].sort((a, b) => b.downloadCount - a.downloadCount);
+    return list.slice(0, capped).map((a) => toModel(a));
+  } catch (error) {
+    console.error("[Poly Haven] getPolyHavenAssets error:", error);
+    return [];
+  }
+}
+
+export async function getPolyHavenAsset(id: string): Promise<Model | null> {
+  try {
+    const info = (await getAssetInfo(id)) as {
+      name?: string;
+      categories?: string[];
+      tags?: string[];
+      download_count?: number;
+    };
+    if (!info) return null;
+    return {
+      id,
+      name: info.name ?? id.replace(/_/g, " "),
+      thumbnail: getThumbnailUrl(id, 1200),
+      source: "Poly Haven",
+      downloads: info.download_count ?? 0,
+      isFree: true,
+      categories: info.categories ?? [],
+      tags: info.tags ?? [],
+    };
+  } catch (error) {
+    console.error("[Poly Haven] getPolyHavenAsset error:", error);
+    return null;
+  }
+}

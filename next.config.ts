@@ -1,7 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.polyhaven.com",
+      },
+      {
+        protocol: "https",
+        hostname: "media.sketchfab.com",
+      },
+    ],
+  },
 };
 
 export default nextConfig;
