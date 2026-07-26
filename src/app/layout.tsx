@@ -3,8 +3,7 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Header } from "@/components/site/Header";
-import { Footer } from "@/components/site/Footer";
+import { ConditionalChrome } from "@/components/site/ConditionalChrome";
 import "./globals.css";
 
 const inter = Inter({
@@ -45,13 +44,11 @@ export const metadata: Metadata = {
     siteName: "Grand Studio",
     title: "Grand Studio — The Universal 3D Model Hub",
     description: "Download 3D models from every marketplace in one place.",
-    // images: ["/og-image.png"], // will add in Phase 7
   },
   twitter: {
     card: "summary_large_image",
     title: "Grand Studio — The Universal 3D Model Hub",
     description: "Download 3D models from every marketplace in one place.",
-    // images: ["/twitter-image.png"], // will add in Phase 7
   },
   robots: {
     index: true,
@@ -71,9 +68,7 @@ export default function RootLayout({
     >
       <body className="font-sans antialiased bg-[var(--gs-bg-base)] text-white">
         <TooltipProvider delayDuration={200}>
-          <Header />
-          <main className="min-h-screen">{children}</main>
-          <Footer />
+          <ConditionalChrome>{children}</ConditionalChrome>
         </TooltipProvider>
         <Analytics />
         <Toaster
