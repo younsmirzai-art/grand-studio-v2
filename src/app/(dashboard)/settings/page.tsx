@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { User, Mail, CreditCard, Bell, Shield } from "lucide-react";
+import { User, Mail, CreditCard, Bell, Shield, FileText, LifeBuoy } from "lucide-react";
 import { getClient } from "@/lib/supabase/client";
+import { ApiKeySection } from "@/components/dashboard/ApiKeySection";
 
 export default function SettingsPage() {
   const [userEmail, setUserEmail] = useState("");
@@ -122,6 +123,8 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <ApiKeySection />
+
         <div className="gs-card p-5 opacity-60">
           <div className="flex items-center gap-2 mb-1">
             <Bell className="w-4 h-4 text-white/60" />
@@ -144,6 +147,44 @@ export default function SettingsPage() {
             </span>
           </div>
           <p className="text-xs text-white/50">Password and authentication</p>
+        </div>
+
+        <div className="gs-card">
+          <div className="p-5 border-b border-white/5">
+            <div className="flex items-center gap-2 mb-1">
+              <FileText className="w-4 h-4 text-white/60" />
+              <h3 className="font-semibold text-white">Legal &amp; Support</h3>
+            </div>
+            <p className="text-xs text-white/50">
+              Policies, terms, and how to reach us
+            </p>
+          </div>
+          <div className="p-2">
+            <Link
+              href="/privacy"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/5 transition"
+            >
+              <Shield className="w-4 h-4 text-white/40" />
+              <span className="flex-1">Privacy Policy</span>
+              <span className="text-white/30">→</span>
+            </Link>
+            <Link
+              href="/terms"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/5 transition"
+            >
+              <FileText className="w-4 h-4 text-white/40" />
+              <span className="flex-1">Terms of Service</span>
+              <span className="text-white/30">→</span>
+            </Link>
+            <Link
+              href="/support"
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/5 transition"
+            >
+              <LifeBuoy className="w-4 h-4 text-white/40" />
+              <span className="flex-1">Contact Support</span>
+              <span className="text-white/30">→</span>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

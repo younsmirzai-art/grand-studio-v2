@@ -1,5 +1,7 @@
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
+import { DashboardFooter } from "@/components/dashboard/DashboardFooter";
+import { CommandPalette } from "@/components/dashboard/CommandPalette";
 
 export default function DashboardLayout({
   children,
@@ -9,10 +11,12 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen bg-[var(--gs-bg-base)]">
       <Sidebar />
-      <div className="lg:pl-64">
+      <div className="lg:pl-64 flex flex-col min-h-screen">
         <DashboardTopBar />
-        <main className="min-h-[calc(100vh-56px)]">{children}</main>
+        <main className="flex-1">{children}</main>
+        <DashboardFooter />
       </div>
+      <CommandPalette />
     </div>
   );
 }

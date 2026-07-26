@@ -6,6 +6,7 @@ import { RecommendedModels } from "@/components/dashboard/RecommendedModels";
 import { TrendingModels } from "@/components/dashboard/TrendingModels";
 import { QuickStartCard } from "@/components/dashboard/QuickStartCard";
 import { DashboardWelcome } from "@/components/dashboard/DashboardWelcome";
+import { OnboardingChecklist } from "@/components/dashboard/OnboardingChecklist";
 
 export const metadata = {
   title: "Dashboard",
@@ -40,6 +41,8 @@ export default async function DashboardPage() {
       <section className="mb-8">
         <StatsSection />
       </section>
+
+      <OnboardingChecklist />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="lg:col-span-2">

@@ -12,6 +12,7 @@ import {
   Rocket,
   CreditCard,
   Settings,
+  LifeBuoy,
   Menu,
   X,
   Zap,
@@ -56,8 +57,17 @@ const navigation: NavSection[] = [
   },
   {
     section: "Account",
-    items: [{ name: "Settings", href: "/settings", icon: Settings }],
+    items: [
+      { name: "Settings", href: "/settings", icon: Settings },
+      { name: "Contact Support", href: "/support", icon: LifeBuoy },
+    ],
   },
+];
+
+/** Only routes that actually exist — a 404 in the sidebar reads as unfinished. */
+const legalLinks = [
+  { name: "Privacy", href: "/privacy" },
+  { name: "Terms", href: "/terms" },
 ];
 
 const FREE_DAILY_LIMIT = 10;
@@ -276,6 +286,19 @@ function SidebarInner({
                   Manage billing
                 </Link>
               )}
+            </div>
+
+            <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-white/30">
+              {legalLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="hover:text-white/60 transition"
+                >
+                  {link.name}
+                </Link>
+              ))}
+              <span>© {new Date().getFullYear()}</span>
             </div>
           </div>
         </div>
