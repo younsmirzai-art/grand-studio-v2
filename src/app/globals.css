@@ -533,9 +533,86 @@
   animation: gs-pulse-glow 3s ease-in-out infinite;
 }
 
+/* === Phase 3: Dashboard Universe === */
+
+.gs-floating-panel {
+  background: rgba(10, 10, 15, 0.6);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all var(--gs-transition-base);
+}
+
+.gs-floating-panel:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 20px 60px rgba(124, 58, 237, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.gs-stat-widget {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08) 0%, rgba(0, 212, 255, 0.04) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px;
+  transition: all var(--gs-transition-base);
+}
+
+.gs-stat-widget:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px rgba(124, 58, 237, 0.15);
+}
+
+@keyframes gs-cosmic-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.gs-animate-cosmic-enter {
+  animation: gs-cosmic-enter 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes gs-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.gs-shimmer-text {
+  background: linear-gradient(
+    110deg,
+    #FFFFFF 30%,
+    #C4B5FD 45%,
+    #67E8F9 55%,
+    #FFFFFF 70%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: gs-shimmer 4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gs-animate-float,
-  .gs-animate-pulse-glow {
+  .gs-animate-pulse-glow,
+  .gs-animate-cosmic-enter,
+  .gs-shimmer-text {
     animation: none;
   }
 

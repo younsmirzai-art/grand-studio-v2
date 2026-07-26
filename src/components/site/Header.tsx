@@ -2,17 +2,56 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
+import { getClient } from "@/lib/supabase/client";
+
+/**
+ * "unknown" is held until the session resolves so signed-in visitors never see
+ * a flash of the signed-out actions. Access itself is enforced by middleware.
+ */
+type AuthState = "unknown" | "signed-in" | "signed-out";
 
 export function Header() {
+  const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authState, setAuthState] = useState<AuthState>("unknown");
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    const supabase = getClient();
+    let cancelled = false;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) {
+        setAuthState(data.session ? "signed-in" : "signed-out");
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthState(session ? "signed-in" : "signed-out");
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleSignOut() {
+    setMobileOpen(false);
+    await getClient().auth.signOut();
+    router.push("/");
+    router.refresh();
+  }
 
   return (
     <>
@@ -58,18 +97,44 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/auth/login"
-              className="hidden sm:block text-sm text-white/70 hover:text-white transition font-medium"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/auth/signup"
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
-            >
-              Get Started
-            </Link>
+            {/* Placeholder holds the slot's width so resolving auth doesn't shift the header. */}
+            {authState === "unknown" && <div className="w-[124px] h-9" aria-hidden />}
+
+            {authState === "signed-out" && (
+              <>
+                <Link
+                  href="/auth/login"
+                  className="hidden sm:block text-sm text-white/70 hover:text-white transition font-medium"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/auth/signup"
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
+
+            {authState === "signed-in" && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="hidden sm:block text-sm text-white/70 hover:text-white transition font-medium"
+                >
+                  Sign out
+                </button>
+                <Link
+                  href="/dashboard"
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
+                >
+                  Dashboard
+                </Link>
+              </>
+            )}
+
             <button
               type="button"
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -106,13 +171,39 @@ export function Header() {
             >
               Pricing
             </Link>
-            <Link
-              href="/auth/login"
-              className="block text-lg text-white/80 hover:text-white transition py-2 border-t border-white/10 mt-4 pt-4"
-              onClick={() => setMobileOpen(false)}
-            >
-              Sign in
-            </Link>
+            {authState === "signed-in" ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="block text-lg text-white/80 hover:text-white transition py-2 border-t border-white/10 mt-4 pt-4"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/library"
+                  className="block text-lg text-white/80 hover:text-white transition py-2"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Library
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="block text-lg text-white/80 hover:text-white transition py-2"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/auth/login"
+                className="block text-lg text-white/80 hover:text-white transition py-2 border-t border-white/10 mt-4 pt-4"
+                onClick={() => setMobileOpen(false)}
+              >
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       )}
