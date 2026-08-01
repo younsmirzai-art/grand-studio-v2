@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { Rocket, ArrowRight, Check } from "lucide-react";
+import {
+  Rocket,
+  ArrowRight,
+  Check,
+  Terminal,
+  KeyRound,
+} from "lucide-react";
 
 export function PluginSection() {
   return (
@@ -28,7 +34,7 @@ export function PluginSection() {
                 "Natural language commands",
                 "200+ AAA materials included",
                 "One-click screenshot capture",
-                "Preset library with save/load",
+                "API key auth from your account",
               ].map((item) => (
                 <li
                   key={item}
@@ -55,13 +61,40 @@ export function PluginSection() {
             </div>
           </div>
 
-          <div className="gs-mockup-frame p-8">
-            <div className="aspect-video bg-white/[0.03] rounded-lg flex items-center justify-center">
-              <div className="text-center">
-                <Rocket className="w-12 h-12 text-white/20 mx-auto mb-2" />
-                <p className="text-sm text-white/40">
-                  Plugin preview coming soon
+          <div className="gs-mockup-frame">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-black/30">
+              <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-xs font-medium text-white/70">
+                AI Commander
+              </span>
+              <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-green-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                Connected
+              </span>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="rounded-lg border border-white/8 bg-white/[0.03] p-3">
+                <div className="text-[10px] uppercase tracking-wider text-white/35 mb-1.5">
+                  Prompt
+                </div>
+                <p className="text-sm text-white/80">
+                  Create a rainy Tokyo street with neon signs and parked scooters.
                 </p>
+              </div>
+              <div className="rounded-lg border border-white/8 bg-black/40 p-3 font-mono text-[11px] text-white/55 space-y-1">
+                <div>
+                  <span className="text-cyan-400">›</span> Resolving assets…
+                </div>
+                <div>
+                  <span className="text-cyan-400">›</span> Placing 11 actors
+                </div>
+                <div>
+                  <span className="text-green-400">✓</span> Done in 1.8s
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-white/40">
+                <KeyRound className="w-3.5 h-3.5 text-white/30" />
+                Authenticated with Grand Studio API key
               </div>
             </div>
           </div>

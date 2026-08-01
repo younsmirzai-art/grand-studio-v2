@@ -1,26 +1,31 @@
-import { Search, Eye, Download } from "lucide-react";
+import { Search, Eye, Download, type LucideIcon } from "lucide-react";
 
-const steps = [
+const steps: {
+  number: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+}[] = [
   {
     number: "01",
     icon: Search,
     title: "Search or browse",
     description:
-      "Enter what you need or explore by category. Our unified search covers 500K+ models.",
+      "Enter what you need or explore by category. Unified search across 500K+ models.",
   },
   {
     number: "02",
     icon: Eye,
     title: "Preview & compare",
     description:
-      "View 3D previews, check specs, compare quality across sources before you commit.",
+      "Inspect thumbnails, categories, and source details before you download.",
   },
   {
     number: "03",
     icon: Download,
     title: "Download & create",
     description:
-      "One-click download with proper licensing. Use in your game, film, or design project.",
+      "One-click download with clear licensing. Drop assets into your next project.",
   },
 ];
 
@@ -35,29 +40,31 @@ export function HowItWorks() {
           <h2 className="gs-heading-lg mb-4">
             Get to your model in three steps.
           </h2>
+          <p className="text-white/55 max-w-xl mx-auto">
+            A clean path from search to download — no account juggling.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
           {steps.map((step, index) => (
-            <div key={step.number} className="relative">
+            <div key={step.number} className="relative gs-feature-card">
               {index < steps.length - 1 && (
-                <div className="hidden md:block absolute top-8 left-full w-full h-px bg-white/5 -translate-x-6 pointer-events-none" />
+                <div className="hidden md:block absolute top-10 left-[calc(100%+0.25rem)] w-[calc(100%-2rem)] h-px bg-white/8 pointer-events-none" />
               )}
-
-              <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-4">
-                  <span className="font-display font-bold text-2xl text-white/80">
-                    {step.number}
-                  </span>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  <step.icon className="w-5 h-5 text-cyan-400" />
                 </div>
-
-                <h3 className="font-display font-semibold text-xl text-white mb-2">
-                  {step.title}
-                </h3>
-                <p className="text-white/60 leading-relaxed">
-                  {step.description}
-                </p>
+                <span className="font-display font-bold text-sm text-white/30">
+                  {step.number}
+                </span>
               </div>
+              <h3 className="font-display font-semibold text-xl text-white mb-2">
+                {step.title}
+              </h3>
+              <p className="text-sm text-white/55 leading-relaxed">
+                {step.description}
+              </p>
             </div>
           ))}
         </div>

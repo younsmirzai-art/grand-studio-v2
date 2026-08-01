@@ -79,7 +79,7 @@ const features: Feature[] = [
 
 export function FeatureGrid() {
   return (
-    <section className="gs-section-pro">
+    <section id="features" className="gs-section-pro scroll-mt-24">
       <div className="max-w-7xl mx-auto px-6">
         <div className="text-center mb-16">
           <div className="gs-eyebrow gs-eyebrow-cyan inline-flex mb-4">

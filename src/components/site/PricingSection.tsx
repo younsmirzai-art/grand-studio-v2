@@ -29,7 +29,7 @@ const plans = [
       "No ads",
     ],
     cta: "Get Pro",
-    href: "/pricing",
+    href: "/auth/signup",
     variant: "primary" as const,
     popular: true,
   },

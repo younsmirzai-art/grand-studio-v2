@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Search } from "lucide-react";
 import { getPolyHavenAssets } from "@/lib/polyhaven/client";
 import { ModelCard } from "@/components/site/ModelCard";
 
@@ -37,15 +38,37 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
   });
 
   return (
-    <div className="pt-32 pb-24 min-h-screen">
+    <div className="pt-28 pb-24 min-h-screen">
       <div className="max-w-7xl mx-auto px-6">
-        <div className="mb-12">
-          <h1 className="text-3xl md:text-5xl font-display font-bold mb-3">
-            {q ? `Results for "${q}"` : "Browse Models"}
-          </h1>
-          <p className="text-white/60">
-            {models.length} {models.length === 1 ? "model" : "models"} found
-          </p>
+        <div className="mb-8 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+          <div>
+            <div className="gs-eyebrow gs-eyebrow-cyan inline-flex mb-3">
+              <span>Marketplace</span>
+            </div>
+            <h1 className="gs-heading-lg mb-2">
+              {q ? `Results for “${q}”` : "Browse models"}
+            </h1>
+            <p className="text-white/55">
+              {models.length} {models.length === 1 ? "model" : "models"} found
+              {category ? ` in ${category}` : ""}
+            </p>
+          </div>
+
+          <form action="/browse" method="GET" className="w-full lg:w-[380px]">
+            {category ? (
+              <input type="hidden" name="category" value={category} />
+            ) : null}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/35" />
+              <input
+                type="text"
+                name="q"
+                defaultValue={q ?? ""}
+                placeholder="Search models..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-white/25"
+              />
+            </div>
+          </form>
         </div>
 
         <div className="mb-8 -mx-6 px-6 overflow-x-auto">
@@ -64,7 +87,7 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                     isActive
                       ? "bg-white text-black"
-                      : "gs-glass text-white/70 hover:text-white"
+                      : "bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10"
                   }`}
                 >
                   {cat.name}
@@ -75,21 +98,21 @@ export default async function BrowsePage({ searchParams }: BrowsePageProps) {
         </div>
 
         {models.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {models.map((model, i) => (
               <ModelCard key={model.id} model={model} index={i} />
             ))}
           </div>
         ) : (
-          <div className="py-24 text-center gs-card p-12 max-w-md mx-auto">
-            <p className="text-white/60 mb-2 font-medium">No models found</p>
-            <p className="text-white/40 text-sm">
+          <div className="py-20 text-center gs-feature-card max-w-md mx-auto">
+            <p className="text-white/70 mb-2 font-medium">No models found</p>
+            <p className="text-white/40 text-sm mb-6">
               {q ? "Try a different search term" : "Try a different category"}
             </p>
             {(q || category) && (
               <Link
                 href="/browse"
-                className="inline-block mt-6 text-sm text-cyan-400 hover:text-cyan-300 transition"
+                className="inline-flex text-sm text-cyan-400 hover:text-cyan-300 transition"
               >
                 Clear filters →
               </Link>

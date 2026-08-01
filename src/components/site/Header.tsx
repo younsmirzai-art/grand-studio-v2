@@ -80,6 +80,12 @@ export function Header() {
               Browse
             </Link>
             <Link
+              href="/#features"
+              className="text-sm text-white/70 hover:text-white transition font-medium"
+            >
+              Features
+            </Link>
+            <Link
               href="/plugin"
               className="text-sm text-white/70 hover:text-white transition font-medium flex items-center gap-1.5"
             >
@@ -93,6 +99,12 @@ export function Header() {
               className="text-sm text-white/70 hover:text-white transition font-medium"
             >
               Pricing
+            </Link>
+            <Link
+              href="/support"
+              className="text-sm text-white/70 hover:text-white transition font-medium"
+            >
+              Support
             </Link>
           </nav>
 
@@ -158,6 +170,13 @@ export function Header() {
               Browse
             </Link>
             <Link
+              href="/#features"
+              className="block text-lg text-white/80 hover:text-white transition py-2"
+              onClick={() => setMobileOpen(false)}
+            >
+              Features
+            </Link>
+            <Link
               href="/plugin"
               className="block text-lg text-white/80 hover:text-white transition py-2"
               onClick={() => setMobileOpen(false)}
@@ -170,6 +189,13 @@ export function Header() {
               onClick={() => setMobileOpen(false)}
             >
               Pricing
+            </Link>
+            <Link
+              href="/support"
+              className="block text-lg text-white/80 hover:text-white transition py-2"
+              onClick={() => setMobileOpen(false)}
+            >
+              Support
             </Link>
             {authState === "signed-in" ? (
               <>

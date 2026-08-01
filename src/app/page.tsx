@@ -6,6 +6,7 @@ import { HowItWorks } from "@/components/site/HowItWorks";
 import { FeaturedModels } from "@/components/site/FeaturedModels";
 import { PluginSection } from "@/components/site/PluginSection";
 import { PricingSection } from "@/components/site/PricingSection";
+import { TrustStrip } from "@/components/site/TrustStrip";
 import { FinalCTA } from "@/components/site/FinalCTA";
 
 export default function HomePage() {
@@ -41,6 +42,7 @@ export default function HomePage() {
       </Suspense>
       <PluginSection />
       <PricingSection />
+      <TrustStrip />
       <FinalCTA />
     </>
   );
