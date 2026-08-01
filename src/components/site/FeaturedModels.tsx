@@ -14,14 +14,14 @@ export async function FeaturedModels() {
   }
 
   return (
-    <section className="gs-section">
+    <section className="gs-section-pro">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-end justify-between mb-12">
           <div>
-            <span className="gs-section-label">Handpicked</span>
-            <h2 className="text-3xl md:text-5xl font-display font-bold tracking-tight">
-              Featured Models
-            </h2>
+            <div className="gs-eyebrow gs-eyebrow-cyan inline-flex mb-4">
+              <span>Handpicked</span>
+            </div>
+            <h2 className="gs-heading-lg">Featured models</h2>
           </div>
           <Link
             href="/browse"
@@ -32,7 +32,7 @@ export async function FeaturedModels() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {models.map((model, i) => (
             <ModelCard key={model.id} model={model} index={i} />
           ))}

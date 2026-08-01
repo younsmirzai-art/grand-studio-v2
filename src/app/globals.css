@@ -515,32 +515,128 @@
   margin-bottom: 0.5rem;
 }
 
-@keyframes gs-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+/* === Phase 3.6: Professional SaaS Utilities === */
+
+.gs-section-pro {
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+  position: relative;
 }
 
-@keyframes gs-pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.3); }
-  50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.6); }
+@media (min-width: 768px) {
+  .gs-section-pro {
+    padding-top: 7rem;
+    padding-bottom: 7rem;
+  }
 }
 
-.gs-animate-float {
-  animation: gs-float 6s ease-in-out infinite;
+.gs-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(196, 181, 253);
 }
 
-.gs-animate-pulse-glow {
-  animation: gs-pulse-glow 3s ease-in-out infinite;
+.gs-eyebrow-cyan {
+  background: rgba(0, 212, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.2);
+  color: rgb(103, 232, 249);
+}
+
+.gs-heading-xl {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: white;
+}
+
+@media (min-width: 768px) {
+  .gs-heading-xl {
+    font-size: 3.5rem;
+  }
+}
+
+.gs-heading-lg {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: white;
+}
+
+@media (min-width: 768px) {
+  .gs-heading-lg {
+    font-size: 2.5rem;
+  }
+}
+
+.gs-feature-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: all 200ms ease;
+}
+
+.gs-feature-card:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.gs-mockup-frame {
+  background: rgba(18, 18, 26, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.gs-trust-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+  opacity: 0.5;
+  transition: opacity 200ms;
+}
+
+.gs-trust-row:hover {
+  opacity: 0.8;
+}
+
+@keyframes gs-fade-in-subtle {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gs-fade-in {
+  animation: gs-fade-in-subtle 0.5s ease-out forwards;
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gs-animate-float,
-  .gs-animate-pulse-glow {
+  .gs-fade-in {
     animation: none;
-  }
-
-  * {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
+    opacity: 1;
   }
 }
