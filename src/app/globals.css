@@ -732,3 +732,96 @@
   color: rgba(255, 255, 255, 0.5);
   margin-bottom: 12px;
 }
+
+/* === Phase 7: Model Detail Utilities === */
+
+.gs-metadata-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.gs-metadata-row:last-child {
+  border-bottom: none;
+}
+
+.gs-metadata-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.gs-metadata-value {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: right;
+  font-weight: 500;
+}
+
+.gs-format-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  transition: all 150ms;
+  cursor: pointer;
+  width: 100%;
+}
+
+.gs-format-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.gs-format-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gs-format-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+}
+
+.gs-format-meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.gs-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 150ms;
+}
+
+.gs-tag:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.gs-author-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7C3AED 0%, #00D4FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: white;
+  font-size: 12px;
+  flex-shrink: 0;
+}

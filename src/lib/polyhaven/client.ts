@@ -566,3 +566,138 @@ export async function getPolyHavenAssetsExtended(
     return { models: [], total: 0 };
   }
 }
+
+/** Detailed asset metadata from `/info/{id}` (verified against live Poly Haven API). */
+export interface PolyHavenAssetInfo {
+  name: string;
+  type: number;
+  categories: string[];
+  tags: string[];
+  authors: Record<string, string>;
+  thumbnail_url?: string;
+  download_count: number;
+  date_published: number;
+  /** Millimeters (x, y, z) — convert to meters for display. */
+  dimensions?: [number, number, number];
+  /** Poly Haven field name is `polycount`. */
+  polycount?: number;
+  description?: string;
+  donated?: boolean;
+  max_resolution?: [number, number];
+  texel_density?: number;
+}
+
+export interface PolyHavenFileEntry {
+  url: string;
+  md5?: string;
+  size: number;
+  include?: Record<string, PolyHavenFileEntry>;
+}
+
+/** Top-level mesh formats from `/files/{id}` (models also include texture maps). */
+export interface PolyHavenFiles {
+  blend?: Record<string, Record<string, PolyHavenFileEntry>>;
+  fbx?: Record<string, Record<string, PolyHavenFileEntry>>;
+  gltf?: Record<string, Record<string, PolyHavenFileEntry>>;
+  usd?: Record<string, Record<string, PolyHavenFileEntry>>;
+  [key: string]: unknown;
+}
+
+export type PolyHavenMeshFormat = "gltf" | "fbx" | "usd" | "blend";
+
+const RESOLUTION_PREFERENCE = ["1k", "2k", "4k", "8k"] as const;
+
+export async function getPolyHavenAssetInfo(
+  id: string
+): Promise<PolyHavenAssetInfo | null> {
+  try {
+    const data = (await getAssetInfo(id)) as PolyHavenAssetInfo;
+    if (!data?.name) return null;
+    return {
+      ...data,
+      categories: data.categories ?? [],
+      tags: data.tags ?? [],
+      authors: data.authors ?? {},
+      download_count: data.download_count ?? 0,
+      date_published: data.date_published ?? 0,
+    };
+  } catch (error) {
+    console.error("[Poly Haven] getPolyHavenAssetInfo error:", error);
+    return null;
+  }
+}
+
+export async function getPolyHavenAssetFiles(
+  id: string
+): Promise<PolyHavenFiles | null> {
+  try {
+    const data = (await getDownloadLinks(id)) as unknown as PolyHavenFiles;
+    if (!data || typeof data !== "object") return null;
+    return data;
+  } catch (error) {
+    console.error("[Poly Haven] getPolyHavenAssetFiles error:", error);
+    return null;
+  }
+}
+
+/** Pick the mesh file entry for a format (prefers lower-res for preview/download UX). */
+export function pickPolyHavenFormatEntry(
+  files: PolyHavenFiles | null | undefined,
+  formatKey: PolyHavenMeshFormat,
+  preferredResolution = "1k"
+): { resolution: string; entry: PolyHavenFileEntry } | null {
+  if (!files) return null;
+  const formatBlock = files[formatKey];
+  if (!formatBlock || typeof formatBlock !== "object") return null;
+
+  const order = [
+    preferredResolution,
+    ...RESOLUTION_PREFERENCE.filter((r) => r !== preferredResolution),
+  ];
+
+  for (const res of order) {
+    const resBlock = formatBlock[res];
+    if (!resBlock || typeof resBlock !== "object") continue;
+    const nested = resBlock[formatKey] ?? Object.values(resBlock)[0];
+    if (
+      nested &&
+      typeof nested === "object" &&
+      typeof nested.url === "string" &&
+      nested.url.length > 0
+    ) {
+      return { resolution: res, entry: nested };
+    }
+  }
+  return null;
+}
+
+/** Total download size including nested texture includes when present. */
+export function getPolyHavenFormatSize(entry: PolyHavenFileEntry): number {
+  let total = entry.size || 0;
+  if (entry.include) {
+    for (const part of Object.values(entry.include)) {
+      total += part.size || 0;
+    }
+  }
+  return total;
+}
+
+export async function getSimilarModels(
+  id: string,
+  categories: string[],
+  limit = 4
+): Promise<Model[]> {
+  try {
+    const cats = categories.filter(Boolean).slice(0, 2);
+    const { models } = await getPolyHavenAssetsExtended({
+      type: "models",
+      categories: cats.length > 0 ? cats : undefined,
+      limit: limit + 8,
+      sort: "popular",
+    });
+    return models.filter((m) => m.id !== id).slice(0, limit);
+  } catch (error) {
+    console.error("[Poly Haven] getSimilarModels error:", error);
+    return [];
+  }
+}
