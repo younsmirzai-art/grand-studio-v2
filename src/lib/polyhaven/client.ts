@@ -11,6 +11,7 @@ export interface PolyHavenAsset {
   categories: string[];
   tags: string[];
   downloadCount: number;
+  datePublished: number;
   thumbnailUrl: string;
 }
 
@@ -39,7 +40,7 @@ async function phFetch(path: string) {
   return data;
 }
 
-function parseAssetList(raw: Record<string, { name?: string; categories?: string[]; tags?: string[]; download_count?: number }>, type: PolyHavenAssetType): PolyHavenAsset[] {
+function parseAssetList(raw: Record<string, { name?: string; categories?: string[]; tags?: string[]; download_count?: number; date_published?: number }>, type: PolyHavenAssetType): PolyHavenAsset[] {
   return Object.entries(raw).map(([id, data]) => ({
     id,
     name: data.name ?? id.replace(/_/g, " "),
@@ -47,6 +48,7 @@ function parseAssetList(raw: Record<string, { name?: string; categories?: string
     categories: data.categories ?? [],
     tags: data.tags ?? [],
     downloadCount: data.download_count ?? 0,
+    datePublished: data.date_published ?? 0,
     thumbnailUrl: `${CDN_URL}/asset_img/thumbs/${id}.png?width=256`,
   }));
 }
@@ -447,5 +449,120 @@ export async function getPolyHavenAsset(id: string): Promise<Model | null> {
   } catch (error) {
     console.error("[Poly Haven] getPolyHavenAsset error:", error);
     return null;
+  }
+}
+
+export interface PolyHavenCategory {
+  slug: string;
+  name: string;
+  count: number;
+}
+
+/** Category list with counts from Poly Haven `/categories/{type}`. */
+export async function getPolyHavenCategories(
+  type: PolyHavenAssetType = "models"
+): Promise<PolyHavenCategory[]> {
+  try {
+    const data = (await phFetch(`/categories/${type}`)) as Record<string, number>;
+    return Object.entries(data)
+      .filter(([slug]) => slug !== "all")
+      .map(([slug, count]) => ({
+        slug,
+        name: slug
+          .replace(/^collection:\s*/i, "")
+          .split(/[\s_]+/)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" "),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count);
+  } catch (error) {
+    console.error("[Poly Haven] getPolyHavenCategories error:", error);
+    return [];
+  }
+}
+
+export type BrowseSort = "newest" | "popular" | "downloads" | "name";
+
+export interface FetchOptionsExtended extends FetchOptions {
+  sort?: BrowseSort;
+  offset?: number;
+  sources?: string[];
+  licenses?: string[];
+}
+
+/**
+ * Browse-oriented fetch with sort + offset pagination.
+ * Keeps `getPolyHavenAssets` unchanged for homepage / featured sections.
+ */
+export async function getPolyHavenAssetsExtended(
+  options: FetchOptionsExtended = {}
+): Promise<{ models: Model[]; total: number }> {
+  const {
+    type = "models",
+    categories = [],
+    search,
+    limit = 24,
+    offset = 0,
+    sort = "popular",
+    sources = [],
+    licenses = [],
+  } = options;
+
+  const pageSize = Math.max(1, Math.min(48, limit));
+  const start = Math.max(0, offset);
+
+  try {
+    // Source / license soft-filters: only Poly Haven + CC0 are live today.
+    if (sources.length > 0 && !sources.includes("polyhaven")) {
+      return { models: [], total: 0 };
+    }
+    if (licenses.length > 0 && !licenses.includes("cc0")) {
+      return { models: [], total: 0 };
+    }
+
+    let list: PolyHavenAsset[];
+
+    if (search?.trim()) {
+      const ranked = await searchAssets(search.trim(), type, 500);
+      list = ranked;
+    } else {
+      list = await getAssets(type);
+    }
+
+    if (categories.length > 0) {
+      list = list.filter((asset) =>
+        categories.some((c) =>
+          asset.categories.some((ac) => ac.toLowerCase() === c.toLowerCase())
+        )
+      );
+    }
+
+    const sorted = [...list];
+    switch (sort) {
+      case "newest":
+        sorted.sort((a, b) => b.datePublished - a.datePublished);
+        break;
+      case "name":
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case "popular":
+      case "downloads":
+        sorted.sort((a, b) => b.downloadCount - a.downloadCount);
+        break;
+      default: {
+        const _exhaustive: never = sort;
+        void _exhaustive;
+        sorted.sort((a, b) => b.downloadCount - a.downloadCount);
+        break;
+      }
+    }
+
+    const total = sorted.length;
+    const models = sorted.slice(start, start + pageSize).map((a) => toModel(a));
+    return { models, total };
+  } catch (error) {
+    console.error("[Poly Haven] getPolyHavenAssetsExtended error:", error);
+    return { models: [], total: 0 };
   }
 }

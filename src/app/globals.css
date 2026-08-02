@@ -640,3 +640,95 @@
     opacity: 1;
   }
 }
+
+/* === Phase 2B: Browse Filter Utilities === */
+
+.gs-filter-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: all 150ms;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.gs-filter-checkbox:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.gs-filter-checkbox:checked {
+  background: linear-gradient(135deg, #7C3AED 0%, #00D4FF 100%);
+  border-color: transparent;
+}
+
+.gs-filter-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.gs-filter-checkbox:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 150ms;
+}
+
+.gs-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gs-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 150ms;
+}
+
+.gs-chip-remove:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.gs-filter-group {
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gs-filter-group:last-child {
+  border-bottom: none;
+}
+
+.gs-filter-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+}
