@@ -1,36 +1,63 @@
 import { NextResponse } from "next/server";
 import { createServerAuthClient } from "@/lib/supabase/server";
-import { checkUsageLimit } from "@/lib/usage/usageTracker";
+import { FREE_DAILY_LIMIT } from "@/lib/plans";
 
 export async function GET() {
   try {
     const supabase = await createServerAuthClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = user.id;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    const [ai, poly, sketch, meshy, music, world] = await Promise.all([
-      checkUsageLimit(userId, "ai_message"),
-      checkUsageLimit(userId, "polyhaven_import"),
-      checkUsageLimit(userId, "sketchfab_import"),
-      checkUsageLimit(userId, "meshy_generate"),
-      checkUsageLimit(userId, "music_generate"),
-      checkUsageLimit(userId, "world_import"),
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    const { data: sub } = await supabase
+      .from("subscriptions")
+      .select("plan, status, current_period_end, cancel_at_period_end")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const isPro = sub?.plan === "pro" && sub?.status === "active";
+    const tier = isPro ? "pro" : "free";
+
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+
+    const [todayRes, totalRes, favRes] = await Promise.all([
+      supabase
+        .from("downloads")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("downloaded_at", startOfDay.toISOString()),
+      supabase
+        .from("downloads")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id),
+      supabase
+        .from("favorites")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id),
     ]);
 
+    const downloadsToday = todayRes.count || 0;
+
     return NextResponse.json({
-      plan: ai.plan,
-      ai_message: { used: ai.used, limit: ai.limit },
-      polyhaven_import: { used: poly.used, limit: poly.limit },
-      sketchfab_import: { used: sketch.used, limit: sketch.limit },
-      meshy_generate: { used: meshy.used, limit: meshy.limit },
-      music_generate: { used: music.used, limit: music.limit },
-      world_import: { used: world.used, limit: world.limit },
+      tier,
+      plan: tier,
+      status: sub?.status || "active",
+      currentPeriodEnd: sub?.current_period_end || null,
+      cancelAtPeriodEnd: sub?.cancel_at_period_end || false,
+      downloadsToday,
+      totalDownloads: totalRes.count || 0,
+      favoritesCount: favRes.count || 0,
+      dailyLimit: isPro ? null : FREE_DAILY_LIMIT,
+      remaining: isPro
+        ? null
+        : Math.max(0, FREE_DAILY_LIMIT - downloadsToday),
     });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Check, Loader2, Lock } from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { Download, Check, Loader2, Lock, X } from "lucide-react";
 import {
   getPolyHavenFormatSize,
   pickPolyHavenFormatEntry,
@@ -13,6 +15,9 @@ interface DownloadPanelProps {
   files?: PolyHavenFiles | null;
   modelName: string;
   modelId: string;
+  posterUrl?: string;
+  categories?: string[];
+  tags?: string[];
 }
 
 interface FormatOption {
@@ -54,13 +59,59 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DownloadPanel({ files, modelName, modelId }: DownloadPanelProps) {
+export function DownloadPanel({
+  files,
+  modelName,
+  modelId,
+  posterUrl,
+  categories = [],
+  tags = [],
+}: DownloadPanelProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
+  const [limitReached, setLimitReached] = useState<{
+    limit?: number;
+    used?: number;
+  } | null>(null);
 
   const availableFormats = FORMATS.filter(
     (f) => pickPolyHavenFormatEntry(files, f.key, "1k") !== null
   );
+
+  const trackDownload = async (
+    format: FormatOption,
+    fileSize: number
+  ): Promise<boolean> => {
+    const res = await fetch("/api/download/track", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        modelId,
+        modelName,
+        modelThumbnail: posterUrl,
+        format: format.key,
+        fileSizeBytes: fileSize,
+        categories,
+        tags,
+      }),
+    });
+
+    if (res.status === 401) {
+      router.push(`/auth/login?redirect=${encodeURIComponent(pathname)}`);
+      return false;
+    }
+
+    if (res.status === 429) {
+      const data = (await res.json()) as { limit?: number; used?: number };
+      setLimitReached(data);
+      return false;
+    }
+
+    return res.ok;
+  };
 
   const handleDownload = async (format: FormatOption) => {
     const picked = pickPolyHavenFormatEntry(files, format.key, "1k");
@@ -69,11 +120,9 @@ export function DownloadPanel({ files, modelName, modelId }: DownloadPanelProps)
     setDownloading(format.key);
 
     try {
-      await fetch("/api/download/track", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId, format: format.key }),
-      }).catch(() => {});
+      const size = getPolyHavenFormatSize(picked.entry);
+      const allowed = await trackDownload(format, size);
+      if (!allowed) return;
 
       const link = document.createElement("a");
       link.href = picked.entry.url;
@@ -112,6 +161,32 @@ export function DownloadPanel({ files, modelName, modelId }: DownloadPanelProps)
           {availableFormats.length !== 1 ? "s" : ""}
         </span>
       </div>
+
+      {limitReached && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 relative">
+          <button
+            type="button"
+            onClick={() => setLimitReached(null)}
+            className="absolute top-2 right-2 p-1 rounded hover:bg-white/10"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5 text-white/50" />
+          </button>
+          <p className="text-sm text-amber-100 font-medium mb-1">
+            Daily limit reached
+          </p>
+          <p className="text-xs text-white/55 mb-3">
+            Free accounts get {limitReached.limit ?? 10} downloads per day.
+            Upgrade to Pro for unlimited downloads.
+          </p>
+          <Link
+            href="/pricing"
+            className="inline-flex text-xs font-semibold px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white hover:opacity-90 transition"
+          >
+            Upgrade to Pro
+          </Link>
+        </div>
+      )}
 
       <div className="space-y-2">
         {availableFormats.map((format) => {

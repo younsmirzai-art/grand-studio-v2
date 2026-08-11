@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TrendingUp, Download, Heart, Sparkles, type LucideIcon } from "lucide-react";
-import { getClient } from "@/lib/supabase/client";
+import { TrendingUp, Download, Heart, Crown, type LucideIcon } from "lucide-react";
+
+interface UsagePayload {
+  tier?: string;
+  downloadsToday?: number;
+  totalDownloads?: number;
+  favoritesCount?: number;
+  remaining?: number | null;
+  dailyLimit?: number | null;
+}
 
 interface StatCard {
   label: string;
@@ -12,8 +20,6 @@ interface StatCard {
   iconColor: string;
   iconBg: string;
 }
-
-const FREE_DAILY_LIMIT = 10;
 
 export function StatsSection() {
   const [stats, setStats] = useState<StatCard[]>([
@@ -35,17 +41,17 @@ export function StatsSection() {
     },
     {
       label: "Favorites",
-      value: "0",
-      trend: "Coming in Phase 6",
+      value: "—",
+      trend: "Saved models",
       icon: Heart,
       iconColor: "text-pink-400",
       iconBg: "bg-pink-500/10",
     },
     {
-      label: "AI generations",
+      label: "Plan",
       value: "—",
-      trend: "Coming in Phase 4",
-      icon: Sparkles,
+      trend: "Your subscription",
+      icon: Crown,
       iconColor: "text-amber-400",
       iconBg: "bg-amber-500/10",
     },
@@ -54,82 +60,56 @@ export function StatsSection() {
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      const supabase = getClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
-
-      const [downloadsResult, usageResult] = await Promise.allSettled([
-        fetch("/api/download/history", { credentials: "include" }).then((res) =>
-          res.ok ? res.json() : { items: [] }
-        ),
-        fetch("/api/usage", { credentials: "include" }).then((res) =>
-          res.ok ? res.json() : null
-        ),
-      ]);
-
-      if (cancelled) return;
-
-      const items =
-        downloadsResult.status === "fulfilled" &&
-        Array.isArray(downloadsResult.value.items)
-          ? downloadsResult.value.items
-          : [];
-
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const todayCount = items.filter(
-        (item: { downloaded_at: string }) =>
-          new Date(item.downloaded_at) >= startOfDay
-      ).length;
-
-      const usage =
-        usageResult.status === "fulfilled" ? usageResult.value : null;
-      const meshyUsed = usage?.meshy_generate?.used ?? 0;
-      const meshyLimit = usage?.meshy_generate?.limit;
-      const isUnlimited = meshyLimit === null || meshyLimit === -1 || meshyLimit > 9999;
-
-      setStats([
-        {
-          label: "Downloads today",
-          value: String(todayCount),
-          trend: `${Math.max(0, FREE_DAILY_LIMIT - todayCount)} of ${FREE_DAILY_LIMIT} remaining`,
-          icon: Download,
-          iconColor: "text-cyan-400",
-          iconBg: "bg-cyan-500/10",
-        },
-        {
-          label: "Total downloads",
-          value: String(items.length),
-          trend: "Recent history",
-          icon: TrendingUp,
-          iconColor: "text-purple-400",
-          iconBg: "bg-purple-500/10",
-        },
-        {
-          label: "Favorites",
-          value: "0",
-          trend: "Coming in Phase 6",
-          icon: Heart,
-          iconColor: "text-pink-400",
-          iconBg: "bg-pink-500/10",
-        },
-        {
-          label: "AI generations",
-          value: String(meshyUsed),
-          trend: isUnlimited
+    fetch("/api/usage", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((usage: UsagePayload | null) => {
+        if (cancelled || !usage) return;
+        const tier = usage.tier === "pro" ? "Pro" : "Free";
+        const remainingTrend =
+          usage.tier === "pro"
             ? "Unlimited"
-            : `Used of ${meshyLimit ?? "—"}`,
-          icon: Sparkles,
-          iconColor: "text-amber-400",
-          iconBg: "bg-amber-500/10",
-        },
-      ]);
-    }
+            : `${usage.remaining ?? 0} remaining`;
 
-    load().catch(() => {});
+        setStats([
+          {
+            label: "Downloads today",
+            value: String(usage.downloadsToday ?? 0),
+            trend: remainingTrend,
+            icon: Download,
+            iconColor: "text-cyan-400",
+            iconBg: "bg-cyan-500/10",
+          },
+          {
+            label: "Total downloads",
+            value: String(usage.totalDownloads ?? 0),
+            trend: "All time",
+            icon: TrendingUp,
+            iconColor: "text-purple-400",
+            iconBg: "bg-purple-500/10",
+          },
+          {
+            label: "Favorites",
+            value: String(usage.favoritesCount ?? 0),
+            trend: "Saved models",
+            icon: Heart,
+            iconColor: "text-pink-400",
+            iconBg: "bg-pink-500/10",
+          },
+          {
+            label: "Plan",
+            value: tier,
+            trend:
+              usage.tier === "pro"
+                ? "Unlimited downloads"
+                : `${usage.dailyLimit ?? 10}/day free`,
+            icon: Crown,
+            iconColor: "text-amber-400",
+            iconBg: "bg-amber-500/10",
+          },
+        ]);
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };

@@ -73,6 +73,8 @@ export default async function ModelPage({ params }: PageProps) {
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <ModelHero
           name={info.name}
+          modelId={id}
+          modelThumbnail={posterUrl}
           categories={info.categories}
           tags={info.tags}
         />
@@ -96,6 +98,9 @@ export default async function ModelPage({ params }: PageProps) {
               files={files}
               modelName={info.name}
               modelId={id}
+              posterUrl={posterUrl}
+              categories={info.categories}
+              tags={info.tags}
             />
             <ModelMetadata info={info} />
           </div>

@@ -18,7 +18,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { getClient } from "@/lib/supabase/client";
+import { FREE_DAILY_LIMIT } from "@/lib/plans";
 
 interface NavItem {
   name: string;
@@ -70,8 +70,6 @@ const legalLinks = [
   { name: "Terms", href: "/terms" },
 ];
 
-const FREE_DAILY_LIMIT = 10;
-
 function isActivePath(
   pathname: string,
   href: string,
@@ -109,46 +107,19 @@ function SidebarInner({
     let cancelled = false;
 
     async function loadPlan() {
-      const supabase = getClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
-
-      const [subscriptionResult, downloadsResult] = await Promise.allSettled([
-        supabase
-          .from("subscriptions")
-          .select("plan, status")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        fetch("/api/download/history", { credentials: "include" }).then((res) =>
-          res.ok ? res.json() : { items: [] }
+      const [usageResult] = await Promise.allSettled([
+        fetch("/api/usage", { credentials: "include" }).then((res) =>
+          res.ok ? res.json() : null
         ),
       ]);
 
       if (cancelled) return;
 
-      const subscription =
-        subscriptionResult.status === "fulfilled"
-          ? subscriptionResult.value.data
-          : null;
-      const items =
-        downloadsResult.status === "fulfilled" &&
-        Array.isArray(downloadsResult.value.items)
-          ? downloadsResult.value.items
-          : [];
+      const usage =
+        usageResult.status === "fulfilled" ? usageResult.value : null;
 
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const todayCount = items.filter(
-        (item: { downloaded_at: string }) =>
-          new Date(item.downloaded_at) >= startOfDay
-      ).length;
-
-      setDownloadsToday(todayCount);
-      setIsFree(
-        !(subscription?.plan === "pro" && subscription?.status === "active")
-      );
+      setDownloadsToday(usage?.downloadsToday ?? 0);
+      setIsFree(usage?.tier !== "pro");
     }
 
     loadPlan().catch(() => {});

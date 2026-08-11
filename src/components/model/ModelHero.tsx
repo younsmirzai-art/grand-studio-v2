@@ -4,11 +4,19 @@ import { ModelActions } from "./ModelActions";
 
 interface ModelHeroProps {
   name: string;
+  modelId: string;
+  modelThumbnail?: string;
   categories: string[];
   tags: string[];
 }
 
-export function ModelHero({ name, categories, tags }: ModelHeroProps) {
+export function ModelHero({
+  name,
+  modelId,
+  modelThumbnail,
+  categories,
+  tags,
+}: ModelHeroProps) {
   const primaryCategory = categories[0];
 
   return (
@@ -51,7 +59,11 @@ export function ModelHero({ name, categories, tags }: ModelHeroProps) {
           )}
         </div>
 
-        <ModelActions name={name} />
+        <ModelActions
+          name={name}
+          modelId={modelId}
+          modelThumbnail={modelThumbnail}
+        />
       </div>
     </div>
   );
