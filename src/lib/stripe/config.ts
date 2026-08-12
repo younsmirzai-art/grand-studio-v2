@@ -4,21 +4,31 @@ import { FREE_DAILY_LIMIT } from "@/lib/plans";
 export { FREE_DAILY_LIMIT };
 
 /**
- * Shared Stripe + plan constants for Phase 6.
- * Secret key must never be logged or exposed to the client.
+ * Read Pro price ID at call-time (not module load).
+ * Prefers server-only STRIPE_PRO_PRICE_ID, falls back to NEXT_PUBLIC_*.
  */
-export const STRIPE_PRO_PRICE_ID =
-  process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID || "";
+export function getStripeProPriceId(): string {
+  const value =
+    process.env.STRIPE_PRO_PRICE_ID?.trim() ||
+    process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID?.trim() ||
+    "";
+  return value;
+}
 
-/** @deprecated Prefer STRIPE_PRO_PRICE_ID — kept for older callers */
+/** @deprecated Prefer getStripeProPriceId() */
+export const STRIPE_PRO_PRICE_ID = getStripeProPriceId();
+
+/** @deprecated Prefer getStripeProPriceId() */
 export const STRIPE_PRICES = {
-  PRO_MONTHLY: STRIPE_PRO_PRICE_ID || "price_TBD",
+  get PRO_MONTHLY() {
+    return getStripeProPriceId() || "price_TBD";
+  },
 } as const;
 
 let stripeClient: Stripe | null = null;
 
 export function getStripe(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not configured");
   }

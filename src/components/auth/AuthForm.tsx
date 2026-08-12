@@ -42,9 +42,9 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; detail?: string };
       if (!res.ok) {
-        setError(data.error || "Failed to send magic link");
+        setError(data.detail || data.error || "Failed to send magic link");
         return;
       }
       setSent(true);

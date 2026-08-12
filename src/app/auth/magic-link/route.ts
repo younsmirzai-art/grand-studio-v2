@@ -1,5 +1,23 @@
+import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { createServerAuthClient } from "@/lib/supabase/server";
+
+/**
+ * Magic-link OTP does not need cookies — use a plain anon client.
+ * Cookie SSR client with no-op setAll can interfere with auth flows.
+ */
+function createOtpClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  if (!url || !anon) {
+    throw new Error("Supabase env not configured");
+  }
+  return createClient(url, anon, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,26 +31,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createServerAuthClient();
-    const origin = request.nextUrl.origin;
+    const supabase = createOtpClient();
+    const siteUrl =
+      process.env.NEXT_PUBLIC_SITE_URL?.trim() || request.nextUrl.origin;
+    const redirectTo = `${siteUrl.replace(/\/$/, "")}/auth/callback?next=/dashboard`;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?next=/dashboard`,
+        emailRedirectTo: redirectTo,
+        shouldCreateUser: true,
       },
     });
 
     if (error) {
-      console.error("[magic-link] send failed");
+      // Log code/status only — never tokens or full payloads
+      console.error("[magic-link] send failed:", error.name, error.status, error.message);
       return NextResponse.json(
-        { error: "Failed to send magic link" },
+        {
+          error: "Failed to send magic link",
+          detail: error.message,
+        },
         { status: 500 }
       );
     }
 
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.error(
+      "[magic-link] server error:",
+      error instanceof Error ? error.message : "unknown"
+    );
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripe, STRIPE_PRO_PRICE_ID } from "@/lib/stripe/config";
+import { getStripe, getStripeProPriceId } from "@/lib/stripe/config";
 import {
   createServerAuthClient,
   createServerClient,
@@ -16,7 +16,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    if (!STRIPE_PRO_PRICE_ID) {
+    const priceId = getStripeProPriceId();
+    if (!priceId) {
+      console.error(
+        "[stripe/checkout] missing STRIPE_PRO_PRICE_ID / NEXT_PUBLIC_STRIPE_PRO_PRICE_ID"
+      );
       return NextResponse.json(
         { error: "Stripe price not configured" },
         { status: 500 }
@@ -35,10 +39,11 @@ export async function POST(request: NextRequest) {
     }
 
     const origin = request.nextUrl.origin;
+    const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      line_items: [{ price: STRIPE_PRO_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       customer: existingSub?.stripe_customer_id || undefined,
       customer_email: existingSub?.stripe_customer_id
         ? undefined
@@ -55,7 +60,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
-    console.error("[stripe/checkout] failed");
+    console.error(
+      "[stripe/checkout] failed:",
+      error instanceof Error ? error.message : "unknown"
+    );
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Failed to start checkout",
