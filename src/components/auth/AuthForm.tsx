@@ -201,7 +201,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             Already have an account?{" "}
             <Link
               href={`/auth/login?redirect=${encodeURIComponent(redirectTo)}`}
-              className="text-cyan-400 hover:text-cyan-300 font-medium"
+              className="text-[#A5B4FC] hover:text-white font-medium"
             >
               Sign in
             </Link>
@@ -221,7 +221,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             type="button"
             disabled={resendRemaining > 0}
             onClick={() => void resendConfirmation()}
-            className="mt-6 text-sm text-cyan-400 hover:text-cyan-300 transition disabled:text-white/35 disabled:cursor-not-allowed"
+            className="mt-6 text-sm text-[#A5B4FC] hover:text-white transition disabled:text-white/35 disabled:cursor-not-allowed"
           >
             {resendRemaining > 0
               ? `Resend in ${resendRemaining}s`
@@ -251,7 +251,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             Don&apos;t have an account?{" "}
             <Link
               href={`/auth/signup?redirect=${encodeURIComponent(redirectTo)}`}
-              className="text-cyan-400 hover:text-cyan-300 font-medium"
+              className="text-[#A5B4FC] hover:text-white font-medium"
             >
               Sign up
             </Link>
@@ -261,7 +261,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             Already have an account?{" "}
             <Link
               href={`/auth/login?redirect=${encodeURIComponent(redirectTo)}`}
-              className="text-cyan-400 hover:text-cyan-300 font-medium"
+              className="text-[#A5B4FC] hover:text-white font-medium"
             >
               Sign in
             </Link>
@@ -275,7 +275,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
             type="button"
             disabled={resendRemaining > 0}
             onClick={() => void resendConfirmation()}
-            className="text-cyan-400 hover:text-cyan-300 font-medium disabled:text-white/35"
+            className="text-[#A5B4FC] hover:text-white font-medium disabled:text-white/35"
           >
             {resendRemaining > 0
               ? `Resend confirmation in ${resendRemaining}s`
@@ -323,7 +323,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
               </label>
               <Link
                 href="/auth/forgot-password"
-                className="text-xs text-cyan-400 hover:text-cyan-300"
+                className="text-xs text-[#A5B4FC] hover:text-white"
               >
                 Forgot?
               </Link>
@@ -350,7 +350,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-semibold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2 hover:opacity-90"
+          className="gs-btn gs-btn-primary gs-btn-lg gs-btn-full"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />

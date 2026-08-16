@@ -127,7 +127,7 @@ export function ApiKeySection() {
               type="button"
               onClick={() => mutateKey(true)}
               disabled={busy}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 text-white/70 text-xs font-medium hover:bg-white/10 transition disabled:opacity-50"
+              className="gs-btn gs-btn-ghost gs-btn-sm"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
               Regenerate key
@@ -142,7 +142,7 @@ export function ApiKeySection() {
               type="button"
               onClick={() => mutateKey(false)}
               disabled={busy}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:opacity-90 transition disabled:opacity-50"
+              className="gs-btn gs-btn-primary"
             >
               {busy ? "Generating…" : "Generate API key"}
             </button>

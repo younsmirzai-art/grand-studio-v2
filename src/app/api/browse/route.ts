@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getPolyHavenAssetsExtended,
-  type BrowseSort,
-} from "@/lib/polyhaven/client";
-
-const SORTS: BrowseSort[] = ["newest", "popular", "downloads", "name"];
-
-function parseSort(value: string | null): BrowseSort {
-  if (value && (SORTS as string[]).includes(value)) {
-    return value as BrowseSort;
-  }
-  return "popular";
-}
+  browseCatalog,
+  parseBrowseSort,
+  parseCatalogKind,
+} from "@/lib/catalog/browse";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
-  const limit = Number.parseInt(searchParams.get("limit") || "24", 10);
+  const limit = Number.parseInt(searchParams.get("limit") || "48", 10);
   const offset = Number.parseInt(searchParams.get("offset") || "0", 10);
   const q = searchParams.get("q") || undefined;
   const categoriesStr = searchParams.get("categories");
@@ -29,31 +21,34 @@ export async function GET(request: NextRequest) {
   const licenses = licensesStr
     ? licensesStr.split(",").filter(Boolean)
     : undefined;
-  const sort = parseSort(searchParams.get("sort"));
+  const sort = parseBrowseSort(searchParams.get("sort"));
+  const kind = parseCatalogKind(searchParams.get("type"));
 
   try {
-    const result = await getPolyHavenAssetsExtended({
-      type: "models",
-      search: q,
+    const result = await browseCatalog({
+      q,
       categories,
       sources,
       licenses,
-      limit: Number.isFinite(limit) ? limit : 24,
-      offset: Number.isFinite(offset) ? offset : 0,
+      kind,
       sort,
+      limit: Number.isFinite(limit) ? limit : 48,
+      offset: Number.isFinite(offset) ? offset : 0,
     });
 
     return NextResponse.json({
       models: result.models,
       total: result.total,
+      hasMore: result.hasMore,
       offset: Number.isFinite(offset) ? offset : 0,
-      limit: Number.isFinite(limit) ? limit : 24,
+      limit: Number.isFinite(limit) ? limit : 48,
       sort,
+      kind,
     });
   } catch (error) {
     console.error("Browse API error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch models", models: [], total: 0 },
+      { error: "Failed to fetch models", models: [], total: 0, hasMore: false },
       { status: 500 }
     );
   }

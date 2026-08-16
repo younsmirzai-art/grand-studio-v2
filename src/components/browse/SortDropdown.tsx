@@ -71,7 +71,7 @@ export function SortDropdown() {
                 >
                   <span>{option.label}</span>
                   {currentSort === option.value && (
-                    <Check className="w-3.5 h-3.5 text-cyan-400" />
+                    <Check className="w-3.5 h-3.5 text-[#A5B4FC]" />
                   )}
                 </button>
               ))}

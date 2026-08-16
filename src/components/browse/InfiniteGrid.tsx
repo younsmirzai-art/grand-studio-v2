@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import { ModelCard } from "@/components/site/ModelCard";
 import type { Model } from "@/lib/polyhaven/client";
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 48;
 
 export function InfiniteGrid() {
   const searchParams = useSearchParams();
@@ -49,12 +49,14 @@ export function InfiniteGrid() {
         const categories = searchParams.get("categories");
         const sources = searchParams.get("sources");
         const licenses = searchParams.get("licenses");
+        const assetType = searchParams.get("type");
         const sort = searchParams.get("sort") || "popular";
 
         if (q) params.set("q", q);
         if (categories) params.set("categories", categories);
         if (sources) params.set("sources", sources);
         if (licenses) params.set("licenses", licenses);
+        if (assetType) params.set("type", assetType);
         params.set("sort", sort);
 
         const res = await fetch(`/api/browse?${params.toString()}`);
@@ -63,11 +65,15 @@ export function InfiniteGrid() {
         const data = (await res.json()) as {
           models: Model[];
           total: number;
+          hasMore?: boolean;
         };
 
         setModels((prev) => (replace ? data.models : [...prev, ...data.models]));
         setTotal(data.total);
-        const nextHasMore = offset + PAGE_SIZE < data.total;
+        const nextHasMore =
+          typeof data.hasMore === "boolean"
+            ? data.hasMore
+            : offset + PAGE_SIZE < data.total;
         setHasMore(nextHasMore);
         hasMoreRef.current = nextHasMore;
       } catch (err) {
@@ -131,7 +137,7 @@ export function InfiniteGrid() {
             setInitialLoading(true);
             void fetchModels(0, true);
           }}
-          className="text-sm text-cyan-400 hover:text-cyan-300 transition"
+          className="text-sm text-slate-300 hover:text-white transition"
         >
           Retry
         </button>
@@ -154,10 +160,10 @@ export function InfiniteGrid() {
     <>
       <div className="mb-4 text-sm text-white/50">
         Showing {models.length.toLocaleString()} of {total.toLocaleString()}{" "}
-        models
+        assets
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
         {models.map((model, i) => (
           <ModelCard key={`${model.id}-${i}`} model={model} index={i} />
         ))}
@@ -175,7 +181,7 @@ export function InfiniteGrid() {
         )}
         {!hasMore && !loading && (
           <div className="text-sm text-white/40">
-            You&apos;ve reached the end · {models.length.toLocaleString()} models
+            You&apos;ve reached the end · {models.length.toLocaleString()} assets
           </div>
         )}
       </div>
@@ -185,8 +191,8 @@ export function InfiniteGrid() {
 
 function ModelGridSkeleton() {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-      {Array.from({ length: 12 }, (_, i) => (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+      {Array.from({ length: 18 }, (_, i) => (
         <div key={i} className="gs-feature-card p-0 overflow-hidden">
           <div className="aspect-square bg-white/5 animate-pulse" />
           <div className="p-3">

@@ -47,10 +47,7 @@ export function PluginSection() {
             </ul>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <Link
-                href="/plugin"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white text-black font-semibold hover:bg-white/90 transition-colors"
-              >
+              <Link href="/plugin" className="gs-btn gs-btn-primary gs-btn-lg">
                 Learn more
                 <ArrowRight className="w-4 h-4" />
               </Link>

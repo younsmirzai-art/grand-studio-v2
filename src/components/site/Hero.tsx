@@ -61,17 +61,11 @@ export async function Hero() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-start gap-3 mb-8">
-              <Link
-                href="/auth/signup"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white text-black font-semibold hover:bg-white/90 transition-colors"
-              >
+              <Link href="/auth/signup" className="gs-btn gs-btn-primary gs-btn-lg">
                 Start free
                 <ArrowRight className="w-4 h-4" />
               </Link>
-              <Link
-                href="/browse"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors"
-              >
+              <Link href="/browse" className="gs-btn gs-btn-secondary gs-btn-lg">
                 Browse models
               </Link>
             </div>
@@ -87,14 +81,14 @@ export async function Hero() {
               </div>
               <div className="flex items-center gap-1.5">
                 <Check className="w-4 h-4 text-green-400" />
-                <span>500K+ models</span>
+                <span>10,000+ assets</span>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3 max-w-md">
               {[
-                { value: "500K+", label: "Models indexed" },
-                { value: "20+", label: "Sources" },
+                { value: "10K+", label: "Assets indexed" },
+                { value: "3", label: "Sources" },
                 { value: "10/day", label: "Free downloads" },
               ].map((stat) => (
                 <div
@@ -193,9 +187,7 @@ function ProductMockup({ models }: { models: Model[] }) {
           {/* Mini sidebar */}
           <aside className="hidden sm:flex w-[132px] flex-col border-r border-white/5 bg-black/20 p-3 gap-3">
             <div className="flex items-center gap-2 mb-1">
-              <div className="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center text-[9px] font-bold">
-                GS
-              </div>
+              <div className="gs-mark w-6 h-6 text-[9px] rounded-md">GS</div>
               <span className="text-[10px] font-semibold text-white/80">
                 Filters
               </span>
@@ -244,7 +236,7 @@ function ProductMockup({ models }: { models: Model[] }) {
               <div className="text-[9px] text-white/40 mb-1">Plan</div>
               <div className="text-[10px] font-medium text-white">Free · 7/10</div>
               <div className="mt-1.5 h-1 rounded-full bg-white/5 overflow-hidden">
-                <div className="h-full w-[70%] rounded-full bg-gradient-to-r from-purple-500 to-cyan-500" />
+                <div className="h-full w-[70%] rounded-full bg-[#5E6AD2]" />
               </div>
             </div>
           </aside>
@@ -256,7 +248,7 @@ function ProductMockup({ models }: { models: Model[] }) {
               <div className="h-8 rounded-md bg-white/[0.04] border border-white/10 flex items-center gap-2 px-2.5">
                 <Search className="w-3.5 h-3.5 text-white/35" />
                 <span className="text-[11px] text-white/40 flex-1 truncate">
-                  Search 500K+ 3D models...
+                  Search 10,000+ models, textures, HDRIs...
                 </span>
                 <kbd className="hidden md:inline text-[9px] text-white/25 border border-white/10 rounded px-1">
                   ⌘K

@@ -64,9 +64,7 @@ export function Header() {
       >
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-lg gs-glow-purple-sm bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center font-bold text-sm shadow-lg group-hover:scale-105 transition-transform">
-              GS
-            </div>
+            <div className="gs-mark w-9 h-9 text-sm">GS</div>
             <span className="font-display font-semibold text-lg tracking-tight text-white">
               Grand Studio
             </span>
@@ -116,13 +114,13 @@ export function Header() {
               <>
                 <Link
                   href="/auth/login"
-                  className="hidden sm:block text-sm text-white/70 hover:text-white transition font-medium"
+                  className="gs-btn gs-btn-ghost gs-btn-sm hidden sm:inline-flex"
                 >
                   Sign in
                 </Link>
                 <Link
                   href="/auth/signup"
-                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
+                  className="gs-btn gs-btn-primary gs-btn-sm"
                 >
                   Get Started
                 </Link>
@@ -134,15 +132,12 @@ export function Header() {
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  className="hidden sm:block text-sm text-white/70 hover:text-white transition font-medium"
+                  className="gs-btn gs-btn-ghost gs-btn-sm hidden sm:inline-flex"
                 >
                   Sign out
                 </button>
-                <Link
-                  href="/dashboard"
-                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
-                >
-                  Dashboard
+                <Link href="/browse" className="gs-btn gs-btn-primary gs-btn-sm">
+                  Browse
                 </Link>
               </>
             )}
@@ -200,11 +195,11 @@ export function Header() {
             {authState === "signed-in" ? (
               <>
                 <Link
-                  href="/dashboard"
+                  href="/browse"
                   className="block text-lg text-white/80 hover:text-white transition py-2 border-t border-white/10 mt-4 pt-4"
                   onClick={() => setMobileOpen(false)}
                 >
-                  Dashboard
+                  Browse
                 </Link>
                 <Link
                   href="/library"

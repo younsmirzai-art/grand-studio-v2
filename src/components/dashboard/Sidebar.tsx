@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
-  LayoutDashboard,
   FolderOpen,
   Heart,
   Sparkles,
@@ -36,16 +35,10 @@ const navigation: NavSection[] = [
   {
     section: "Main",
     items: [
-      { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Browse Models", href: "/browse", icon: Search },
+      { name: "AI Generator", href: "/generate", icon: Sparkles, badge: "NEW" },
       { name: "My Library", href: "/library", icon: FolderOpen },
       { name: "Favorites", href: "/library?tab=favorites", icon: Heart },
-    ],
-  },
-  {
-    section: "Create",
-    items: [
-      { name: "AI Generator", href: "/generate", icon: Sparkles, badge: "NEW" },
-      { name: "Browse Models", href: "/browse", icon: Search },
     ],
   },
   {
@@ -53,12 +46,6 @@ const navigation: NavSection[] = [
     items: [
       { name: "UE5 Plugin", href: "/plugin", icon: Rocket, badge: "SOON" },
       { name: "Pricing", href: "/pricing", icon: CreditCard },
-    ],
-  },
-  {
-    section: "Account",
-    items: [
-      { name: "Settings", href: "/settings", icon: Settings },
       { name: "Contact Support", href: "/support", icon: LifeBuoy },
     ],
   },
@@ -77,8 +64,6 @@ function isActivePath(
 ): boolean {
   const [base, query] = href.split("?");
   const wantsFavorites = query?.includes("tab=favorites") ?? false;
-
-  if (base === "/dashboard") return pathname === "/dashboard";
 
   if (base === "/library") {
     const onLibrary =
@@ -143,17 +128,15 @@ function SidebarInner({
       <aside
         className={`
           fixed inset-y-0 left-0 z-40 w-64
-          bg-[var(--gs-bg-surface)] border-r border-white/5
+          bg-[#090D16]/80 backdrop-blur-xl border-r border-white/10
           transition-transform duration-300
           ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
       >
         <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-white/5">
-            <Link href="/" className="flex items-center gap-2.5 group">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center font-bold text-sm shadow-lg shadow-purple-500/20">
-                GS
-              </div>
+          <div className="p-5 border-b border-white/10">
+            <Link href="/browse" className="flex items-center gap-2.5 group">
+              <div className="gs-mark w-9 h-9 text-sm">GS</div>
               <div>
                 <div className="font-display font-semibold text-white text-sm tracking-tight">
                   Grand Studio
@@ -166,7 +149,7 @@ function SidebarInner({
           <nav className="flex-1 overflow-y-auto p-4 space-y-6">
             {navigation.map((section) => (
               <div key={section.section}>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-white/30 px-3 mb-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-3 mb-2">
                   {section.section}
                 </div>
                 <div className="space-y-0.5">
@@ -182,19 +165,22 @@ function SidebarInner({
                         href={item.href}
                         onClick={() => setMobileOpen(false)}
                         className={`
-                          flex items-center gap-3 px-3 py-2 rounded-lg text-sm
-                          transition-colors group
+                          relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm
+                          transition-all duration-200 ease-in-out group
                           ${
                             active
-                              ? "bg-white/5 text-white"
-                              : "text-white/60 hover:text-white hover:bg-white/5"
+                              ? "bg-white/[0.06] text-slate-100"
+                              : "text-slate-400 hover:text-slate-100 hover:bg-white/5"
                           }
                         `}
                       >
+                        {active ? (
+                          <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-[#5E6AD2]" />
+                        ) : null}
                         <item.icon
                           className={`w-4 h-4 ${
                             active
-                              ? "text-cyan-400"
+                              ? "text-[#A5B4FC]"
                               : "text-white/50 group-hover:text-white/70"
                           }`}
                         />
@@ -221,8 +207,8 @@ function SidebarInner({
             ))}
           </nav>
 
-          <div className="p-4 border-t border-white/5">
-            <div className="gs-card p-3">
+          <div className="p-4 border-t border-white/10">
+            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3 backdrop-blur-md">
               <div className="flex items-center gap-2 mb-2">
                 <Zap className="w-4 h-4 text-cyan-400" />
                 <span className="text-xs font-semibold text-white">
@@ -237,7 +223,7 @@ function SidebarInner({
               {isFree && (
                 <div className="w-full h-1 rounded-full bg-white/5 mb-3">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-purple-500 to-cyan-500"
+                    className="h-full rounded-full bg-[#5E6AD2]"
                     style={{ width: `${usagePct}%` }}
                   />
                 </div>
@@ -245,19 +231,32 @@ function SidebarInner({
               {isFree ? (
                 <Link
                   href="/pricing"
-                  className="block w-full text-center px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-xs font-semibold hover:opacity-90 transition"
+                  className="gs-btn gs-btn-primary gs-btn-sm gs-btn-full"
                 >
                   Upgrade to Pro
                 </Link>
               ) : (
                 <Link
                   href="/settings"
-                  className="block w-full text-center px-3 py-1.5 rounded-lg bg-white/5 text-white/70 text-xs font-semibold hover:bg-white/10 transition"
+                  className="gs-btn gs-btn-secondary gs-btn-sm gs-btn-full"
                 >
                   Manage billing
                 </Link>
               )}
             </div>
+
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
+              className={`mt-3 relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ease-in-out ${
+                pathname === "/settings" || pathname.startsWith("/settings/")
+                  ? "bg-white/[0.06] text-slate-100"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-white/5"
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              <span className="font-medium">Settings</span>
+            </Link>
 
             <div className="flex items-center justify-center gap-3 mt-3 text-[10px] text-white/30">
               {legalLinks.map((link) => (

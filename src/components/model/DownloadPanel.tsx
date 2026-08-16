@@ -7,12 +7,16 @@ import { Download, Check, Loader2, Lock, X } from "lucide-react";
 import {
   getPolyHavenFormatSize,
   pickPolyHavenFormatEntry,
+  type CatalogFileOption,
   type PolyHavenFiles,
   type PolyHavenMeshFormat,
 } from "@/lib/polyhaven/client";
 
 interface DownloadPanelProps {
   files?: PolyHavenFiles | null;
+  extraDownloads?: CatalogFileOption[];
+  sketchfabUid?: string;
+  licenseLabel?: string;
   modelName: string;
   modelId: string;
   posterUrl?: string;
@@ -61,6 +65,9 @@ function formatFileSize(bytes: number): string {
 
 export function DownloadPanel({
   files,
+  extraDownloads = [],
+  sketchfabUid,
+  licenseLabel = "CC0 — free for any use",
   modelName,
   modelId,
   posterUrl,
@@ -141,7 +148,80 @@ export function DownloadPanel({
     }
   };
 
-  if (availableFormats.length === 0) {
+  const handleExtraDownload = async (item: CatalogFileOption) => {
+    setDownloading(item.key);
+    try {
+      const allowed = await trackDownload(
+        {
+          key: "gltf",
+          label: item.label,
+          description: item.description,
+          extension: "zip",
+        },
+        item.size
+      );
+      if (!allowed) return;
+      const link = document.createElement("a");
+      link.href = item.url;
+      link.download = item.label.replace(/\s+/g, "_");
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setDownloaded((prev) => new Set(prev).add(item.key));
+    } catch (error) {
+      console.error("Download failed:", error);
+    } finally {
+      setTimeout(() => setDownloading(null), 500);
+    }
+  };
+
+  const handleSketchfabDownload = async () => {
+    if (!sketchfabUid) return;
+    setDownloading("sketchfab");
+    try {
+      const res = await fetch("/api/sketchfab/download", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: sketchfabUid }),
+      });
+      if (res.status === 401) {
+        router.push(`/auth/login?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
+      const data = (await res.json()) as {
+        url?: string;
+        error?: string;
+        limitReached?: boolean;
+      };
+      if (res.status === 403 && data.limitReached) {
+        setLimitReached({ limit: 10 });
+        return;
+      }
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Download failed");
+      }
+      window.open(data.url, "_blank", "noopener,noreferrer");
+      await trackDownload(
+        {
+          key: "gltf",
+          label: "Sketchfab",
+          description: "Source archive",
+          extension: "zip",
+        },
+        0
+      );
+      setDownloaded((prev) => new Set(prev).add("sketchfab"));
+    } catch (error) {
+      console.error("Sketchfab download failed:", error);
+    } finally {
+      setTimeout(() => setDownloading(null), 500);
+    }
+  };
+
+  if (availableFormats.length === 0 && extraDownloads.length === 0 && !sketchfabUid) {
     return (
       <div className="gs-card p-5">
         <div className="text-center py-6">
@@ -157,8 +237,11 @@ export function DownloadPanel({
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-white text-sm">Download</h3>
         <span className="text-xs text-white/40">
-          {availableFormats.length} format
-          {availableFormats.length !== 1 ? "s" : ""}
+          {availableFormats.length + extraDownloads.length + (sketchfabUid ? 1 : 0)}{" "}
+          format
+          {availableFormats.length + extraDownloads.length + (sketchfabUid ? 1 : 0) !== 1
+            ? "s"
+            : ""}
         </span>
       </div>
 
@@ -181,7 +264,7 @@ export function DownloadPanel({
           </p>
           <Link
             href="/pricing"
-            className="inline-flex text-xs font-semibold px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white hover:opacity-90 transition"
+            className="gs-btn gs-btn-primary gs-btn-sm"
           >
             Upgrade to Pro
           </Link>
@@ -189,6 +272,68 @@ export function DownloadPanel({
       )}
 
       <div className="space-y-2">
+        {sketchfabUid ? (
+          <button
+            type="button"
+            onClick={() => void handleSketchfabDownload()}
+            disabled={downloading === "sketchfab"}
+            className="gs-format-btn"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center">
+                {downloading === "sketchfab" ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                ) : downloaded.has("sketchfab") ? (
+                  <Check className="w-4 h-4 text-green-400" />
+                ) : (
+                  <Download className="w-4 h-4 text-white/70" />
+                )}
+              </div>
+              <div className="text-left">
+                <div className="gs-format-name">Original files</div>
+                <div className="gs-format-meta">Sketchfab source archive</div>
+              </div>
+            </div>
+          </button>
+        ) : null}
+
+        {extraDownloads.map((item) => {
+          const isDownloading = downloading === item.key;
+          const isDownloaded = downloaded.has(item.key);
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => void handleExtraDownload(item)}
+              disabled={isDownloading}
+              className="gs-format-btn"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center">
+                  {isDownloading ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                  ) : isDownloaded ? (
+                    <Check className="w-4 h-4 text-green-400" />
+                  ) : (
+                    <Download className="w-4 h-4 text-white/70" />
+                  )}
+                </div>
+                <div className="text-left">
+                  <div className="gs-format-name">{item.label}</div>
+                  <div className="gs-format-meta">{item.description}</div>
+                </div>
+              </div>
+              {item.size > 0 ? (
+                <div className="text-right">
+                  <div className="text-xs text-white/60">
+                    {formatFileSize(item.size)}
+                  </div>
+                </div>
+              ) : null}
+            </button>
+          );
+        })}
+
         {availableFormats.map((format) => {
           const picked = pickPolyHavenFormatEntry(files, format.key, "1k");
           if (!picked) return null;
@@ -233,7 +378,7 @@ export function DownloadPanel({
       <div className="mt-4 pt-4 border-t border-white/5 text-xs text-white/40">
         <div className="flex items-center gap-1.5">
           <Check className="w-3 h-3 text-green-400" />
-          <span>All files are CC0 — free for any use</span>
+          <span>{licenseLabel}</span>
         </div>
       </div>
     </div>

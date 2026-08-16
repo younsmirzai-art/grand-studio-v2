@@ -67,8 +67,8 @@ export default function SupportPage() {
           <Link href="/" className="text-sm font-bold tracking-[0.2em] uppercase text-white hover:text-[#2196F3] transition">
             Grand Studio
           </Link>
-          <Link href="/dashboard" className="text-sm text-[#A0A0A8] hover:text-white transition">
-            Dashboard
+          <Link href="/browse" className="text-sm text-[#A0A0A8] hover:text-white transition">
+            Browse
           </Link>
         </div>
       </header>
@@ -161,7 +161,7 @@ export default function SupportPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-gradient-to-r from-[#2196F3] to-[#00BCD4] text-white font-semibold hover:brightness-110 transition disabled:opacity-50"
+              className="gs-btn gs-btn-primary gs-btn-lg gs-btn-full"
             >
               <Send className="w-4 h-4" />
               {submitting ? "Sending…" : "Send message"}

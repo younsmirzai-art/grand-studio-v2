@@ -17,7 +17,7 @@ function EpicLoginContent() {
     createAuthClient()
       .auth.getUser()
       .then(({ data }) => {
-        if (data?.user) router.replace("/dashboard");
+        if (data?.user) router.replace("/browse");
       });
   }, [router]);
 

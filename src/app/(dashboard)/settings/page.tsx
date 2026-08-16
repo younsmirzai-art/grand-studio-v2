@@ -54,10 +54,10 @@ export default function SettingsPage() {
   return (
     <div className="p-6 lg:p-8 max-w-4xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl md:text-3xl font-display font-semibold tracking-tight mb-1">
+        <h1 className="text-2xl md:text-3xl font-display font-semibold tracking-tight text-slate-100 mb-1">
           Settings
         </h1>
-        <p className="text-sm text-white/50">
+        <p className="text-sm text-slate-400">
           Manage your account and preferences.
         </p>
       </div>
@@ -69,7 +69,7 @@ export default function SettingsPage() {
               <User className="w-4 h-4 text-white/60" />
               <h3 className="font-semibold text-white">Account</h3>
             </div>
-            <p className="text-xs text-white/50">Your basic information</p>
+            <p className="text-xs text-slate-400">Your basic information</p>
           </div>
           <div className="p-5 space-y-4">
             <div>
@@ -105,7 +105,7 @@ export default function SettingsPage() {
               {isFree ? (
                 <Link
                   href="/pricing"
-                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:opacity-90 transition"
+                  className="gs-btn gs-btn-primary"
                 >
                   Upgrade
                 </Link>
@@ -114,7 +114,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={handleManageBilling}
                   disabled={portalLoading}
-                  className="px-4 py-2 rounded-lg bg-white/10 text-white text-sm font-semibold hover:bg-white/15 transition disabled:opacity-50"
+                  className="gs-btn gs-btn-secondary"
                 >
                   {portalLoading ? "Opening…" : "Manage billing"}
                 </button>

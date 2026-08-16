@@ -68,7 +68,7 @@ export function FilterGroup({
         <button
           type="button"
           onClick={() => setShowAll(!showAll)}
-          className="mt-3 text-xs text-cyan-400 hover:text-cyan-300 transition"
+          className="mt-3 text-xs text-slate-400 hover:text-slate-100 transition"
         >
           {showAll ? "Show less" : `Show all (${options.length})`}
         </button>

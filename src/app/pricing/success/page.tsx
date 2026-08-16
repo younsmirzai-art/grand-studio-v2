@@ -22,15 +22,12 @@ export default function PricingSuccessPage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            href="/dashboard"
-            className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-semibold hover:opacity-90 transition"
-          >
-            Go to Dashboard
-          </Link>
-          <Link
             href="/browse"
-            className="px-5 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition"
+            className="gs-btn gs-btn-primary gs-btn-lg"
           >
+            Go to catalog
+          </Link>
+          <Link href="/browse" className="gs-btn gs-btn-secondary gs-btn-lg">
             Start Downloading
           </Link>
         </div>

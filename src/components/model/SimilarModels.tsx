@@ -1,18 +1,40 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { getSimilarModels } from "@/lib/polyhaven/client";
+import { browseCatalog, type CatalogKind } from "@/lib/catalog/browse";
 import { ModelCard } from "@/components/site/ModelCard";
 
 interface SimilarModelsProps {
   currentId: string;
   categories: string[];
+  kind?: "model" | "texture" | "hdri";
+}
+
+function kindToCatalog(kind?: SimilarModelsProps["kind"]): CatalogKind {
+  switch (kind) {
+    case "texture":
+      return "textures";
+    case "hdri":
+      return "hdris";
+    case "model":
+      return "models";
+    default:
+      return "all";
+  }
 }
 
 export async function SimilarModels({
   currentId,
   categories,
+  kind,
 }: SimilarModelsProps) {
-  const models = await getSimilarModels(currentId, categories, 4);
+  const result = await browseCatalog({
+    categories: categories.slice(0, 1),
+    kind: kindToCatalog(kind),
+    sort: "popular",
+    limit: 8,
+    offset: 0,
+  });
+  const models = result.models.filter((item) => item.id !== currentId).slice(0, 4);
 
   if (models.length === 0) return null;
 
@@ -25,7 +47,7 @@ export async function SimilarModels({
       <div className="flex items-center justify-between mb-4 gap-4">
         <div>
           <h2 className="font-display font-semibold text-xl text-white">
-            Similar models
+            Similar assets
           </h2>
           <p className="text-sm text-white/50 mt-1">
             You might also like these

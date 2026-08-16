@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     template: "%s | Grand Studio",
   },
   description:
-    "Download 3D models from every marketplace in one place. 500K+ models, AI-powered search, free tier available.",
+    "Download 3D models, textures, and HDRIs from Sketchfab, Poly Haven, and ambientCG in one place. 10,000+ downloadable assets, free tier available.",
   keywords: [
     "3D models",
     "3D marketplace",
@@ -66,8 +66,13 @@ export default function RootLayout({
     <html
       lang="en"
       className={`dark scroll-smooth ${inter.variable} ${spaceGrotesk.variable}`}
+      suppressHydrationWarning
     >
-      <body className="font-sans antialiased bg-[var(--gs-bg-base)] text-white">
+      <body
+        className="font-sans antialiased bg-[var(--gs-bg-base)] text-slate-100"
+        suppressHydrationWarning
+      >
+        <div className="pointer-events-none fixed inset-0 gs-ambient" aria-hidden />
         <AuthHashCatcher />
         <TooltipProvider delayDuration={200}>
           <ConditionalChrome>{children}</ConditionalChrome>
@@ -78,9 +83,9 @@ export default function RootLayout({
           position="bottom-right"
           toastOptions={{
             style: {
-              background: "#111114",
-              border: "1px solid #2A2A30",
-              color: "#FFFFFF",
+              background: "#0F172A",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#F1F5F9",
             },
           }}
         />

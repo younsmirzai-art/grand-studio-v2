@@ -11,7 +11,7 @@ const steps: {
     icon: Search,
     title: "Search or browse",
     description:
-      "Enter what you need or explore by category. Unified search across 500K+ models.",
+      "Enter what you need or explore by category. Unified search across 10,000+ models, textures, and HDRIs.",
   },
   {
     number: "02",

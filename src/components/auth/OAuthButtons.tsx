@@ -82,7 +82,7 @@ export function OAuthButtons({
           type="button"
           onClick={() => void handleOAuth("google")}
           disabled={loading !== null}
-          className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition disabled:opacity-50"
+          className="gs-btn gs-btn-secondary gs-btn-full"
         >
           {loading === "google" ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -95,7 +95,7 @@ export function OAuthButtons({
           type="button"
           onClick={() => void handleOAuth("discord")}
           disabled={loading !== null}
-          className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#5865F2] text-white text-sm font-semibold hover:brightness-110 transition disabled:opacity-50"
+          className="gs-btn gs-btn-secondary gs-btn-full"
         >
           {loading === "discord" ? (
             <Loader2 className="w-4 h-4 animate-spin" />

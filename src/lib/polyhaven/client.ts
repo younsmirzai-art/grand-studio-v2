@@ -366,6 +366,7 @@ export interface Model {
   isFree: boolean;
   categories: string[];
   tags: string[];
+  kind?: "model" | "texture" | "hdri";
 }
 
 export interface FetchOptions {
@@ -376,6 +377,12 @@ export interface FetchOptions {
 }
 
 function toModel(asset: PolyHavenAsset, thumbWidth = 400): Model {
+  const kind =
+    asset.type === "textures"
+      ? "texture"
+      : asset.type === "hdris"
+        ? "hdri"
+        : "model";
   return {
     id: asset.id,
     name: asset.name,
@@ -385,6 +392,7 @@ function toModel(asset: PolyHavenAsset, thumbWidth = 400): Model {
     isFree: true,
     categories: asset.categories,
     tags: asset.tags,
+    kind,
   };
 }
 
@@ -700,4 +708,55 @@ export async function getSimilarModels(
     console.error("[Poly Haven] getSimilarModels error:", error);
     return [];
   }
+}
+
+export interface CatalogFileOption {
+  key: string;
+  label: string;
+  description: string;
+  url: string;
+  size: number;
+}
+
+function collectFileEntries(
+  node: unknown,
+  path: string[],
+  out: CatalogFileOption[]
+): void {
+  if (!node || typeof node !== "object") return;
+  const record = node as Record<string, unknown>;
+  if (typeof record.url === "string" && record.url.length > 0) {
+    const key = path.join("-") || "file";
+    out.push({
+      key,
+      label: path[path.length - 1]?.toUpperCase() || "File",
+      description: path.slice(0, -1).join(" · ") || "Download",
+      url: record.url,
+      size: typeof record.size === "number" ? record.size : 0,
+    });
+    return;
+  }
+  for (const [name, child] of Object.entries(record)) {
+    if (name === "include" || name === "md5") continue;
+    collectFileEntries(child, [...path, name], out);
+  }
+}
+
+export function listPolyHavenPackageDownloads(
+  files: PolyHavenFiles | null | undefined
+): CatalogFileOption[] {
+  if (!files) return [];
+  const zipBlock = files.zip;
+  if (zipBlock) {
+    const zips: CatalogFileOption[] = [];
+    collectFileEntries(zipBlock, ["zip"], zips);
+    if (zips.length > 0) return zips.slice(0, 8);
+  }
+  const hdriBlock = files.hdri;
+  if (hdriBlock) {
+    const hdris: CatalogFileOption[] = [];
+    collectFileEntries(hdriBlock, ["hdri"], hdris);
+    if (hdris.length > 0) return hdris.slice(0, 8);
+  }
+  return [];
 }

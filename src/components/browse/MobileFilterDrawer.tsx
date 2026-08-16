@@ -34,7 +34,7 @@ export function MobileFilterDrawer({ categories }: MobileFilterDrawerProps) {
         <SlidersHorizontal className="w-3.5 h-3.5" />
         <span>Filters</span>
         {activeCount > 0 && (
-          <span className="ml-0.5 px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-[10px] font-bold">
+          <span className="ml-0.5 px-1.5 py-0.5 rounded bg-[#5E6AD2] text-white text-[10px] font-semibold">
             {activeCount}
           </span>
         )}
@@ -80,7 +80,7 @@ export function MobileFilterDrawer({ categories }: MobileFilterDrawerProps) {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="w-full py-2.5 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
+                  className="gs-btn gs-btn-primary gs-btn-full"
                 >
                   Show results
                 </button>

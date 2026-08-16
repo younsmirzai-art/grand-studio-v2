@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
-  LayoutDashboard,
   FolderOpen,
   Heart,
   Sparkles,
@@ -40,12 +39,20 @@ interface CommandItem {
 
 const COMMANDS: CommandItem[] = [
   {
-    id: "overview",
-    label: "Overview",
+    id: "browse",
+    label: "Browse Models",
     group: "Navigate",
-    icon: LayoutDashboard,
-    keywords: "dashboard home",
-    action: { type: "navigate", href: "/dashboard" },
+    icon: Search,
+    keywords: "marketplace explore catalog home dashboard",
+    action: { type: "navigate", href: "/browse" },
+  },
+  {
+    id: "generate",
+    label: "AI Generator",
+    group: "Navigate",
+    icon: Sparkles,
+    keywords: "create prompt text to 3d",
+    action: { type: "navigate", href: "/generate" },
   },
   {
     id: "library",
@@ -62,22 +69,6 @@ const COMMANDS: CommandItem[] = [
     icon: Heart,
     keywords: "saved starred",
     action: { type: "navigate", href: "/library?tab=favorites" },
-  },
-  {
-    id: "generate",
-    label: "AI Generator",
-    group: "Navigate",
-    icon: Sparkles,
-    keywords: "create prompt text to 3d",
-    action: { type: "navigate", href: "/generate" },
-  },
-  {
-    id: "browse",
-    label: "Browse Models",
-    group: "Navigate",
-    icon: Search,
-    keywords: "marketplace explore catalog",
-    action: { type: "navigate", href: "/browse" },
   },
   {
     id: "plugin",
@@ -261,6 +252,7 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {open ? (
       <DialogContent
         showCloseButton={false}
         className="p-0 gap-0 overflow-hidden sm:max-w-xl bg-[var(--gs-bg-surface)] border-white/10"
@@ -330,6 +322,7 @@ export function CommandPalette() {
           </span>
         </div>
       </DialogContent>
+      ) : null}
     </Dialog>
   );
 }

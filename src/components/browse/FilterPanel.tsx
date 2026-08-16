@@ -13,12 +13,8 @@ interface FilterPanelProps {
 
 const SOURCES = [
   { slug: "polyhaven", name: "Poly Haven", count: null as number | null },
-  {
-    slug: "sketchfab",
-    name: "Sketchfab",
-    count: null as number | null,
-    disabled: true,
-  },
+  { slug: "sketchfab", name: "Sketchfab", count: null as number | null },
+  { slug: "ambientcg", name: "ambientCG", count: null as number | null },
   {
     slug: "meshy",
     name: "Meshy",
@@ -29,7 +25,7 @@ const SOURCES = [
 
 const LICENSES = [
   { slug: "cc0", name: "CC0 (Public Domain)" },
-  { slug: "cc-by", name: "CC-BY", disabled: true },
+  { slug: "cc-by", name: "CC-BY" },
   { slug: "royalty-free", name: "Royalty-free", disabled: true },
 ];
 
@@ -78,8 +74,10 @@ export function FilterPanel({ categories, embedded = false }: FilterPanelProps) 
     const params = new URLSearchParams();
     const q = searchParams.get("q");
     const sort = searchParams.get("sort");
+    const type = searchParams.get("type");
     if (q) params.set("q", q);
     if (sort) params.set("sort", sort);
+    if (type) params.set("type", type);
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [router, pathname, searchParams]);
@@ -142,8 +140,8 @@ export function FilterPanel({ categories, embedded = false }: FilterPanelProps) 
   if (embedded) return card;
 
   return (
-    <div className="w-64 flex-shrink-0">
-      <div className="sticky top-24">{card}</div>
+    <div className="w-56 flex-shrink-0">
+      <div className="sticky top-[4.75rem]">{card}</div>
     </div>
   );
 }

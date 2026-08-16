@@ -17,7 +17,7 @@ export default function NotFound() {
 
         <Link
           href="/browse"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white text-black font-semibold hover:bg-white/90 transition"
+          className="gs-btn gs-btn-primary"
         >
           Browse all models
         </Link>

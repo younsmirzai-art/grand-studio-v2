@@ -38,7 +38,10 @@ export function getEmailRedirectTo(path: string): string {
 
 export function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/dashboard";
+    return "/browse";
+  }
+  if (value === "/dashboard" || value.startsWith("/dashboard/")) {
+    return "/browse";
   }
   return value;
 }

@@ -14,10 +14,10 @@ export function DashboardWelcome({ userName }: DashboardWelcomeProps) {
       transition={{ duration: 0.4 }}
       className="mb-8"
     >
-      <h1 className="text-2xl md:text-3xl font-display font-semibold tracking-tight mb-1">
+      <h1 className="text-2xl md:text-3xl font-display font-semibold tracking-tight text-slate-100 mb-1">
         Welcome back{userName ? `, ${userName}` : ""}
       </h1>
-      <p className="text-sm text-white/50">
+      <p className="text-sm text-slate-400">
         Here&apos;s what&apos;s happening with your account today.
       </p>
     </motion.div>

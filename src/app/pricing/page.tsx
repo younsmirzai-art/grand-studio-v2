@@ -9,8 +9,8 @@ import { FinalCTA } from "@/components/site/FinalCTA";
 
 const freeFeatures = [
   "10 downloads per day",
-  "Access to 500K+ models",
-  "Poly Haven, Sketchfab & more",
+  "Access to 10,000+ assets",
+  "Sketchfab, Poly Haven & ambientCG",
   "Standard formats (FBX, GLB, OBJ)",
   "Community support",
 ];
@@ -38,6 +38,7 @@ function PricingContent() {
   const canceled = searchParams.get("canceled") === "true";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [annual, setAnnual] = useState(false);
 
   const handleUpgrade = async () => {
     setError("");
@@ -79,10 +80,38 @@ function PricingContent() {
           <span>Pricing</span>
         </div>
         <h1 className="gs-heading-xl mb-4">Simple, honest pricing</h1>
-        <p className="text-lg text-white/60 max-w-2xl mx-auto">
+        <p className="text-lg text-slate-400 max-w-2xl mx-auto">
           Start free. Upgrade when your workflow needs unlimited downloads and
           priority features.
         </p>
+
+        <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-slate-900/60 backdrop-blur-md p-1">
+          <button
+            type="button"
+            onClick={() => setAnnual(false)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ease-in-out ${
+              !annual
+                ? "bg-white/10 text-slate-100"
+                : "text-slate-400 hover:text-slate-100"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            onClick={() => setAnnual(true)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ease-in-out ${
+              annual
+                ? "bg-white/10 text-slate-100"
+                : "text-slate-400 hover:text-slate-100"
+            }`}
+          >
+            Annual
+          </button>
+          <span className="mr-2 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-[#5E6AD2]/15 text-[#A5B4FC] border border-[#5E6AD2]/30">
+            Save 20%
+          </span>
+        </div>
       </section>
 
       <section className="max-w-5xl mx-auto px-6 mb-20">
@@ -126,32 +155,37 @@ function PricingContent() {
             </ul>
             <Link
               href="/auth/signup"
-              className="block w-full text-center px-5 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 transition"
+              className="gs-btn gs-btn-secondary gs-btn-lg gs-btn-full"
             >
               Sign up free
             </Link>
           </div>
 
-          <div className="relative gs-feature-card p-8 border-purple-500/30 bg-purple-500/5">
+          <div className="relative gs-feature-card p-8">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <span className="text-[10px] px-3 py-1 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-bold uppercase tracking-wider">
-                Recommended
+              <span className="text-[10px] px-3 py-1 rounded-full bg-[#5E6AD2] text-white font-semibold uppercase tracking-wider">
+                Most Popular
               </span>
             </div>
             <div className="mb-6">
-              <h2 className="font-display font-semibold text-2xl text-white mb-1">
+              <h2 className="font-display font-semibold text-2xl text-slate-100 mb-1">
                 Pro
               </h2>
-              <p className="text-sm text-white/60">
+              <p className="text-sm text-slate-400">
                 Unlimited access for serious creators.
               </p>
             </div>
             <div className="mb-6 flex items-baseline gap-1">
-              <span className="font-display font-bold text-5xl text-white">
-                $4.99
+              <span className="font-display font-bold text-5xl text-slate-100">
+                {annual ? "$3.99" : "$4.99"}
               </span>
-              <span className="text-white/50 text-sm">/month</span>
+              <span className="text-slate-400 text-sm">/month</span>
             </div>
+            {annual ? (
+              <p className="text-xs text-slate-400 -mt-4 mb-6">
+                $47.88 billed annually · 20% off
+              </p>
+            ) : null}
             <ul className="space-y-3 mb-8">
               {proFeatures.map((feature) => (
                 <li
@@ -167,7 +201,7 @@ function PricingContent() {
               type="button"
               onClick={handleUpgrade}
               disabled={loading}
-              className="w-full px-5 py-3 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-semibold hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+              className="gs-btn gs-btn-primary gs-btn-lg gs-btn-full"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

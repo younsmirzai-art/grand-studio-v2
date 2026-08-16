@@ -5,11 +5,17 @@ import { Maximize2, RotateCcw, Info, Loader2 } from "lucide-react";
 
 interface ModelViewerProps {
   modelUrl?: string;
+  embedUrl?: string;
   posterUrl: string;
   modelName: string;
 }
 
-export function ModelViewer({ modelUrl, posterUrl, modelName }: ModelViewerProps) {
+export function ModelViewer({
+  modelUrl,
+  embedUrl,
+  posterUrl,
+  modelName,
+}: ModelViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement | null>(null);
   const [loading, setLoading] = useState(Boolean(modelUrl));
@@ -65,6 +71,20 @@ export function ModelViewer({ modelUrl, posterUrl, modelName }: ModelViewerProps
       console.error("Fullscreen error:", err);
     }
   };
+
+  if (embedUrl) {
+    return (
+      <div className="relative aspect-square rounded-2xl overflow-hidden bg-black/40 border border-white/5">
+        <iframe
+          title={modelName}
+          src={`${embedUrl}${embedUrl.includes("?") ? "&" : "?"}autostart=1&ui_theme=dark`}
+          className="absolute inset-0 h-full w-full border-0"
+          allow="autoplay; fullscreen; xr-spatial-tracking"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
 
   if (!modelUrl) {
     return (

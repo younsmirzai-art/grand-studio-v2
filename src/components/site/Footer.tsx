@@ -36,9 +36,7 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-12">
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center text-xs font-bold">
-                GS
-              </div>
+              <div className="gs-mark w-8 h-8 text-xs">GS</div>
               <span className="font-display font-semibold text-lg">
                 Grand Studio
               </span>

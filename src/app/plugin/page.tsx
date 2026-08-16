@@ -60,17 +60,11 @@ export default function PluginPage() {
               account with a single API key.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mb-8">
-              <Link
-                href="/auth/signup"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white text-black font-semibold hover:bg-white/90 transition-colors"
-              >
+              <Link href="/auth/signup" className="gs-btn gs-btn-primary gs-btn-lg">
                 Create free account
                 <ArrowRight className="w-4 h-4" />
               </Link>
-              <Link
-                href="/settings"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors"
-              >
+              <Link href="/settings" className="gs-btn gs-btn-secondary gs-btn-lg">
                 Get API key
               </Link>
             </div>
@@ -179,7 +173,7 @@ function PluginCommandMockup() {
           </div>
         </div>
         <div className="flex gap-2">
-          <div className="flex-1 h-9 rounded-md bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-xs font-semibold flex items-center justify-center">
+          <div className="flex-1 gs-btn gs-btn-primary gs-btn-sm pointer-events-none">
             Run command
           </div>
           <div className="h-9 px-3 rounded-md border border-white/10 bg-white/5 text-xs text-white/50 flex items-center">

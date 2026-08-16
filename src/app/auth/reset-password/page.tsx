@@ -82,7 +82,7 @@ export default function ResetPasswordPage() {
         setError(updateError.message);
         return;
       }
-      window.location.replace("/dashboard");
+      window.location.replace("/browse");
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -127,7 +127,7 @@ export default function ResetPasswordPage() {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-semibold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2 hover:opacity-90"
+          className="gs-btn gs-btn-primary gs-btn-lg gs-btn-full"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />

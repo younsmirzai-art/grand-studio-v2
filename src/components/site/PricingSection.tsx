@@ -8,8 +8,8 @@ const plans = [
     description: "Perfect to get started",
     features: [
       "10 downloads per day",
-      "Access to 500K+ models",
-      "All sources included",
+      "Access to 10,000+ assets",
+      "Sketchfab, Poly Haven & ambientCG",
       "Community support",
     ],
     cta: "Start free",
@@ -54,12 +54,12 @@ export function PricingSection() {
             <div
               key={plan.name}
               className={`relative gs-feature-card p-8 ${
-                plan.popular ? "border-purple-500/30 bg-purple-500/5" : ""
+                plan.popular ? "border-white/16" : ""
               }`}
             >
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="text-[10px] px-3 py-1 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-bold uppercase tracking-wider">
+                  <span className="text-[10px] px-3 py-1 rounded-full bg-[#5E6AD2] text-white font-semibold uppercase tracking-wider">
                     Most Popular
                   </span>
                 </div>
@@ -97,10 +97,10 @@ export function PricingSection() {
 
               <Link
                 href={plan.href}
-                className={`block w-full text-center px-5 py-3 rounded-lg font-semibold transition-all ${
+                className={`gs-btn gs-btn-lg gs-btn-full ${
                   plan.variant === "primary"
-                    ? "bg-gradient-to-r from-purple-500 to-cyan-500 text-white hover:opacity-90"
-                    : "bg-white/5 border border-white/10 text-white hover:bg-white/10"
+                    ? "gs-btn-primary"
+                    : "gs-btn-secondary"
                 }`}
               >
                 {plan.cta}

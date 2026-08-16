@@ -55,7 +55,7 @@ function ForgotPasswordForm() {
             Remember your password?{" "}
             <Link
               href="/auth/login"
-              className="text-cyan-400 hover:text-cyan-300 font-medium"
+              className="text-[#A5B4FC] hover:text-white font-medium"
             >
               Sign in
             </Link>
@@ -85,7 +85,7 @@ function ForgotPasswordForm() {
           Remember your password?{" "}
           <Link
             href="/auth/login"
-            className="text-cyan-400 hover:text-cyan-300 font-medium"
+            className="text-[#A5B4FC] hover:text-white font-medium"
           >
             Sign in
           </Link>
@@ -117,7 +117,7 @@ function ForgotPasswordForm() {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="w-full py-3 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white font-semibold text-sm transition disabled:opacity-50 flex items-center justify-center gap-2 hover:opacity-90"
+          className="gs-btn gs-btn-primary gs-btn-lg gs-btn-full"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />

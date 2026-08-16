@@ -10,6 +10,7 @@ interface ActiveFiltersProps {
 const SOURCE_LABELS: Record<string, string> = {
   polyhaven: "Poly Haven",
   sketchfab: "Sketchfab",
+  ambientcg: "ambientCG",
   meshy: "Meshy",
 };
 
@@ -17,6 +18,12 @@ const LICENSE_LABELS: Record<string, string> = {
   cc0: "CC0",
   "cc-by": "CC-BY",
   "royalty-free": "Royalty-free",
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  models: "Models",
+  textures: "Textures",
+  hdris: "HDRIs",
 };
 
 export function ActiveFilters({ categoryLabels = {} }: ActiveFiltersProps) {
@@ -70,6 +77,16 @@ export function ActiveFilters({ categoryLabels = {} }: ActiveFiltersProps) {
         groupLabel: group.groupLabel,
       });
     }
+  }
+
+  const type = searchParams.get("type");
+  if (type && type !== "all") {
+    filters.unshift({
+      key: "type",
+      value: type,
+      label: TYPE_LABELS[type] || type,
+      groupLabel: "Type",
+    });
   }
 
   if (filters.length === 0) return null;

@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "media.sketchfab.com",
       },
+      {
+        protocol: "https",
+        hostname: "ambientcg.com",
+      },
     ],
   },
 };

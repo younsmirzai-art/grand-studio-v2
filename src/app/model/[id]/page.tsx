@@ -1,12 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  getPolyHavenAssetInfo,
-  getPolyHavenAssetFiles,
-  pickPolyHavenFormatEntry,
-  getThumbnailUrl,
-} from "@/lib/polyhaven/client";
+import { getCatalogDetail } from "@/lib/catalog/detail";
 import { ModelViewer } from "@/components/model/ModelViewer";
 import { DownloadPanel } from "@/components/model/DownloadPanel";
 import { ModelMetadata } from "@/components/model/ModelMetadata";
@@ -21,99 +16,109 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const info = await getPolyHavenAssetInfo(id);
+  const detail = await getCatalogDetail(decodeURIComponent(id));
 
-  if (!info) {
-    return { title: "Model not found" };
+  if (!detail) {
+    return { title: "Asset not found" };
   }
 
   const description =
-    info.description ||
-    `Download ${info.name} — free CC0 3D model from Poly Haven. ${info.categories
-      .slice(0, 3)
-      .join(", ")}. ${info.download_count.toLocaleString()} downloads.`;
-  const posterUrl = getThumbnailUrl(id, 1200);
+    detail.description ||
+    `Download ${detail.name} — ${detail.license} ${detail.kind} from ${detail.source}.`;
 
   return {
-    title: info.name,
+    title: detail.name,
     description,
     openGraph: {
-      title: info.name,
+      title: detail.name,
       description,
-      images: [posterUrl],
+      images: detail.thumbnail ? [detail.thumbnail] : [],
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
-      title: info.name,
+      title: detail.name,
       description,
-      images: [posterUrl],
+      images: detail.thumbnail ? [detail.thumbnail] : [],
     },
   };
 }
 
 export default async function ModelPage({ params }: PageProps) {
   const { id } = await params;
+  const detail = await getCatalogDetail(decodeURIComponent(id));
 
-  const [info, files] = await Promise.all([
-    getPolyHavenAssetInfo(id),
-    getPolyHavenAssetFiles(id),
-  ]);
-
-  if (!info) {
+  if (!detail) {
     notFound();
   }
 
-  const hasGltf = pickPolyHavenFormatEntry(files, "gltf", "1k") !== null;
-  const modelUrl = hasGltf ? `/api/polyhaven/gltf-preview/${encodeURIComponent(id)}` : undefined;
-  const posterUrl = getThumbnailUrl(id, 1200);
+  const sketchfabUid =
+    detail.source === "sketchfab" ? detail.rawId : undefined;
 
   return (
     <div className="pt-24 pb-16 min-h-screen">
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <ModelHero
-          name={info.name}
-          modelId={id}
-          modelThumbnail={posterUrl}
-          categories={info.categories}
-          tags={info.tags}
+          name={detail.name}
+          modelId={detail.id}
+          modelThumbnail={detail.thumbnail}
+          categories={detail.categories}
+          tags={detail.tags}
         />
 
         <div className="grid lg:grid-cols-[1fr_400px] gap-6 mb-8">
           <div>
             <ModelViewer
-              modelUrl={modelUrl}
-              posterUrl={posterUrl}
-              modelName={info.name}
+              modelUrl={detail.previewModelUrl}
+              embedUrl={detail.embedUrl}
+              posterUrl={detail.thumbnail}
+              modelName={detail.name}
             />
-            {info.description ? (
+            {detail.description ? (
               <p className="mt-4 text-sm text-white/55 leading-relaxed max-w-3xl">
-                {info.description}
+                {detail.description}
               </p>
             ) : null}
           </div>
 
           <div className="space-y-4">
             <DownloadPanel
-              files={files}
-              modelName={info.name}
-              modelId={id}
-              posterUrl={posterUrl}
-              categories={info.categories}
-              tags={info.tags}
+              files={detail.files}
+              extraDownloads={detail.extraDownloads}
+              sketchfabUid={sketchfabUid}
+              licenseLabel={
+                detail.source === "sketchfab"
+                  ? `${detail.license} — Sketchfab terms apply`
+                  : "CC0 — free for any use"
+              }
+              modelName={detail.name}
+              modelId={detail.id}
+              posterUrl={detail.thumbnail}
+              categories={detail.categories}
+              tags={detail.tags}
             />
-            <ModelMetadata info={info} />
+            <ModelMetadata
+              downloads={detail.downloads}
+              license={detail.license}
+              source={detail.source}
+              author={detail.author}
+              kind={detail.kind}
+            />
           </div>
         </div>
 
         <Suspense
           fallback={
             <div className="mt-12 py-8 text-center text-white/40 text-sm">
-              Loading similar models...
+              Loading similar assets...
             </div>
           }
         >
-          <SimilarModels currentId={id} categories={info.categories} />
+          <SimilarModels
+            currentId={detail.id}
+            categories={detail.categories}
+            kind={detail.kind}
+          />
         </Suspense>
       </div>
     </div>

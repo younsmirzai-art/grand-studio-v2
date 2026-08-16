@@ -33,9 +33,7 @@ export function AuthShell({
         </Link>
 
         <div className="text-center mb-8">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center font-bold text-sm text-white mx-auto mb-4 shadow-lg shadow-purple-500/20">
-            GS
-          </div>
+          <div className="gs-mark w-11 h-11 text-sm rounded-xl mx-auto mb-4">GS</div>
           <h1 className="text-2xl font-display font-bold text-white tracking-tight">
             {title}
           </h1>

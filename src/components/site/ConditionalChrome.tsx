@@ -4,7 +4,13 @@ import { usePathname } from "next/navigation";
 import { Header } from "@/components/site/Header";
 import { Footer } from "@/components/site/Footer";
 
-const APP_SHELL_PREFIXES = ["/dashboard", "/library", "/generate", "/settings"];
+const APP_SHELL_PREFIXES = [
+  "/dashboard",
+  "/browse",
+  "/library",
+  "/generate",
+  "/settings",
+];
 
 function isAppShellRoute(pathname: string): boolean {
   return APP_SHELL_PREFIXES.some(

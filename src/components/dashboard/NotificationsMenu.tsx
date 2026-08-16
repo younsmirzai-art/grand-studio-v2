@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Sparkles, Rocket, LayoutDashboard, type LucideIcon } from "lucide-react";
+import { Bell, Sparkles, Rocket, Search, type LucideIcon } from "lucide-react";
 
 interface ProductUpdate {
   id: string;
@@ -22,13 +22,13 @@ interface ProductUpdate {
  */
 const UPDATES: ProductUpdate[] = [
   {
-    id: "2026-07-dashboard",
-    title: "New dashboard",
-    body: "A faster, data-rich workspace with sidebar navigation and ⌘K search.",
-    date: "Jul 2026",
-    icon: LayoutDashboard,
-    iconColor: "text-cyan-400",
-    href: "/dashboard",
+    id: "2026-08-browse",
+    title: "The catalog is the workspace",
+    body: "Browse is now the main hall. Search every type of 3D asset in one place.",
+    date: "Aug 2026",
+    icon: Search,
+    iconColor: "text-[#A5B4FC]",
+    href: "/browse",
   },
   {
     id: "2026-07-generator",

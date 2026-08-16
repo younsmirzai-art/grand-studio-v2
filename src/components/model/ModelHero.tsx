@@ -34,7 +34,7 @@ export function ModelHero({
           {primaryCategory && (
             <Link
               href={`/browse?categories=${encodeURIComponent(primaryCategory)}`}
-              className="inline-block text-xs text-cyan-400 hover:text-cyan-300 transition uppercase tracking-wider font-medium mb-2"
+              className="inline-block text-xs text-[#A5B4FC] hover:text-white transition uppercase tracking-wider font-medium mb-2"
             >
               {primaryCategory}
             </Link>

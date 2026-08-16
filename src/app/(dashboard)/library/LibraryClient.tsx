@@ -84,7 +84,7 @@ export function LibraryClient() {
           href="/library"
           className={`px-4 py-2 text-sm font-medium transition ${
             tab === "downloads"
-              ? "text-white border-b-2 border-cyan-400"
+              ? "text-white border-b-2 border-[#5E6AD2]"
               : "text-white/50 hover:text-white"
           }`}
         >
@@ -97,7 +97,7 @@ export function LibraryClient() {
           href="/library?tab=favorites"
           className={`px-4 py-2 text-sm font-medium transition ${
             tab === "favorites"
-              ? "text-white border-b-2 border-cyan-400"
+              ? "text-white border-b-2 border-[#5E6AD2]"
               : "text-white/50 hover:text-white"
           }`}
         >
@@ -134,7 +134,7 @@ export function LibraryClient() {
           </p>
           <Link
             href="/browse"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-cyan-500 text-white text-sm font-semibold hover:opacity-90 transition"
+            className="gs-btn gs-btn-primary"
           >
             Browse Models
           </Link>

@@ -5,14 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { parseAuthHash } from "@/lib/supabase/auth-hash";
-
-function safeNext(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/dashboard";
-  }
-  return value;
-}
+import { parseAuthHash, safeNextPath } from "@/lib/supabase/auth-hash";
 
 function otpType(value: string | null): EmailOtpType {
   switch (value) {
@@ -40,7 +33,7 @@ export default function AuthCallbackPage() {
       const code = url.searchParams.get("code");
       const tokenHash = url.searchParams.get("token_hash");
       const type = url.searchParams.get("type");
-      const next = safeNext(url.searchParams.get("next"));
+      const next = safeNextPath(url.searchParams.get("next"));
       const errorParam = url.searchParams.get("error");
       const errorDescription = url.searchParams.get("error_description");
       const hashTokens = parseAuthHash(url.hash);

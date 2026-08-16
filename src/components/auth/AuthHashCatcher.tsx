@@ -9,7 +9,7 @@ const SKIP_PATHS = ["/auth/callback", "/auth/reset-password"];
 /**
  * If Supabase dumps hash tokens on the Site URL (redirect allowlist miss),
  * consume them here. Recovery tokens go to the reset page; everything else
- * becomes a dashboard session.
+ * becomes a browse session.
  */
 export function AuthHashCatcher() {
   useEffect(() => {
@@ -36,7 +36,7 @@ export function AuthHashCatcher() {
         return;
       }
       window.location.replace(
-        tokens.type === "recovery" ? "/auth/reset-password" : "/dashboard"
+        tokens.type === "recovery" ? "/auth/reset-password" : "/browse"
       );
     })();
   }, []);
