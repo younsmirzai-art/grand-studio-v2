@@ -7,6 +7,7 @@ import { Check, Loader2, Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   decodeAuthErrorParam,
+  getEmailRedirectTo,
   safeNextPath,
 } from "@/lib/supabase/auth-hash";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -92,7 +93,7 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
       type: "signup",
       email: email.trim(),
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: getEmailRedirectTo("/auth/callback"),
       },
     });
     if (resendError) {
@@ -134,18 +135,49 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
         return;
       }
 
+      const emailRedirectTo = getEmailRedirectTo("/auth/callback");
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: { emailRedirectTo },
+      });
+      console.log("SIGNUP_RESPONSE", {
+        hasUser: Boolean(data?.user),
+        hasSession: Boolean(data?.session),
+        userId: data?.user?.id,
+        userEmail: data?.user?.email,
+        emailConfirmedAt: data?.user?.email_confirmed_at,
+        identityCount: data?.user?.identities?.length ?? 0,
+        error: signUpError?.message,
+        emailRedirectTo,
       });
       if (signUpError) {
         setError(signUpError.message);
         return;
       }
-      if (data.session && data.user?.email_confirmed_at) {
+      if (!data.user) {
+        setError("Could not create account. Please try again.");
+        return;
+      }
+
+      const isRepeatedSignup = (data.user.identities?.length ?? 0) === 0;
+      if (isRepeatedSignup) {
+        const { error: resendError } = await supabase.auth.resend({
+          type: "signup",
+          email: trimmedEmail,
+          options: { emailRedirectTo },
+        });
+        if (resendError) {
+          setError(
+            "An account with this email already exists. Sign in, or use Forgot password if you do not have a password yet."
+          );
+          return;
+        }
+        setSent(true);
+        return;
+      }
+
+      if (data.session && data.user.email_confirmed_at) {
         window.location.replace(redirectTo);
         return;
       }

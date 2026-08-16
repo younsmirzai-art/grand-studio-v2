@@ -25,6 +25,17 @@ export function decodeAuthErrorParam(value: string): string {
   }
 }
 
+export function getEmailRedirectTo(path: string): string {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+  const origin =
+    fromEnv ||
+    (typeof window !== "undefined"
+      ? window.location.origin
+      : "https://grandstudio.dev");
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${origin}${suffix}`;
+}
+
 export function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return "/dashboard";
