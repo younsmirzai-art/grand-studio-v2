@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStripe, getStripeProPriceId } from "@/lib/stripe/config";
+import {
+  assertRecurringPrice,
+  getStripe,
+  getStripeProPriceId,
+  parseBillingInterval,
+} from "@/lib/stripe/config";
 import {
   createServerAuthClient,
   createServerClient,
@@ -16,13 +21,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const priceId = getStripeProPriceId();
+    let interval = parseBillingInterval(undefined);
+    try {
+      const body = (await request.json()) as { interval?: unknown };
+      interval = parseBillingInterval(body.interval);
+    } catch {
+      // Empty body is fine — default to monthly.
+    }
+
+    const priceId = getStripeProPriceId(interval);
     if (!priceId) {
       console.error(
-        "[stripe/checkout] missing STRIPE_PRO_PRICE_ID / NEXT_PUBLIC_STRIPE_PRO_PRICE_ID"
+        "[stripe/checkout] missing price id for interval:",
+        interval
       );
       return NextResponse.json(
-        { error: "Stripe price not configured" },
+        {
+          error:
+            interval === "year"
+              ? "Annual Stripe price not configured"
+              : "Stripe price not configured",
+        },
         { status: 500 }
       );
     }
@@ -40,18 +59,19 @@ export async function POST(request: NextRequest) {
 
     const origin = request.nextUrl.origin;
     const stripe = getStripe();
+    await assertRecurringPrice(stripe, priceId);
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      payment_method_types: ["card"],
       line_items: [{ price: priceId, quantity: 1 }],
       customer: existingSub?.stripe_customer_id || undefined,
       customer_email: existingSub?.stripe_customer_id
         ? undefined
         : user.email || undefined,
       client_reference_id: user.id,
-      metadata: { user_id: user.id },
+      metadata: { user_id: user.id, billing_interval: interval },
       subscription_data: {
-        metadata: { user_id: user.id },
+        metadata: { user_id: user.id, billing_interval: interval },
       },
       success_url: `${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/pricing?canceled=true`,

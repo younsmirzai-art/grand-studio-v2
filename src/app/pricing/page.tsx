@@ -57,6 +57,8 @@ function PricingContent() {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interval: annual ? "year" : "month" }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
 
