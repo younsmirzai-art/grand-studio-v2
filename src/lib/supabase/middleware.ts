@@ -13,8 +13,9 @@ const publicPaths = [
   "/auth/login",
   "/auth/signup",
   "/auth/callback",
+  "/auth/forgot-password",
+  "/auth/reset-password",
   "/auth/epic",
-  "/auth/magic-link",
 ];
 
 export async function updateSession(request: NextRequest) {

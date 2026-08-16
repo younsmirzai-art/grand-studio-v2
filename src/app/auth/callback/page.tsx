@@ -64,8 +64,7 @@ export default function AuthCallbackPage() {
       const supabase = createClient();
       let exchangeError: string | null = null;
 
-      // Implicit-flow magic links put tokens in the URL hash. The previous
-      // Route Handler never saw that fragment, so users bounced to login.
+      // Confirmation and OAuth callbacks may include tokens in the URL hash.
       if (hashTokens) {
         setStatus("Saving your session…");
         const { data, error } = await supabase.auth.setSession(hashTokens);
@@ -79,9 +78,9 @@ export default function AuthCallbackPage() {
           window.location.replace(next);
           return;
         }
-        exchangeError = error?.message ?? "Could not store session from magic link";
+        exchangeError = error?.message ?? "Could not store session from confirmation link";
       } else if (tokenHash) {
-        setStatus("Verifying magic link…");
+        setStatus("Verifying your email…");
         const { data, error } = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type: otpType(type),
@@ -96,7 +95,7 @@ export default function AuthCallbackPage() {
           window.location.replace(next);
           return;
         }
-        exchangeError = error?.message ?? "OTP verification failed";
+        exchangeError = error?.message ?? "Email verification failed";
       } else if (code) {
         setStatus("Completing sign-in…");
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
@@ -130,7 +129,7 @@ export default function AuthCallbackPage() {
 
       const message =
         exchangeError ||
-        "Could not complete sign-in. Request a new magic link and open it in the same browser.";
+        "Could not complete sign-in. Request a new confirmation email and try again.";
       router.replace(`/auth/login?error=${encodeURIComponent(message)}`);
     }
 

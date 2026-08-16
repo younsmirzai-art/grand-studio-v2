@@ -4,31 +4,40 @@ import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { parseAuthHash } from "@/lib/supabase/auth-hash";
 
+const SKIP_PATHS = ["/auth/callback", "/auth/reset-password"];
+
 /**
- * Safety net: if Supabase rejects /auth/callback (not in the redirect
- * allowlist), the verify step dumps #access_token on the Site URL instead.
- * A Route Handler never sees that fragment, so we consume it here on any page.
+ * If Supabase dumps hash tokens on the Site URL (redirect allowlist miss),
+ * consume them here. Recovery tokens go to the reset page; everything else
+ * becomes a dashboard session.
  */
 export function AuthHashCatcher() {
   useEffect(() => {
     const tokens = parseAuthHash(window.location.hash);
     if (!tokens) return;
 
-    const pathname = window.location.pathname;
-    if (pathname === "/auth/callback" || pathname.startsWith("/auth/callback/")) {
+    const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+    if (SKIP_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
       return;
     }
 
     void (async () => {
       const supabase = createClient();
-      const { error } = await supabase.auth.setSession(tokens);
+      const { error } = await supabase.auth.setSession({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+      });
       if (error) {
-        window.location.replace(
-          `/auth/login?error=${encodeURIComponent(error.message)}`
-        );
+        const fallback =
+          tokens.type === "recovery"
+            ? `/auth/forgot-password?error=${encodeURIComponent("Reset link expired")}`
+            : `/auth/login?error=${encodeURIComponent(error.message)}`;
+        window.location.replace(fallback);
         return;
       }
-      window.location.replace("/dashboard");
+      window.location.replace(
+        tokens.type === "recovery" ? "/auth/reset-password" : "/dashboard"
+      );
     })();
   }, []);
 

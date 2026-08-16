@@ -12,6 +12,10 @@ function isAppShellRoute(pathname: string): boolean {
   );
 }
 
+function isAuthRoute(pathname: string): boolean {
+  return pathname === "/auth" || pathname.startsWith("/auth/");
+}
+
 /**
  * Marketing pages get the public Header + Footer.
  * Authenticated app pages use their own sidebar layout instead.
@@ -19,8 +23,9 @@ function isAppShellRoute(pathname: string): boolean {
 export function ConditionalChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const useAppShell = isAppShellRoute(pathname);
+  const hideMarketingChrome = useAppShell || isAuthRoute(pathname);
 
-  if (useAppShell) {
+  if (hideMarketingChrome) {
     return <>{children}</>;
   }
 
