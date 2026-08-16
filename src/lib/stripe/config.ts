@@ -16,7 +16,7 @@ export function getStripeProPriceId(): string {
 }
 
 /** @deprecated Prefer getStripeProPriceId() */
-export const STRIPE_PRO_PRICE_ID = getStripeProPriceId();
+export const STRIPE_PRO_PRICE_ID = process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID || "";
 
 /** @deprecated Prefer getStripeProPriceId() */
 export const STRIPE_PRICES = {
