@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConditionalChrome } from "@/components/site/ConditionalChrome";
+import { AuthHashCatcher } from "@/components/auth/AuthHashCatcher";
 import "./globals.css";
 
 const inter = Inter({
@@ -67,6 +68,7 @@ export default function RootLayout({
       className={`dark scroll-smooth ${inter.variable} ${spaceGrotesk.variable}`}
     >
       <body className="font-sans antialiased bg-[var(--gs-bg-base)] text-white">
+        <AuthHashCatcher />
         <TooltipProvider delayDuration={200}>
           <ConditionalChrome>{children}</ConditionalChrome>
         </TooltipProvider>

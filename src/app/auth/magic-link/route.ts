@@ -17,6 +17,10 @@ function createOtpClient() {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
+      // Server-sent magic links cannot store a PKCE verifier in the user's
+      // browser. Implicit flow puts the session in the callback URL hash,
+      // which the client callback page then stores in cookies.
+      flowType: "implicit",
     },
   });
 }
@@ -34,9 +38,12 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createOtpClient();
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.trim() || request.nextUrl.origin;
-    const redirectTo = `${siteUrl.replace(/\/$/, "")}/auth/callback?next=/dashboard`;
+    // Path only — extra query strings are stripped if they are not in the
+    // Supabase redirect allowlist, which sent users to the Site URL unsigned-in.
+    const siteUrl = (
+      process.env.NEXT_PUBLIC_SITE_URL?.trim() || request.nextUrl.origin
+    ).replace(/\/$/, "");
+    const redirectTo = `${siteUrl}/auth/callback`;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,

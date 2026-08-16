@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Loader2, Mail, CheckCircle2, ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { decodeAuthErrorParam } from "@/lib/supabase/auth-hash";
 
 export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   return (
@@ -21,8 +22,11 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
     searchParams.get("redirectTo") ||
     "/dashboard";
 
+  const urlError = searchParams.get("error");
   const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    urlError ? decodeAuthErrorParam(urlError) : ""
+  );
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "discord" | null>(
     null
@@ -129,8 +133,20 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
           ) : (
             <>
               {error && (
-                <div className="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  {error}
+                <div
+                  role="alert"
+                  className="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm"
+                >
+                  {urlError ? (
+                    <>
+                      <p className="font-semibold text-red-300 mb-1">
+                        Sign-in failed
+                      </p>
+                      <p>{error}</p>
+                    </>
+                  ) : (
+                    error
+                  )}
                 </div>
               )}
 
