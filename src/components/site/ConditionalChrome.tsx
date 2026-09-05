@@ -22,14 +22,20 @@ function isAuthRoute(pathname: string): boolean {
   return pathname === "/auth" || pathname.startsWith("/auth/");
 }
 
+function isCinematicLanding(pathname: string): boolean {
+  return pathname === "/";
+}
+
 /**
  * Marketing pages get the public Header + Footer.
  * Authenticated app pages use their own sidebar layout instead.
+ * The cinematic home landing owns its own chrome.
  */
 export function ConditionalChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const useAppShell = isAppShellRoute(pathname);
-  const hideMarketingChrome = useAppShell || isAuthRoute(pathname);
+  const hideMarketingChrome =
+    useAppShell || isAuthRoute(pathname) || isCinematicLanding(pathname);
 
   if (hideMarketingChrome) {
     return <>{children}</>;
