@@ -1,11 +1,10 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConditionalChrome } from "@/components/site/ConditionalChrome";
 import { AuthHashCatcher } from "@/components/auth/AuthHashCatcher";
-import { AmbientBackground } from "@/components/site/AmbientBackground";
 import "./globals.css";
 
 const inter = Inter({
@@ -73,7 +72,7 @@ export default function RootLayout({
         className="font-sans antialiased bg-[var(--gs-bg-base)] text-slate-100"
         suppressHydrationWarning
       >
-        <AmbientBackground />
+        <div className="pointer-events-none fixed inset-0 gs-ambient" aria-hidden />
         <AuthHashCatcher />
         <TooltipProvider delayDuration={200}>
           <ConditionalChrome>{children}</ConditionalChrome>
